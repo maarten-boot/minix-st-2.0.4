@@ -256,3 +256,29 @@ The CPU type is taken from the firmware's `SDB_CPUINFO`. r68k reports a
 68020 because of an emulator quirk.
 
 Not committed yet. Not run on hardware.
+
+## Follow-up 8: M3
+
+M2 committed as `87964c0` (branch `rosco-m68k`). User asked which branch is
+checked out: `rosco-m68k` here, `release/version-2.42` in `../rosco_m68k`,
+`main` in `../r68k`.
+
+M3 work:
+
+* New `src/kernel/roscrs232.c`: the `rs232.c` logic on both DUART
+  channels. The console is line 0, on channel A; `/dev/tty00` is line 1,
+  on channel B.
+* `roscons.c` now only does polled `putk` (made atomic against the TX
+  interrupt), the debug keys (PF4 = test line on tty00) and the stubs.
+* The temporary `rs_init` in `roscstub.c` is gone.
+* `roscduart.h`: clear-extended-rate commands added, and the RTS/CTS
+  wiring is now confirmed from the r2 schematic (CTS has no pull resistor,
+  so the console ignores CTS).
+
+Result in `r68k -d`:
+
+* the banner and the clock work;
+* echo and editing (INTR, KILL) work through interrupt-driven output;
+* the tty00 test line comes out on channel B with CR LF.
+
+`stty` waits for M4 (needs MM/FS). Not committed yet. Not run on hardware.

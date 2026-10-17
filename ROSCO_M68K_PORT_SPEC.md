@@ -523,10 +523,10 @@ How this works without touching shared files:
 | `src/kernel/roscompx.S` | **done (M2)** | GNU port of `stmpx.s`: vector table (DUART at IVR `0x45`, all autovectors → `rupt`), firmware gap 0x400–0x2000, bss clear, loader hand-over (`rosco_memsize`, `rosco_extra`), CPU type from `SDB_CPUINFO` (probe as fallback), unchanged `genint`/`save`/`restart`/`sys`, `kreboot` via `0xE00004`, `get_mem_size` from the loader. Still todo: `move sr` emulation in `prvtrp` (M4, for ACK binaries) |
 | `src/kernel/roscklib.S` | **done (M2)** | `klib68k.s` in GNU syntax, plus `__mulsi3`/`__udivsi3`/`__divsi3`/`__umodsi3`/`__modsi3`, the `_send`/`_receive`/`_sendrec` trap stubs and the `sig*set` aliases |
 | `src/kernel/roscmain.c` | **done (M2)** | From `stmain.c`: `main` (servers with size 0 are not started: kernel-only image), `initrosco()` (DUART A as the firmware sets it, channel B off, timer at HZ, IVR, kernel env), `duartint()`, IMR shadow, `trap`/`panic`/`wreboot`/`getenv`, fake tasks. Compile-time check of the proc offsets used by the assembler |
-| `src/kernel/roscons.c` | **done (M2)** | Console on DUART A: polled output with `out_process`, interrupt-driven input buffer, `putk`, debug keys PF1–PF3 (process table with uptime, memory map, registers), stubs for `kb_timer`, `vdu_loadfont`, `vduswitch`, `func_key` |
+| `src/kernel/roscons.c` | **done (M3)** | Console glue: `scr_init` hands channel A to `roscrs232.c`; polled `putk` (TxRDY test and write under `lock()`); debug keys PF1–PF3 (process table with uptime, memory map, registers) and PF4 (test line on `/dev/tty00`); stubs for `kb_timer`, `vdu_loadfont`, `vduswitch`, `func_key` |
 | `src/kernel/rosco.h` | **done (M2)** | Prototypes and variables of the rosco machine layer |
-| `src/kernel/roscstub.c` | **done (M2)** | `fd_timer`, a temporary `rs_init` (DUART B discards output until M3), `errno`, the dummy MFP for `clock.c` |
-| `src/kernel/roscrs232.c` | todo (M3) | Replaces `rs232.c`: `rs_init` and friends for DUART B, called from `duartint` |
+| `src/kernel/roscstub.c` | **done** | `fd_timer`, `errno`, the dummy MFP for `clock.c` |
+| `src/kernel/roscrs232.c` | **done (M3)** | `rs232.c` logic on the DUART for both lines: line 0 is the console (channel A), line 1 is `/dev/tty00` (channel B). Interrupt-driven buffered input and output; the TxRDY interrupt is only enabled while output may go out. termios speeds 50–115200 (CSR code + XR extended bit, ACR[7]=1), parity, data and stop bits. RTS input flow control on OP0/OP1. CTS is gated in hardware (MR2) unless CLOCAL; the console never waits for CTS and keeps 115200. Errors are counted and the character dropped; break, HUPCL (drops RTS) |
 | `src/rosco/kernel/Makefile`, `kernel.ld` | **done (M2)** | GNU build in `src/rosco/kernel/` through `xrun`: rosco files + shared `proc system stshadow tty clock memory table dmp misc pty driver drvlib` + a small `libk.a` (kprintf, `_sigset`, u64, string functions). Links at 0, data on a click boundary, `sizes[0..1]` from the linker. `make` gives `kernel`, `kernel.bin` and `ROSCODE1.BIN` (loader + kernel); `make run` boots it in `r68k -d` |
 | `src/rosco/kernel/staddr.h`, `stmfp.h` | **done (M2)** | Stand-ins found by the build-time copy of `clock.c`, so its MFP timer code writes a dummy in RAM |
 | `src/rosco/include/stdarg.h` | **done (M2)** | gcc builtins; the `__GNUC__` branch of `include/stdarg.h` is for gcc 1/2 |
@@ -565,6 +565,33 @@ Findings while doing M2:
 * ACK predefines that the headers rely on are passed as `-D` flags:
   `_EM_WSIZE=2`, `_EM_PSIZE=4`, `_EM_LSIZE=4`, `__m68000`.
 * Without MM/FS the kernel needs only a few library routines (`libk.a`).
+
+### M3 result (2026-10-17, r68k -d)
+
+* The console runs on the same interrupt-driven line code as `/dev/tty00`.
+  Echo and line editing behave as the Minix defaults dictate: DEL is
+  INTR (`^?`, input flushed), `^U` kills the line with `\b \b`, and CR
+  becomes NL.
+* PF4 queues a test line on `/dev/tty00`. It came out on channel B (r68k
+  stderr) with LF→CR LF processing.
+* `stty` and opening `/dev/tty00` from a process need MM/FS (M4). r68k
+  does not model channel B receive.
+
+Hardware facts checked against the r2 schematic
+(`design/r2/kicad/DUART.kicad_sch`):
+
+* OP0 = RTSA, OP1 = RTSB, IP0 = CTSA, IP1 = CTSB;
+* SPI on IP2 / OP2 / OP4 / OP6 / OP7;
+* CTS runs straight to the 6-pin UART headers J1/J2 with no pull resistor.
+
+Still "verify" on the board:
+
+* the extended baud rate table (only 115200 is confirmed by the firmware);
+* the internal pull-ups on the IP pins.
+
+Risk: interrupt-driven output at 115200 baud means one interrupt per
+character (about 11,500/s) on a 10 MHz 68010. If that costs too much CPU,
+fall back to 38400 on the console, or send bursts from the TTY task.
 
 ## 10. Immediate next actions (no changes to existing files required)
 

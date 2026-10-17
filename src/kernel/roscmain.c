@@ -344,7 +344,7 @@ _CONST char *name;
 PRIVATE void initrosco()
 {
 /* Set up the DUART: console on channel A as the firmware has it (8N1,
- * 115200 baud, RTS asserted), channel B idle (roscrs232.c sets it up),
+ * 115200 baud, RTS asserted; roscrs232.c takes it over), channel B off,
  * the counter/timer as the clock at HZ, and the interrupt vector.  The
  * SD card pins on the output port are not touched.
  */
@@ -368,7 +368,7 @@ PRIVATE void initrosco()
   DUART->du_opset = OP_RTSA;		/* assert RTS A */
   DUART->du_cra = CR_RXEN | CR_TXEN;
 
-  /* Channel B: disabled until the rs232 driver opens it. */
+  /* Channel B: disabled until rs_init() (roscrs232.c) sets it up. */
   DUART->du_crb = CR_RXDIS | CR_TXDIS;
 
   /* The clock: timer mode, crystal/16, HZ interrupts per second. */
@@ -416,7 +416,8 @@ int dummy;
 	(void) DUART->du_stopcc;	/* timer mode: only clears ISR_CTR */
 	clock_handler(0);
   }
-  if (isr & ISR_RXRDYA) cons_int();
+  if (isr & (ISR_RXRDYA | ISR_TXRDYA | ISR_RXRDYB | ISR_TXRDYB))
+	rs_duart_int(isr);
 }
 
 /*===========================================================================*

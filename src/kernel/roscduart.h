@@ -87,7 +87,9 @@ struct duart {
 #define	CR_STARTBRK	0x60	/* start break */
 #define	CR_STOPBRK	0x70	/* stop break */
 #define	CR_XRXEXT	0x80	/* XR: set receiver extended baud rate bit */
+#define	CR_XRXCLR	0x90	/* XR: clear receiver extended baud rate bit */
 #define	CR_XTXEXT	0xA0	/* XR: set transmitter extended baud rate bit */
+#define	CR_XTXCLR	0xB0	/* XR: clear transmitter extended baud rate bit */
 
 /* bits in MR1: */
 #define	MR1_RXRTS	0x80	/* receiver controls RTS */
@@ -139,12 +141,12 @@ struct duart {
 #define	DUART_TIMER(hz)	((unsigned) (DUART_XTAL / 16 / 2 / (hz)))
 
 /* Output port bits (OP pins are active low: du_opset drives them low).
- * OP0 = RTS A, OP3 = red LED and OP5 = heartbeat LED are as used by the
- * firmware; OP1 = RTS B and IP0/IP1 = CTS A/B follow the usual 68681
- * wiring and the schematic net names (RTSB, CTSA, CTSB): "verify".
+ * RTS A/B on OP0/OP1, CTS A/B on IP0/IP1 and the SPI pins are checked
+ * against the r2 schematic (design/r2/kicad/DUART.kicad_sch); CTS has no
+ * pull resistor there.  The LEDs are as used by the firmware.
  */
 #define	OP_RTSA		0x01	/* OP0: RTS channel A */
-#define	OP_RTSB		0x02	/* OP1: RTS channel B (verify) */
+#define	OP_RTSB		0x02	/* OP1: RTS channel B */
 #define	OP_SPI_CS	0x04	/* OP2: SD card chip select   - do not touch */
 #define	OP_LED_RED	0x08	/* OP3: red LED */
 #define	OP_SPI_SCK	0x10	/* OP4: SD card clock         - do not touch */
@@ -153,6 +155,6 @@ struct duart {
 #define	OP_SPI_CS1	0x80	/* OP7: second SPI select     - do not touch */
 
 /* Input port bits */
-#define	IP_CTSA		0x01	/* IP0: CTS channel A (verify) */
-#define	IP_CTSB		0x02	/* IP1: CTS channel B (verify) */
+#define	IP_CTSA		0x01	/* IP0: CTS channel A */
+#define	IP_CTSB		0x02	/* IP1: CTS channel B */
 #define	IP_SPI_CIPO	0x04	/* IP2: SD card data in       - do not touch */

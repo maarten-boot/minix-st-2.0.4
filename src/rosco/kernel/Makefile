@@ -43,7 +43,7 @@ ASFLAGS	= $(CPU) -Wa,--register-prefix-optional $(DEFS) $(INCS)
 
 # roscompx.o must be first: see kernel.ld and genint in roscompx.S
 SOBJ	= roscompx.o roscklib.o
-ROBJ	= roscmain.o roscons.o roscstub.o
+ROBJ	= roscmain.o roscons.o roscrs232.o roscstub.o
 COBJ	= proc.o system.o stshadow.o tty.o clock.o memory.o table.o \
 	  dmp.o misc.o pty.o driver.o drvlib.o
 OBJ	= $(SOBJ) $(ROBJ) $(COBJ)
