@@ -1,6 +1,7 @@
-# /etc/ttytab - terminals, rosco_m68k bring-up version.
+# /etc/ttytab - terminals, rosco_m68k.
 #
 # name		type	getty			init
-# The console (DUART channel A) gets a shell directly, no getty or login
-# yet.  tty00 (DUART channel B) stays off until getty and login are there.
-console		minix	"sh"
+# The console is DUART channel A, tty00 is DUART channel B.  The accounts
+# have no passwords yet (/etc/passwd); set them with passwd.
+console		minix	getty
+tty00		vt100	getty

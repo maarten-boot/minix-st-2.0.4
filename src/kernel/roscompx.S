@@ -19,6 +19,8 @@
  *  - No ST model detection, no MFP/ACIA/DMA vectors, no Multiboard probing.
  *  - The bss is cleared here; the loader only copies text and data.
  *  - kreboot jumps through the reset vector in ROM, not through address 4.
+ *  - A privilege violation first goes to prv_emulate() (roscmain.c): user
+ *    mode "move sr,<ea>" is legal on a 68000 but not on the 68010.
  *
  * All of this file goes into section .text.boot, which the linker script
  * puts first.  genint relies on every trap and interrupt entry lying below
@@ -242,7 +244,12 @@ trptrp:
 	bra	gentrp
 prvtrp:
 	move.b	#8,vectnum
-	bra	gentrp
+	bsr	save
+	jsr	prv_emulate	/* "move sr,<ea>" from 68000 code? */
+	tst.w	d0
+	bne	1f
+	jsr	trap
+1:	bra	restart
 atrp:
 	move.b	#10,vectnum
 	bra	gentrp

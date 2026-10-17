@@ -40,13 +40,18 @@ ASFLAGS	= $(CPU) -Wa,--register-prefix-optional $(DEFS) $(INCS)
 # C library directories; files that do not belong in the rosco libc
 # (ACK runtime, floating point) are listed in EXCLUDE.
 CDIRS	= ansi posix other stdio
-EXCLUDE	= $l/other/regexp.c
+# Not in the ACK build's makefile.all: posix/_exec.c and _execn.c are old
+# versions of the exec family (their execl() passes the wrong argv, and
+# whichever _execl comes first in the archive wins), other/execlp.c
+# duplicates posix/_execlp.c.  regexp.c and system.c are built from ./
+EXCLUDE	= $l/other/regexp.c $l/posix/_exec.c $l/posix/_execn.c \
+	  $l/other/execlp.c $l/other/v8regerror.c $l/ansi/system.c
 CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
 # u64.c replaces lib/m68000/misc/u64.c (cmp64u() fixed).
 # fphook/fltpr.c and strtod.c: printf and strtod without floating point,
 # as the ACK libc without the float library
 COBJ	= $(patsubst $l/%.c,obj/%.o,$(CSRC)) obj/u64.o \
-	  obj/m68000/rts/__intsize.o obj/regexp.o \
+	  obj/m68000/rts/__intsize.o obj/regexp.o obj/system.o \
 	  obj/fphook/fltpr.o obj/fphook/strtod.o
 
 # GNU replacements of lib/m68000/rts
@@ -81,6 +86,9 @@ obj/%.o:	%.c
 	$(CC) $(CFLAGS) -I$l/other -c -o $@ $<
 
 obj/gccmem.o:	CFLAGS += -fno-tree-loop-distribute-patterns
+
+# no floating point in scanf (no soft float runtime for -mshort)
+obj/stdio/doscan.o:	CFLAGS += -DNOFLOAT
 
 # fslib.c includes "fs/const.h"
 obj/other/fslib.o:	CFLAGS += -I../..

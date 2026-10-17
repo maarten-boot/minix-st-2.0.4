@@ -538,6 +538,9 @@ How this works without touching shared files:
 | `src/rosco/boot/` | **done (M4)** | Builds MM (6k stack), FS (4k), INIT (`sttools/init.c`, 2k) |
 | `src/rosco/cmds/` | **done (M4)** | Builds the old Minix shell (`commands/sh`) and 20 commands from `commands/simple`, with the ACK build's stack sizes (`tools/stacks.py`) |
 | `src/rosco/tools/` | **done (M4)** | `prog.ld` (program link script), `mkminix.py` (ELF → Minix-ST a.out with GEMDOS relocations), `mkimage.py` (boot image: relocates MM/FS/INIT, fills `sizes[]` behind the magic `rosSIZES`, patches INIT's origin into FS), `mkfs.py` (big endian Minix V2 file system from a proto file), `stacks.py`; M5: `mkfat.py` (FAT16 with ROSCODE1.BIN for the firmware), `mksd.py` (SD card image with an MBR, typed partitions) |
+| `src/rosco/test/` | **done (M6)** | Builds the Minix test suite (`src/test`, at `-O0`: the tests busy-wait on non-volatile flags set by signal handlers), plus `troscorun` (gcc runtime helpers, struct copies, varargs, `move sr` emulation) and `texecl` (execl directly and after fork) |
+| `src/rosco/lib/system.c` | **done (M6)** | `system()` waits for its own child with `waitpid()`; the original reaped any child with `wait()` (test28) |
+| `src/rosco/tools/mamesession.py` | **done (M6)** | Scripted console sessions in the rosco-emulator (MAME): console on a TCP socket, `expect`/`send` script, log |
 | `src/rosco/rootfs/` | **done (M4)** | Root file system: `proto` (devices, /etc, /bin, /tmp, /usr), `etc/rc`, `etc/ttytab` (console runs `sh` directly, no getty/login yet), `passwd`, `group`, `utmp` |
 | `src/mm/makefile.rosco`, `src/fs/makefile.rosco` | todo (M4) | Same as `makefile.st`, with the include override |
 
@@ -710,6 +713,58 @@ Still open for storage:
 * swap on SD (`ENABLE_SWAP`);
 * a native SPI driver that doesn't depend on the firmware (option B);
 * the SD routines block the kernel while a block moves.
+
+### M6 status (2026-10-17): test suite 39/40 in the full-hardware emulator
+
+The user built `../rosco-emulator` (MAME 0.289 cut down to the rosco
+machines: full DUART, bit-banged SPI SD card, bus errors, the real
+firmware). `make CONSBAUD=115200 sdcard` plus `make runmame` (or
+`tools/mamesession.py`) boots `rosco_sd.bin` there.
+
+The whole boot path works in MAME:
+
+* the firmware boots `ROSCODE1.BIN` from the card's FAT partition;
+* the kernel finds the root on the Minix partition and uses the firmware's
+  real SPI SD routines;
+* the CPU is reported correctly as a 68010 (r68k said 68020);
+* getty and login on the console work.
+
+Test suite, run as `ast` after login:
+
+* final full run: **39 passed, 1 failed** (test14, a test artifact, see
+  below; it passed in the run before);
+* `troscorun` and `texecl` pass;
+* test17 passes but prints "stat: cannot stat f7" (to be looked at).
+
+Fixes found by the tests:
+
+* **libc `__divsi3`/`__modsi3`:** they tested the dividend's sign with
+  stale flags. The time was off by 2^32/60 s after setting the date.
+* **libc build:** it built `posix/_exec.c`/`_execn.c`, old files not in
+  the ACK `makefile.all`; their `execl` lost argv[0]. This broke login
+  and test7.
+* **`system()` reaped the caller's other children** (rosco `system.c`).
+* **`cp` (also rm/mv/ln):** a 31744-byte stack buffer; the stack is now
+  24kw instead of 16kw.
+* **`/dev/ram` node:** must be a block device.
+* **Buffer cache 48 → 128 blocks:** with 48, every exec re-read the
+  program over the bit-banged SPI, and test29/test33 hit their alarms.
+  733 KB is left for programs with the SD root.
+* **Tests built with `-O0`.**
+* **Clock:** set from `/etc/stamp` at boot (no RTC). getty/login with
+  `/usr/lib/pwdauth`, user `ast`.
+* **Kernel `move sr` emulation** for 68000 user code.
+
+Known and not fixed:
+
+* **test14:** it builds a file name from the pid, which contains `/`
+  when pid & 31 == 14, so it fails at random.
+* **Shell tests:** `sh2` needs `make`, `ar` and `cc`, which are not built
+  (no compiler on the target).
+* **`uname`** says "atari" (compile-time constant in libc).
+* **`rs2s.s` fast path:** not needed; the C interrupt handlers are in use.
+* **Expansion RAM:** contiguous expansion is already used via the
+  firmware's RAM size (up to 14 MB); untested.
 
 ## 10. Immediate next actions (no changes to existing files required)
 

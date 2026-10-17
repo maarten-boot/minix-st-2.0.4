@@ -29,3 +29,9 @@ cmds/build.log
 rosco_sd.bin
 ROSCODE1.BIN
 boot/sd/
+test/obj/
+test/bin/
+test/build.log
+boot/stamp
+kernel/consbaud.stamp
+__pycache__/

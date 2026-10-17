@@ -1,0 +1,118 @@
+# Additional contents of the SD card root (rootfs/proto plus this file,
+# see make sdcard): the rest of the commands and the test suite.
+# Host paths are relative to src/rosco/boot, where mkfs.py runs.
+
+f /bin/basename	755 ../cmds/bin/basename
+f /bin/cal	755 ../cmds/bin/cal
+f /bin/cdiff	755 ../cmds/bin/cdiff
+f /bin/chmod	755 ../cmds/bin/chmod
+f /bin/chown	755 ../cmds/bin/chown
+f /bin/clr	755 ../cmds/bin/clr
+f /bin/cmp	755 ../cmds/bin/cmp
+f /bin/comm	755 ../cmds/bin/comm
+f /bin/compress	755 ../cmds/bin/compress
+f /bin/cut	755 ../cmds/bin/cut
+f /bin/dd	755 ../cmds/bin/dd
+f /bin/dirname	755 ../cmds/bin/dirname
+f /bin/du	755 ../cmds/bin/du
+f /bin/ed	755 ../cmds/bin/ed
+f /bin/env	755 ../cmds/bin/env
+f /bin/expr	755 ../cmds/bin/expr
+f /bin/fgrep	755 ../cmds/bin/fgrep
+f /bin/find	755 ../cmds/bin/find
+f /bin/fsck	755 ../cmds/bin/fsck
+f /bin/grep	755 ../cmds/bin/grep
+f /bin/head	755 ../cmds/bin/head
+f /bin/id	755 ../cmds/bin/id
+f /bin/mesg	755 ../cmds/bin/mesg
+f /bin/mkfifo	755 ../cmds/bin/mkfifo
+f /bin/mkfs	755 ../cmds/bin/mkfs
+f /bin/mkswap	755 ../cmds/bin/mkswap
+f /bin/od	755 ../cmds/bin/od
+f /bin/passwd	4755 ../cmds/bin/passwd
+f /bin/paste	755 ../cmds/bin/paste
+f /bin/prep	755 ../cmds/bin/prep
+f /bin/printenv	755 ../cmds/bin/printenv
+f /bin/ps	755 ../cmds/bin/ps
+f /bin/sed	755 ../cmds/bin/sed
+f /bin/shar	755 ../cmds/bin/shar
+f /bin/sort	755 ../cmds/bin/sort
+f /bin/stat	755 ../cmds/bin/stat
+f /bin/strings	755 ../cmds/bin/strings
+f /bin/su	4755 ../cmds/bin/su
+f /bin/sum	755 ../cmds/bin/sum
+f /bin/tail	755 ../cmds/bin/tail
+f /bin/tee	755 ../cmds/bin/tee
+f /bin/test	755 ../cmds/bin/test
+f /bin/tr	755 ../cmds/bin/tr
+f /bin/tsort	755 ../cmds/bin/tsort
+f /bin/tty	755 ../cmds/bin/tty
+f /bin/uniq	755 ../cmds/bin/uniq
+f /bin/update	755 ../cmds/bin/update
+f /bin/uud	755 ../cmds/bin/uud
+f /bin/uue	755 ../cmds/bin/uue
+f /bin/which	755 ../cmds/bin/which
+f /bin/who	755 ../cmds/bin/who
+f /bin/whoami	755 ../cmds/bin/whoami
+f /bin/write	755 ../cmds/bin/write
+f /bin/yes	755 ../cmds/bin/yes
+
+# cp.c is cp, mv, rm, ln, cpdir and clone, by its name
+l /bin/mv	/bin/cp
+l /bin/rm	/bin/cp
+l /bin/ln	/bin/cp
+l /bin/cpdir	/bin/cp
+l /bin/clone	/bin/cp
+l /bin/[	/bin/test
+
+# The test suite: cd /usr/test; ./run
+d /usr/test 777
+f /usr/test/t10a	755 ../test/bin/t10a
+f /usr/test/t11a	755 ../test/bin/t11a
+f /usr/test/t11b	755 ../test/bin/t11b
+f /usr/test/test1	755 ../test/bin/test1
+f /usr/test/test2	755 ../test/bin/test2
+f /usr/test/test3	755 ../test/bin/test3
+f /usr/test/test4	755 ../test/bin/test4
+f /usr/test/test5	755 ../test/bin/test5
+f /usr/test/test6	755 ../test/bin/test6
+f /usr/test/test7	755 ../test/bin/test7
+f /usr/test/test8	755 ../test/bin/test8
+f /usr/test/test9	755 ../test/bin/test9
+f /usr/test/test10	755 ../test/bin/test10
+f /usr/test/test11	4755 ../test/bin/test11
+f /usr/test/test12	755 ../test/bin/test12
+f /usr/test/test13	755 ../test/bin/test13
+f /usr/test/test14	755 ../test/bin/test14
+f /usr/test/test15	755 ../test/bin/test15
+f /usr/test/test16	755 ../test/bin/test16
+f /usr/test/test17	755 ../test/bin/test17
+f /usr/test/test18	755 ../test/bin/test18
+f /usr/test/test19	755 ../test/bin/test19
+f /usr/test/test20	755 ../test/bin/test20
+f /usr/test/test21	755 ../test/bin/test21
+f /usr/test/test22	755 ../test/bin/test22
+f /usr/test/test23	755 ../test/bin/test23
+f /usr/test/test24	755 ../test/bin/test24
+f /usr/test/test25	755 ../test/bin/test25
+f /usr/test/test26	755 ../test/bin/test26
+f /usr/test/test27	755 ../test/bin/test27
+f /usr/test/test28	755 ../test/bin/test28
+f /usr/test/test29	755 ../test/bin/test29
+f /usr/test/test30	755 ../test/bin/test30
+f /usr/test/test31	755 ../test/bin/test31
+f /usr/test/test32	755 ../test/bin/test32
+f /usr/test/test33	4755 ../test/bin/test33
+f /usr/test/test34	755 ../test/bin/test34
+f /usr/test/test35	755 ../test/bin/test35
+f /usr/test/test36	755 ../test/bin/test36
+f /usr/test/test37	755 ../test/bin/test37
+f /usr/test/test38	755 ../test/bin/test38
+f /usr/test/test39	755 ../test/bin/test39
+f /usr/test/test40	755 ../test/bin/test40
+f /usr/test/troscorun	755 ../test/bin/troscorun
+f /usr/test/run	755 ../../test/run
+f /usr/test/sh1	755 ../../test/sh1
+f /usr/test/sh2	755 ../../test/sh2
+f /usr/test/test1.c	644 ../../test/test1.c
+f /usr/test/texecl	755 ../test/bin/texecl

@@ -59,9 +59,12 @@
 #endif
 
 #if (MACHINE == ATARI)
-/* rosco: 48kB of cache out of 1MB; raise this when expansion RAM is fitted. */
-#define NR_BUFS		  48	/* # blocks in the buffer cache (<=1536) */
-#define NR_BUF_HASH	  64	/* size of buf hash table; MUST BE POWER OF 2*/
+/* rosco: 128kB of cache out of 1MB.  With 48 blocks every exec read the
+ * program from the SD card again (the bit banged SPI is slow): test29 and
+ * test33 hit their alarms.  Raise it when expansion RAM is fitted.
+ */
+#define NR_BUFS		 128	/* # blocks in the buffer cache (<=1536) */
+#define NR_BUF_HASH	 128	/* size of buf hash table; MUST BE POWER OF 2*/
 #endif /* MACHINE == ATARI */
 
 /* Defines for kernel configuration. */
@@ -122,11 +125,13 @@
 
 /* rosco_m68k hardware options */
 #define	ROSCO_HZ	  60	/* must equal HZ; DUART timer divisor 115200/HZ */
+#ifndef ROSCO_CONS_BAUD	/* make CONSBAUD=115200 sets it */
 #define	ROSCO_CONS_BAUD	 38400	/* console on DUART channel A; must match the
 				 * terminal and the firmware (the loader
 				 * prints at the firmware's speed).  The
 				 * stock firmware 2.x uses 115200; the
 				 * target board's firmware uses 38400. */
+#endif
 #define	ROSCO_DUART_VEC	0x45	/* DUART IVR, same vector as the firmware */
 #define	ROSCO_KEEP_FW	   1	/* 1: keep the firmware's RAM (0x400-0x2000)
 				 *    so the EFP SD routines stay usable */

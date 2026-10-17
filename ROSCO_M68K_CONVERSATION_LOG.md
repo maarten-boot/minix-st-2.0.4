@@ -428,3 +428,124 @@ Result in `r68k -d`:
 
 Not done in M5: card size, subpartitions, swap, native SPI driver. Not
 committed yet. Not run on hardware.
+
+## Follow-up 12: M6 started
+
+M5 committed as `7317275`.
+
+M6 per spec: tuning, expansion RAM, `rs2s.s` fast path, the `move sr` fix,
+the `src/test` suite; done when the tests pass and the system is usable
+multi-user.
+
+Done so far:
+
+* **Commands:** 77 now (`cmds/Makefile`).
+  * New: getty, login, passwd, su, ps (`sttools/ps.c`), grep, sed, ed,
+    find, od, test, expr, sort, ... plus the tools the shell tests use.
+  * `rm`/`mv`/`ln`/`cpdir`/`clone` are hard links to `cp`, and `[` to
+    `test`.
+  * `grep.c` is compiled with `-Dconst=` (K&R definition against a
+    `const` prototype).
+  * `doscan.c` is built with `-DNOFLOAT` (there is no soft-float runtime).
+* **Test suite build** (`src/rosco/test`): `test1..40`, `t10a`, `t11a`,
+  `t11b`, plus a new `troscorun` that tests the gcc runtime helpers,
+  struct-copy `memcpy`, varargs, and the kernel's `move sr` emulation.
+* **SD root:** `rootfs/proto` plus the new `rootfs/sdproto`, holding all
+  commands and `/usr/test`; `mkfs.py` now takes several spec files.
+* **Clock:** `/etc/rc` sets it from `/etc/stamp`, the image build time
+  (there is no RTC). Without this, test2 failed on a 1970 date.
+* **User:** `ast` added.
+* **Bug: `__divsi3`/`__modsi3`** (`lib/m68kmul.S`). After `move.l d0,a1`
+  the sign test used stale flags (a move to an address register doesn't
+  set them), so a negative dividend with a positive divisor gave a huge
+  quotient. Symptom: the clock read back 2^32/60 seconds off after `date`.
+* **Kernel `prv_emulate()`:** user-mode `move sr,<ea>` (68000 code, ACK
+  binaries' `setjmp`) is emulated for Dn, (An), (An)+, -(An), d16(An),
+  abs.W and abs.L.
+* **Multi-user setup:** getty on the console and on tty00; bring-up
+  accounts without passwords.
+* **Expansion RAM:** the firmware's probe covers contiguous expansion RAM
+  up to 14 MB, and the loader passes it to the kernel, so nothing to
+  change.
+
+First test run, as `ast` via `su` (RAM-limited emulator, slow):
+
+* troscorun, 1, 2, 4, 5, 6: ok;
+* 3: fails only because there is no `LOGNAME`/login session (environment,
+  needs login);
+* 7: the FD_CLOEXEC child re-runs the whole test (being investigated);
+* 8 (signals): very slow or hanging (being investigated).
+
+## Follow-up 13: M6 continued; full-hardware emulator
+
+User:
+> fyi i am building the mame emulator that emulates the whole hardware, i
+> just have to figure out how we can load the data there.
+> there is also a docker image: docker pull solderdemon/rosco-emulator
+> emulator code is at ../rosco-emulator
+> currently building
+
+* **`../rosco-emulator`** (MAME 0.289 cut down to the rosco machines,
+  `rosco_m68k_010`):
+  * full DUART, bit-banged SPI SD card, IDE, bus errors on unmapped
+    addresses;
+  * an SD image goes on `-hard1`;
+  * the serial ports default to 115200.
+* **How to run Minix there:** `make CONSBAUD=115200 sdcard`, then
+  `./rosco rosco_m68k_010 -hard1 rosco_sd.bin -terminal pty`. The firmware
+  boots `ROSCODE1.BIN` from the card's FAT partition, and the kernel takes
+  the root from the Minix partition.
+* **New make option `CONSBAUD`:** the console speed, default 38400 (target
+  board).
+
+Test-suite work:
+
+* **Tests built with `-O0`.** test8 spun forever in
+  `while (x == 0);`: `x` is not `volatile`, and gcc -O2 keeps it in a
+  register, so the store in the signal handler is never seen. The tests
+  were written for ACK, which doesn't do this. Library and commands stay
+  `-O2`; loops that call functions are fine.
+* **The library built files the ACK build doesn't.** My wildcard picked
+  up `posix/_exec.c`/`_execn.c` (old exec versions whose `execl()` passes
+  `&arg2` as argv) and `other/execlp.c`/`v8regerror.c`. The wrong `_execl`
+  won in the archive, so execl lost argv[0]. Symptoms: getty's
+  `execl(login, login, name)` lost the name, and test7's FD_CLOEXEC child
+  re-ran the whole test. Now excluded, matching `makefile.all`.
+* **New test `texecl`:** execl directly and after fork.
+* **Login:** getty starts `/usr/bin/login` (now a link); login checks
+  passwords through `crypt()`, which runs `/usr/lib/pwdauth` (now built,
+  setuid root); the bring-up accounts have no passwords. Login as `ast`
+  works, with LOGNAME/HOME set (test3 needs those).
+* **`move sr` emulation verified by `troscorun`:** the user SR shows IPL 2,
+  because Minix runs user processes at SPL2, which is correct.
+
+## Follow-up 14: M6 test results
+
+User:
+> ok sorry, i added more cpu and mem to your host now that mame is also
+> running there, leas continue
+> the mame build is done, try it there
+> ok, let me know when the tests are done
+
+* **MAME boot:** `make CONSBAUD=115200` card image, firmware loads
+  `ROSCODE1.BIN` from FAT, root on the SD Minix partition, 68010 detected,
+  login works. Scripted runs with the new `tools/mamesession.py`;
+  `make runmame` for interactive use.
+* **First MAME suite run:** 1–19 ok except test10. test10 failed on
+  `cp`'s 31744-byte stack buffer: the stack is now 24kw instead of 16kw.
+* **r68k suite** (before the fixes): 36/40, failing 10, 14, 27 and 28.
+  * test27: `/dev/ram` must be a block device.
+  * test28: libc `system()` reaped other children; now fixed in the rosco
+    `lib/system.c` with `waitpid()`.
+* **Second MAME run:** 37/40, failing 14, 29 and 33.
+  * test29 and test33 hit their alarms: exec from SD was too slow with a
+    48-block buffer cache, now 128 blocks.
+  * test14 builds file names from the pid, and they contain `/` when
+    pid & 31 == 14.
+* **Final MAME run: 39/40, only test14.** test17 printed one diagnostic.
+* **Root fs additions:** `true`/`false` (`commands/scripts/true.sh`) and
+  `arch` (a link to `uname`), all used by the shell tests.
+* **`CONSBAUD`:** a change now rebuilds the kernel objects that depend on
+  it (`kernel/consbaud.stamp`).
+
+User asked to commit M6, then look at test17 and uname.

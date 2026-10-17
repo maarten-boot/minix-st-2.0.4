@@ -29,6 +29,7 @@ _PROTOTYPE( int sd_root_minor, (void)					);
 
 /* roscmain.c */
 _PROTOTYPE( void duartint, (int dummy)					);
+_PROTOTYPE( int prv_emulate, (void)					);
 _PROTOTYPE( void duart_imr_set, (int bits)				);
 _PROTOTYPE( void duart_imr_clr, (int bits)				);
 

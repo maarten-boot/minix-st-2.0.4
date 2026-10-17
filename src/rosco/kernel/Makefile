@@ -33,6 +33,11 @@ CPU	= -mcpu=68010 -mshort
 # what ACK predefines for the 68000 (gcc defines __GNUC__ and __mc68010__)
 DEFS	= -D_EM_WSIZE=2 -D_EM_PSIZE=4 -D_EM_LSIZE=4 -D__m68000=1
 INCS	= -I$(ri) -I$i -I$k
+# console speed, e.g. make CONSBAUD=115200 (default in <minix/config.h>)
+CONSBAUD =
+DEFS	+= $(if $(CONSBAUD),-DROSCO_CONS_BAUD=$(CONSBAUD))
+# rebuild what uses the console speed when CONSBAUD changes
+$(shell echo '$(CONSBAUD)' | cmp -s - consbaud.stamp || echo '$(CONSBAUD)' > consbaud.stamp)
 CFLAGS	= $(CPU) -O2 -std=gnu89 -ffreestanding -fno-builtin -fno-common \
 	  -fno-strict-aliasing -fno-delete-null-pointer-checks \
 	  -Wall -Wno-implicit-int -Wno-return-type -Wno-main \
@@ -110,9 +115,12 @@ u64.o:	../lib/u64.c
 $(filter-out printf.o _sigset.o u64.o m68kmul.o gccmem.o,$(LOBJ)): %.o: $l/ansi/%.c
 	$(CC) $(CFLAGS) -c $<
 
+roscmain.o roscrs232.o:	consbaud.stamp
+
 # too crude, as in makefile.st
 $(OBJ) $(LOBJ):	$(ri)/minix/config.h $(ri)/string.h $(ri)/stdarg.h $k/rosco.h $k/roscaddr.h \
 		$k/roscduart.h $k/proc.h $k/const.h $k/glo.h $k/proto.h
 
 clean:
-	rm -f *.o libk.a clock.c kernel kernel.bin kernel.map ROSCODE1.BIN
+	rm -f *.o libk.a clock.c kernel kernel.bin kernel.map ROSCODE1.BIN \
+		consbaud.stamp

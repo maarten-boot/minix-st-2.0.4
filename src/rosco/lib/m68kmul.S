@@ -79,8 +79,8 @@ __umodsi3:
 | signed: divide the magnitudes; the quotient is negative when the signs
 | differ, the remainder takes the sign of the dividend.
 __divsi3:
-	move.l	4(sp),d0
 	move.l	8(sp),d1
+	move.l	4(sp),d0		| sets N; the movea below does not
 	move.l	d0,a1
 	bpl	1f
 	neg.l	d0
@@ -98,8 +98,8 @@ __divsi3:
 	rts
 
 __modsi3:
-	move.l	4(sp),d0
 	move.l	8(sp),d1
+	move.l	4(sp),d0		| sets N; the movea below does not
 	move.l	d0,a1
 	bpl	1f
 	neg.l	d0

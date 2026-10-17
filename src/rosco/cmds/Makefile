@@ -34,13 +34,20 @@ LDFLAGS	= $(CPU) -nostdlib -T $(TOOLS)/prog.ld -Wl,--emit-relocs
 LIBS	= $L/libc.a
 
 # commands from commands/simple
-SIMPLE	= cat cp date df echo kill ls mkdir mknod mount printroot pwd rmdir \
-	  sleep stty sync touch umount uname wc
-CMDS	= sh $(SIMPLE)
+SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
+	  ed env expr find fsck getty grep head id kill login ls mesg mkdir pwdauth \
+	  mkfifo mkfs mknod mkswap mount od passwd printenv printroot pwd rmdir \
+	  sed sleep sort stat stty su sum sync tail tee test touch tr tty umount \
+	  uname uniq update wc which who whoami write yes \
+	  cdiff comm compress dd fgrep paste prep shar strings tsort uud uue
+CMDS	= sh ps $(SIMPLE)
 
 all:	$(addprefix bin/,$(CMDS))
 
 -include stacks.mk
+# cp (also mv, rm, ln) copies through a 31744 byte buffer on the stack; the
+# ACK build's 16kw only just held it, gcc's frames need more.
+STACK_cp = 24kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -55,10 +62,23 @@ obj/sh/%.o:	$c/sh/%.c $c/sh/sh.h
 	@mkdir -p obj/sh
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# ps reads the kernel, MM and FS tables (sttools/ps.c, 24kw in the ACK build)
+bin/ps:	obj/ps.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/ps.elf $L/crtso.o obj/ps.o $(LIBS)
+	$(MKMINIX) -S 24kw obj/ps.elf $@
+
+obj/ps.o:	../../sttools/ps.c
+	@mkdir -p obj
+	$(CC) $(CFLAGS) -I../../kernel -c -o $@ ../../sttools/ps.c
+
 bin/%:	obj/%.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py stacks.mk
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/$*.elf $L/crtso.o $< $(LIBS)
 	$(MKMINIX) -S $(or $(STACK_$*),4kw) obj/$*.elf $@
+
+# grep.c defines regerror(char *s) against "const char *" in <regexp.h>
+obj/grep.o:	CFLAGS += -Dconst=
 
 obj/%.o:	$c/simple/%.c
 	@mkdir -p obj

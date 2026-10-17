@@ -19,6 +19,7 @@
  *   idle_task:		the idle task
  *   duartint:		DUART interrupt handler
  *   duart_imr_set/clr:	change the DUART interrupt mask
+ *   prv_emulate:	emulate "move sr,<ea>" for 68000 user code
  */
 
 #include "kernel.h"
@@ -269,6 +270,64 @@ PUBLIC void trap()
 
   cause_sig(proc_number(rp), t);
 }
+
+/*===========================================================================*
+ *                              prv_emulate                                  *
+ *===========================================================================*/
+PUBLIC int prv_emulate()
+{
+/* A privilege violation.  On a 68000 "move sr,<ea>" may be used in user
+ * mode, on the 68010 it traps: old Minix-ST binaries (built with ACK) do it
+ * in setjmp().  Do it for them: store the user's status register and step
+ * over the instruction.  Returns 1 if done, 0 for a real violation.
+ * Addressing modes: Dn, (An), (An)+, -(An), d16(An), abs.W, abs.L.
+ */
+  register struct proc *rp = proc_ptr;
+  reg_t *regs = (reg_t *) &rp->p_reg;	/* d0-d7, a0-a6 */
+  reg_t *an;
+  u16_t *pc, op;
+  phys_bytes addr;
+  int mode, reg, len;
+
+  if (rp->p_reg.psw & 0x2000) return(0);	/* supervisor: no excuse */
+  pc = (u16_t *) rp->p_reg.pc;
+  if ((long) pc & 1) return(0);
+  op = pc[0];
+  if ((op & 0xFFC0) != 0x40C0) return(0);	/* not move sr,<ea> */
+  mode = (op >> 3) & 7;
+  reg = op & 7;
+  an = reg == 7 ? &rp->p_reg.sp : &regs[8 + reg];
+  len = 2;
+
+  switch (mode) {
+  case 0:					/* Dn: low word */
+	regs[reg] = (regs[reg] & 0xFFFF0000L) | (rp->p_reg.psw & 0xFFFF);
+	rp->p_reg.pc += len;
+	return(1);
+  case 2:	addr = *an;			break;	/* (An) */
+  case 3:	addr = *an; *an += 2;		break;	/* (An)+ */
+  case 4:	*an -= 2; addr = *an;		break;	/* -(An) */
+  case 5:	addr = *an + (short) pc[1]; len = 4;	break;	/* d16(An) */
+  case 7:
+	if (reg == 0) { addr = (short) pc[1]; len = 4; break; }	/* abs.W */
+	if (reg == 1) {						/* abs.L */
+		addr = ((phys_bytes) pc[1] << 16) | pc[2]; len = 6; break;
+	}
+	return(0);
+  default:
+	return(0);
+  }
+  /* The process must own the word (shadowing: virtual is physical). */
+  if ((addr & 1) || umap(rp, D, (vir_bytes) addr, (vir_bytes) 2) == 0) {
+	if (mode == 3) *an -= 2;		/* undo the side effects */
+	if (mode == 4) *an += 2;
+	return(0);
+  }
+  *(u16_t *) addr = rp->p_reg.psw;
+  rp->p_reg.pc += len;
+  return(1);
+}
+
 
 /*===========================================================================*
  *                              checksp		                             *

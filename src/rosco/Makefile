@@ -9,10 +9,19 @@
 #	make sdcard	make rosco_sd.bin, an SD card image to dd to a card:
 #			p0 FAT16 with ROSCODE1.BIN (the system without root
 #			image, boot/sd/ROSCODE1.BIN), p1 the Minix root
-#			(rootfs/proto, SDROOTBLOCKS blocks).  The kernel takes
+#			(rootfs/proto + rootfs/sdproto: all commands and the
+#			test suite in /usr/test, SDROOTBLOCKS blocks).  The kernel takes
 #			the first Minix partition as root when no root image
 #			came with ROSCODE1.BIN.
 #	make runsd	boot boot/sd/ROSCODE1.BIN in r68k, root on rosco_sd.bin
+#	make runmame	boot rosco_sd.bin in the rosco-emulator (MAME, full
+#			hardware and the real firmware, MAMEDIR), console on
+#			a pty; needs make CONSBAUD=115200 sdcard.  Scripted:
+#			tools/mamesession.py
+#	make CONSBAUD=115200 ...  console speed (default 38400, the target
+#			board's firmware; the stock firmware and the MAME based
+#			rosco-emulator use 115200).  Rebuild the kernel when
+#			changing it: make -C kernel clean
 #	make clean
 #
 # ROSCODE1.BIN is what the rosco firmware loads from the SD card (or over
@@ -22,7 +31,9 @@
 # (xrun); the image tools are host programs (python3, cc).
 
 R68K	= emu/r68k/r68k
-PARTS	= loader kernel lib boot cmds
+MAMEDIR	= ../../../rosco-emulator
+CONSBAUD =
+PARTS	= loader kernel lib boot cmds test
 
 # root file system size in 1k blocks; it lives in RAM next to the system
 ROOTBLOCKS = 400
@@ -33,14 +44,21 @@ SDROOTINODES = 1024
 
 all:	ROSCODE1.BIN
 
+test:
+	$(MAKE) -C test
+
 parts:
 	$(MAKE) -C loader
-	$(MAKE) -C kernel kernel.bin
+	$(MAKE) -C kernel kernel.bin CONSBAUD=$(CONSBAUD)
 	$(MAKE) -C lib
 	$(MAKE) -C boot
 	$(MAKE) -C cmds
 
-boot/root.img:	parts rootfs/proto rootfs/etc/*
+# the build time, for /etc/rc to set the clock (no RTC): MMDDYYhhmmss GMT
+boot/stamp:	FORCE
+	date -u +%m%d%y%H%M%S > $@
+
+boot/root.img:	parts boot/stamp rootfs/proto rootfs/etc/*
 	cd boot && python3 ../tools/mkfs.py -b $(ROOTBLOCKS) root.img ../rootfs/proto
 
 boot/image.bin:	parts tools/mkimage.py
@@ -56,9 +74,9 @@ boot/sd/ROSCODE1.BIN:	boot/image.bin
 boot/sdfat.img:	boot/sd/ROSCODE1.BIN tools/mkfat.py
 	python3 tools/mkfat.py -s $(SDFATSECTORS) -o 2048 $@ boot/sd/ROSCODE1.BIN
 
-boot/sdroot.img:	parts rootfs/proto rootfs/etc/*
+boot/sdroot.img:	parts test boot/stamp rootfs/proto rootfs/sdproto rootfs/etc/*
 	cd boot && python3 ../tools/mkfs.py -b $(SDROOTBLOCKS) -i $(SDROOTINODES) \
-		sdroot.img ../rootfs/proto
+		sdroot.img ../rootfs/proto ../rootfs/sdproto
 
 rosco_sd.bin:	boot/sdfat.img boot/sdroot.img tools/mksd.py
 	python3 tools/mksd.py $@ 06:boot/sdfat.img 81:boot/sdroot.img
@@ -68,12 +86,16 @@ sdcard:	rosco_sd.bin
 runsd:	rosco_sd.bin
 	$(R68K) -d boot/sd/ROSCODE1.BIN
 
+runmame:	rosco_sd.bin
+	cd $(MAMEDIR) && ./rosco rosco_m68k_010 -hard1 $(CURDIR)/rosco_sd.bin \
+		-terminal pty
+
 run:	ROSCODE1.BIN
 	$(R68K) -d ROSCODE1.BIN
 
 clean:
 	for d in $(PARTS); do $(MAKE) -C $$d clean; done
-	rm -rf ROSCODE1.BIN boot/root.img boot/image.bin boot/sd boot/sdfat.img \
+	rm -rf ROSCODE1.BIN boot/stamp boot/root.img boot/image.bin boot/sd boot/sdfat.img \
 		boot/sdroot.img
 
-.PHONY:	all parts sdcard run runsd clean
+.PHONY:	all parts test sdcard run runsd runmame clean FORCE

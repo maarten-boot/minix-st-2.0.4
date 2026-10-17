@@ -6,7 +6,7 @@ c /dev/console	622 4 0
 c /dev/log	222 4 15
 c /dev/tty00	666 4 16
 c /dev/tty	666 5 0
-c /dev/ram	600 1 0
+b /dev/ram	600 1 0
 c /dev/mem	640 1 1
 c /dev/kmem	640 1 2
 c /dev/null	666 1 3
@@ -24,6 +24,7 @@ f /etc/ttytab	644 ../rootfs/etc/ttytab
 f /etc/passwd	644 ../rootfs/etc/passwd
 f /etc/group	644 ../rootfs/etc/group
 f /etc/utmp	644 ../rootfs/etc/utmp
+f /etc/stamp	644 stamp
 
 d /bin 755
 f /bin/sh	755 ../cmds/bin/sh
@@ -32,7 +33,9 @@ f /bin/cp	755 ../cmds/bin/cp
 f /bin/date	755 ../cmds/bin/date
 f /bin/df	755 ../cmds/bin/df
 f /bin/echo	755 ../cmds/bin/echo
+f /bin/getty	755 ../cmds/bin/getty
 f /bin/kill	755 ../cmds/bin/kill
+f /bin/login	755 ../cmds/bin/login
 f /bin/ls	755 ../cmds/bin/ls
 f /bin/mkdir	755 ../cmds/bin/mkdir
 f /bin/mknod	755 ../cmds/bin/mknod
@@ -46,9 +49,18 @@ f /bin/sync	755 ../cmds/bin/sync
 f /bin/touch	755 ../cmds/bin/touch
 f /bin/umount	755 ../cmds/bin/umount
 f /bin/uname	755 ../cmds/bin/uname
+l /bin/arch	/bin/uname
+# true and false: one script that looks at its name
+f /bin/true	755 ../../commands/scripts/true.sh
+l /bin/false	/bin/true
 f /bin/wc	755 ../cmds/bin/wc
 
 d /mnt 755
 d /tmp 1777
 d /usr 755
 d /usr/adm 755
+d /usr/bin 755
+l /usr/bin/login	/bin/login
+d /usr/lib 755
+f /usr/lib/pwdauth	4755 ../cmds/bin/pwdauth
+d /usr/ast 777

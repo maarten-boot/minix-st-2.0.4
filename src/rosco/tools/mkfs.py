@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make a Minix V2 file system image for the rosco_m68k (big endian).
 
-	mkfs.py [-b blocks] [-i inodes] image spec
+	mkfs.py [-b blocks] [-i inodes] image spec [spec ...]
 
 The host's mkfs would write little endian structures; FS on the 68000
 reads the file system "native", big endian.  The layout is that of
@@ -58,10 +58,12 @@ class Inode:
         self.entries = []		# directories: [(name, ino)]
 
 
-def parse(spec):
+def parse(specs):
     inodes = [None, Inode(S_IFDIR | 0o755, 2)]	# inode 1 is "/"
     paths = {"/": 1}
-    for lineno, line in enumerate(open(spec), 1):
+    lines = [(spec, n, l) for spec in specs
+             for n, l in enumerate(open(spec), 1)]
+    for spec, lineno, line in lines:
         w = line.split("#")[0].split()
         if not w:
             continue
@@ -129,9 +131,9 @@ def main():
             inodes_wanted = int(args.pop(0))
         else:
             die("unknown option " + a)
-    if len(args) != 2:
-        die("usage: mkfs.py [-b blocks] [-i inodes] image spec")
-    nodes = parse(args[1])
+    if len(args) < 2:
+        die("usage: mkfs.py [-b blocks] [-i inodes] image spec [spec ...]")
+    nodes = parse(args[1:])
 
     used = sum(nblocks(len(n.data)) for n in nodes[1:])
     ninodes = max(inodes_wanted, len(nodes) - 1 + 32)
