@@ -572,3 +572,32 @@ M6 committed as `67db42e`.
 * **Default card rebuilt** at 38400 baud; checked in r68k.
 
 Not committed yet.
+
+## Follow-up 16: ar, make (and patch, diff)
+
+Committed `5e8e21b` (uname, hostname, crc).
+
+User:
+> commit this first, then port ar and make
+
+* **`cmds/Makefile` builds multi-file programs:**
+  * `aal` (the ACK archiver, 16 files, 64k stack), installed as
+    `/usr/bin/aal` with `ar` as a link;
+  * `make` (8 files, 96k stack);
+  * `patch` (5 files, 32kw stack), needed by sh1's cdiff test;
+  * `diff` (single file), which `cdiff` runs through `popen()`.
+* **Bug:** `aal` said "Out of core". `archiver.c` declares
+  `char *malloc();` without a prototype, so
+  `malloc(512 * sizeof(struct ranlib))` passed a 32-bit `sizeof` (gcc's
+  `size_t`) where malloc reads 16 bits, and malloc got 0. New
+  `include/rosco_sizeof.h` makes `sizeof(...)` an unsigned int as with ACK;
+  it is used via `-include` for aal, make and patch.
+* **Root fs:** `/usr/tmp` (1777, ar's temporary files); `/usr/bin/cp` and
+  `/usr/bin/cat` as links (sh1 archives them).
+* **Result in MAME:**
+  * ar: create, list, extract and verbose list work;
+  * make: builds, sees "up to date", rebuilds after touch;
+  * sh1 ok; sh2 fails only on what needs `cc` (no compiler on the target).
+* **Default card rebuilt** (38400).
+
+Not committed yet.

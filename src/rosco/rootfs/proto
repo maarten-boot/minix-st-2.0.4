@@ -63,5 +63,6 @@ d /usr/adm 755
 d /usr/bin 755
 l /usr/bin/login	/bin/login
 d /usr/lib 755
+d /usr/tmp 1777
 f /usr/lib/pwdauth	4755 ../cmds/bin/pwdauth
 d /usr/ast 777

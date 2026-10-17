@@ -14,6 +14,7 @@ f /bin/compress	755 ../cmds/bin/compress
 f /bin/crc	755 ../cmds/bin/crc
 f /bin/cut	755 ../cmds/bin/cut
 f /bin/dd	755 ../cmds/bin/dd
+f /bin/diff	755 ../cmds/bin/diff
 f /bin/dirname	755 ../cmds/bin/dirname
 f /bin/du	755 ../cmds/bin/du
 f /bin/ed	755 ../cmds/bin/ed
@@ -57,6 +58,15 @@ f /bin/who	755 ../cmds/bin/who
 f /bin/whoami	755 ../cmds/bin/whoami
 f /bin/write	755 ../cmds/bin/write
 f /bin/yes	755 ../cmds/bin/yes
+
+# ar (the ACK archiver aal) and make in /usr/bin
+f /usr/bin/aal	755 ../cmds/bin/aal
+l /usr/bin/ar	/usr/bin/aal
+f /usr/bin/make	755 ../cmds/bin/make
+f /usr/bin/patch	755 ../cmds/bin/patch
+# the shell tests (sh1) archive /usr/bin/cp and /usr/bin/cat
+l /usr/bin/cp	/bin/cp
+l /usr/bin/cat	/bin/cat
 
 # cp.c is cp, mv, rm, ln, cpdir and clone, by its name
 l /bin/mv	/bin/cp
