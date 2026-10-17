@@ -25,6 +25,7 @@ f /etc/passwd	644 ../rootfs/etc/passwd
 f /etc/group	644 ../rootfs/etc/group
 f /etc/utmp	644 ../rootfs/etc/utmp
 f /etc/stamp	644 stamp
+f /etc/hostname.file	644 ../rootfs/etc/hostname.file
 
 d /bin 755
 f /bin/sh	755 ../cmds/bin/sh

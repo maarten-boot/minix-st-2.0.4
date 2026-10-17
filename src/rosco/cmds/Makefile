@@ -39,7 +39,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  mkfifo mkfs mknod mkswap mount od passwd printenv printroot pwd rmdir \
 	  sed sleep sort stat stty su sum sync tail tee test touch tr tty umount \
 	  uname uniq update wc which who whoami write yes \
-	  cdiff comm compress dd fgrep paste prep shar strings tsort uud uue
+	  cdiff comm compress crc dd fgrep paste prep shar strings tsort uud uue
 CMDS	= sh ps $(SIMPLE)
 
 all:	$(addprefix bin/,$(CMDS))

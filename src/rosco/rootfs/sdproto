@@ -11,6 +11,7 @@ f /bin/clr	755 ../cmds/bin/clr
 f /bin/cmp	755 ../cmds/bin/cmp
 f /bin/comm	755 ../cmds/bin/comm
 f /bin/compress	755 ../cmds/bin/compress
+f /bin/crc	755 ../cmds/bin/crc
 f /bin/cut	755 ../cmds/bin/cut
 f /bin/dd	755 ../cmds/bin/dd
 f /bin/dirname	755 ../cmds/bin/dirname

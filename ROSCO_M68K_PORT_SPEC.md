@@ -539,6 +539,7 @@ How this works without touching shared files:
 | `src/rosco/cmds/` | **done (M4)** | Builds the old Minix shell (`commands/sh`) and 20 commands from `commands/simple`, with the ACK build's stack sizes (`tools/stacks.py`) |
 | `src/rosco/tools/` | **done (M4)** | `prog.ld` (program link script), `mkminix.py` (ELF → Minix-ST a.out with GEMDOS relocations), `mkimage.py` (boot image: relocates MM/FS/INIT, fills `sizes[]` behind the magic `rosSIZES`, patches INIT's origin into FS), `mkfs.py` (big endian Minix V2 file system from a proto file), `stacks.py`; M5: `mkfat.py` (FAT16 with ROSCODE1.BIN for the firmware), `mksd.py` (SD card image with an MBR, typed partitions) |
 | `src/rosco/test/` | **done (M6)** | Builds the Minix test suite (`src/test`, at `-O0`: the tests busy-wait on non-volatile flags set by signal handlers), plus `troscorun` (gcc runtime helpers, struct copies, varargs, `move sr` emulation) and `texecl` (execl directly and after fork) |
+| `src/rosco/lib/_uname.c` | **done (M6)** | `uname`: machine `rosco_m68k` (arch stays `m68000`); node name from `/etc/hostname.file` (`rosco`) |
 | `src/rosco/lib/system.c` | **done (M6)** | `system()` waits for its own child with `waitpid()`; the original reaped any child with `wait()` (test28) |
 | `src/rosco/tools/mamesession.py` | **done (M6)** | Scripted console sessions in the rosco-emulator (MAME): console on a TCP socket, `expect`/`send` script, log |
 | `src/rosco/rootfs/` | **done (M4)** | Root file system: `proto` (devices, /etc, /bin, /tmp, /usr), `etc/rc`, `etc/ttytab` (console runs `sh` directly, no getty/login yet), `passwd`, `group`, `utmp` |
@@ -734,7 +735,13 @@ Test suite, run as `ast` after login:
 * final full run: **39 passed, 1 failed** (test14, a test artifact, see
   below; it passed in the run before);
 * `troscorun` and `texecl` pass;
-* test17 passes but prints "stat: cannot stat f7" (to be looked at).
+* test17 once printed "stat: cannot stat f7" and "creat: incorrect mode"
+  (a just-created file not found by name) in the full run. It did not
+  come back in 12 more runs (test17 alone ×5; tests 14–17 ×3 on the card
+  state the suite left behind). Ruled out: the firmware's block cache
+  (`BBSD_read_block` always reads the card), the SPI pins (atomic OPR
+  set/reset), task preemption, the driver's sector loop. If it comes back,
+  log directory block reads and writes in `roscdisk.c`.
 
 Fixes found by the tests:
 
@@ -761,7 +768,6 @@ Known and not fixed:
   when pid & 31 == 14, so it fails at random.
 * **Shell tests:** `sh2` needs `make`, `ar` and `cc`, which are not built
   (no compiler on the target).
-* **`uname`** says "atari" (compile-time constant in libc).
 * **`rs2s.s` fast path:** not needed; the C interrupt handlers are in use.
 * **Expansion RAM:** contiguous expansion is already used via the
   firmware's RAM size (up to 14 MB); untested.

@@ -549,3 +549,26 @@ User:
   it (`kernel/consbaud.stamp`).
 
 User asked to commit M6, then look at test17 and uname.
+
+## Follow-up 15: test17 and uname
+
+M6 committed as `67db42e`.
+
+* **test17's "cannot stat f7":**
+  * Seen once in the full MAME run; not reproduced in 12 more runs
+    (test17 ×5, and tests 14–17 ×3 on the card state after the suite).
+  * Ruled out: the firmware SD block cache (`BBSD_read_block` always
+    reads the card), the SPI pins (atomic OPR set/reset), task
+    preemption, the driver's sector loop.
+  * Recorded as an intermittent anomaly in the spec.
+* **uname:** new `src/rosco/lib/_uname.c` (replaces
+  `lib/posix/_uname.c` in the rosco libc). Machine `rosco_m68k`; arch
+  stays `m68000`, because scripts use it to pick the CPU family. New
+  `/etc/hostname.file` (`rosco`). Result: `uname -a` gives
+  `Minix rosco 2 0.4 rosco_m68k`, and login shows `rosco login:`.
+* **Shell tests:** with `true`/`false`/`arch` added, the `[` errors are
+  gone; `crc` added. `sh1`/`sh2` still need `ar`, `make`, `cc` (no
+  compiler on the target).
+* **Default card rebuilt** at 38400 baud; checked in r68k.
+
+Not committed yet.

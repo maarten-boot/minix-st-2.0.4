@@ -43,15 +43,17 @@ CDIRS	= ansi posix other stdio
 # Not in the ACK build's makefile.all: posix/_exec.c and _execn.c are old
 # versions of the exec family (their execl() passes the wrong argv, and
 # whichever _execl comes first in the archive wins), other/execlp.c
-# duplicates posix/_execlp.c.  regexp.c and system.c are built from ./
+# duplicates posix/_execlp.c.  regexp.c, system.c and _uname.c are built
+# from ./
 EXCLUDE	= $l/other/regexp.c $l/posix/_exec.c $l/posix/_execn.c \
-	  $l/other/execlp.c $l/other/v8regerror.c $l/ansi/system.c
+	  $l/other/execlp.c $l/other/v8regerror.c $l/ansi/system.c \
+	  $l/posix/_uname.c
 CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
 # u64.c replaces lib/m68000/misc/u64.c (cmp64u() fixed).
 # fphook/fltpr.c and strtod.c: printf and strtod without floating point,
 # as the ACK libc without the float library
 COBJ	= $(patsubst $l/%.c,obj/%.o,$(CSRC)) obj/u64.o \
-	  obj/m68000/rts/__intsize.o obj/regexp.o obj/system.o \
+	  obj/m68000/rts/__intsize.o obj/regexp.o obj/system.o obj/_uname.o \
 	  obj/fphook/fltpr.o obj/fphook/strtod.o
 
 # GNU replacements of lib/m68000/rts
