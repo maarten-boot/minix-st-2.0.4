@@ -213,3 +213,46 @@ User:
   user code (`stmpx.s` and `rs2s.s` run in supervisor mode). No C or other
   library sources were checked yet.
 * Spec updated: sections 3, 4, 5.1, 5.5, 6.2, the new 6.3 and the 9 file plan.
+
+## Follow-up 6
+
+Committed the rosco files as `b2fd80e` (the user's host-build Makefile edits
+and `bin/aal` were left out). M2 started: reading the machine layer
+(`stmpx.s`, `klib68k.s`, `stmain.c`, `stcon.c`, `proto.h`, `clock.c`,
+`tty.c`, `table.c`).
+
+User:
+> intermetzzo i made all branches of the rosco-m68k available so you can
+> switch to the proper version
+
+Compared releases 2.1, 2.2, 2.4 and 2.42 and develop. All agree on what the
+port depends on: KRAM at 0x1800, load address 0x40000, `/ROSCODE1.BIN`, IVR
+0x45, SDB/EFP addresses, DUART at 0xF00001. Switched `../rosco_m68k` to
+`release/version-2.42`, the latest release. Spec section 6.3 updated.
+
+## Follow-up 7: M2
+
+Wrote the rosco machine layer and its GNU build (spec section 9 file plan):
+
+* `src/kernel/`: `roscompx.S`, `roscklib.S`, `roscmain.c`, `roscons.c`,
+  `roscstub.c`, `rosco.h`;
+* `src/rosco/kernel/`: `Makefile`, `kernel.ld`, and the `staddr.h`/`stmfp.h`
+  stand-ins for the build-time copy of `clock.c`;
+* `src/rosco/include/stdarg.h`.
+
+Config changes: `_WORD_SIZE` is also defined for gcc, and
+`OPTIMIZE_FOR_SPEED` is now 0 because of an out-of-bounds read in `tty.c`
+with `NR_PTYS 0`. `roscaddr.h` constants now work from assembler too.
+
+Result in `r68k -d`:
+
+* the banner prints;
+* the 60 Hz clock is confirmed (uptime 120 → 240 ticks over 2 s, from the
+  PF1 debug dump);
+* console input is interrupt-driven and echoed;
+* all tasks idle in `receive`.
+
+The CPU type is taken from the firmware's `SDB_CPUINFO`. r68k reports a
+68020 because of an emulator quirk.
+
+Not committed yet. Not run on hardware.

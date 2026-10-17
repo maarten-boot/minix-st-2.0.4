@@ -414,8 +414,13 @@ Limits to keep in mind:
   The DUART patch applies cleanly (`git apply --check`). Point the script at
   it with `R68K_URL=$(realpath ../r68k) src/rosco/emu/build-r68k.sh` (run
   from the repo top) instead of cloning from GitHub.
-* `../rosco_m68k`: branch `develop` at `ec229f9` (2025-06-07). The earlier
-  analysis used `release/version-2.4`. Checked on develop:
+* `../rosco_m68k`: all branches are available. The checkout is now on
+  **`release/version-2.42`** (`60ab3a8`, 2024-01-07), the latest firmware
+  release. Releases 2.1, 2.2, 2.4 and 2.42 and `develop` all agree on what
+  the port depends on: firmware RAM data/bss at `kram = 0x1800`, load address
+  `0x40000`, `/ROSCODE1.BIN`, IVR `0x45`, SDB/EFP addresses, and DUART at
+  `0xF00001` on the r2 mainboard. So it does not matter which 2.x firmware
+  the board runs. Notes from `develop` (`ec229f9`):
   * unchanged: DUART at `0xF00001`, IVR `0x45`, SDB/EFP addresses,
     `KERNEL_LOAD_ADDRESS` `0x40000`, `/ROSCODE1.BIN`;
   * new: stage 2 also loads `/ROSCODE1.ELF`, but it refuses segments below
@@ -506,7 +511,7 @@ How this works without touching shared files:
 
 | File | Status | Contents |
 |---|---|---|
-| `src/rosco/include/minix/config.h` | **done** | Config override (48 buffers, 16 procs, 1 console + 1 RS line, no PTY/printer/ACSI/floppy/net/swap, `ATARI_TYPE ROSCO`, `ROSCO_HZ 60`, `ROSCO_KEEP_FW 1`: keep 0x400–0x2000). Checked with host `cpp` |
+| `src/rosco/include/minix/config.h` | **done** | Config override (48 buffers, 16 procs, 1 console + 1 RS line, no PTY/printer/ACSI/floppy/net/swap, `ATARI_TYPE ROSCO`, `ROSCO_HZ 60`, `ROSCO_KEEP_FW 1`: keep 0x400–0x2000, `OPTIMIZE_FOR_SPEED 0`, `_WORD_SIZE` also for gcc). Checked with host `cpp` |
 | `src/kernel/roscaddr.h` | **done** | Address map, firmware SDB/EFP addresses, ROM reset vectors, load address |
 | `src/kernel/roscduart.h` | **done** | XR68C681 registers (odd bytes at 0xF00001), SR/ISR/CR/MR/ACR bits, CSR codes, timer macro, OP/IP pins (SPI pins flagged). Host syntax check passed. Items marked "verify" need the Exar datasheet or schematic |
 | `src/rosco/xrun` | **done** | Runs a command in the `roscopeco/rosco_m68k` toolchain container |
@@ -515,16 +520,51 @@ How this works without touching shared files:
 | `src/rosco/loader/loader.S`, `loader.ld` | **done (M1 passes in r68k -d; not yet run on hardware)** | `ROSCODE1.BIN` stub at 0x40000. Masks the DUART, reads `SDB_MEMSIZE`, moves its copier above the file, copies the payload to `load_addr` while skipping the keep range (default 0x400–0x2000), sets VBR=0, enters the payload with d0='ROSC', d1=memsize, a0/d2=extra image. Disassembly checked |
 | `src/rosco/loader/hello.S`, `payload.ld` | **done (M1 passes in r68k -d; not yet run on hardware)** | Test payload linked at 0, laid out like the kernel. Code starts at 0x2000. Prints the hand-over values, checks that the SDB magic survived, runs the DUART timer at 60 Hz on vector 0x45 (one '.' per second), echoes input, reports unexpected exceptions, and `q` reboots via the ROM vector |
 | `src/rosco/loader/mkrosco.c`, `Makefile` | **done** | Host tool that joins stub + payload (+ extra image) and fills the header. `make` builds `ROSCODE1.BIN` (9152 bytes); `make run` runs it in r68k with the DUART model |
-| `src/kernel/roscompx.S` | todo (M2) | GNU syntax, from `stmpx.s`: new vector table (DUART at IVR `0x45`), no ST detection, `_kreboot` via `0xE00004`, `move sr` emulation in `prvtrp`, VBR=0, entry with the loader hand-over |
-| `src/kernel/roscklib.S` | todo (M2) | GNU-syntax copy of `klib68k.s`, plus the 32-bit mul/div helpers for `-mshort` |
-| `src/rosco/tools/` | todo (M2/M4) | ELF → Minix-ST executable converter (with relocations); boot-image builder derived from `sttools/build.c` |
-| `src/kernel/roscmain.c` | todo (M2) | From `stmain.c`: `main`, `initrosco()` (DUART + timer setup, kernel env), memory size from the loader, `duartint()` dispatcher, `trap`/`panic`/`wreboot`/`getenv`, fake tasks |
-| `src/kernel/roscons.c` | todo (M2/M3) | Console on DUART A: `scr_init`, `kb_init`, `out_char`, `console`, `flush`, `putk` (polled), `func_key`, `dump`, plus stubs `kb_timer`, `vdu_loadfont`, `vduswitch` |
-| `src/kernel/roscrs232.c` | todo (M3) | Replaces `rs232.c`: `rs_init` and friends for DUART B, `siaint`-equivalent called from `duartint` |
-| `src/kernel/roscstub.c` | todo (M2) | `fd_timer` and any other empty hooks |
-| `src/kernel/makefile.rosco` | todo (M2) | GNU build of the kernel through `xrun`: `roscompx.o roscklib.o rosc*.o` + shared `proc system stshadow tty clock memory table dmp misc driver drvlib` |
+| `src/kernel/roscompx.S` | **done (M2)** | GNU port of `stmpx.s`: vector table (DUART at IVR `0x45`, all autovectors → `rupt`), firmware gap 0x400–0x2000, bss clear, loader hand-over (`rosco_memsize`, `rosco_extra`), CPU type from `SDB_CPUINFO` (probe as fallback), unchanged `genint`/`save`/`restart`/`sys`, `kreboot` via `0xE00004`, `get_mem_size` from the loader. Still todo: `move sr` emulation in `prvtrp` (M4, for ACK binaries) |
+| `src/kernel/roscklib.S` | **done (M2)** | `klib68k.s` in GNU syntax, plus `__mulsi3`/`__udivsi3`/`__divsi3`/`__umodsi3`/`__modsi3`, the `_send`/`_receive`/`_sendrec` trap stubs and the `sig*set` aliases |
+| `src/kernel/roscmain.c` | **done (M2)** | From `stmain.c`: `main` (servers with size 0 are not started: kernel-only image), `initrosco()` (DUART A as the firmware sets it, channel B off, timer at HZ, IVR, kernel env), `duartint()`, IMR shadow, `trap`/`panic`/`wreboot`/`getenv`, fake tasks. Compile-time check of the proc offsets used by the assembler |
+| `src/kernel/roscons.c` | **done (M2)** | Console on DUART A: polled output with `out_process`, interrupt-driven input buffer, `putk`, debug keys PF1–PF3 (process table with uptime, memory map, registers), stubs for `kb_timer`, `vdu_loadfont`, `vduswitch`, `func_key` |
+| `src/kernel/rosco.h` | **done (M2)** | Prototypes and variables of the rosco machine layer |
+| `src/kernel/roscstub.c` | **done (M2)** | `fd_timer`, a temporary `rs_init` (DUART B discards output until M3), `errno`, the dummy MFP for `clock.c` |
+| `src/kernel/roscrs232.c` | todo (M3) | Replaces `rs232.c`: `rs_init` and friends for DUART B, called from `duartint` |
+| `src/rosco/kernel/Makefile`, `kernel.ld` | **done (M2)** | GNU build in `src/rosco/kernel/` through `xrun`: rosco files + shared `proc system stshadow tty clock memory table dmp misc pty driver drvlib` + a small `libk.a` (kprintf, `_sigset`, u64, string functions). Links at 0, data on a click boundary, `sizes[0..1]` from the linker. `make` gives `kernel`, `kernel.bin` and `ROSCODE1.BIN` (loader + kernel); `make run` boots it in `r68k -d` |
+| `src/rosco/kernel/staddr.h`, `stmfp.h` | **done (M2)** | Stand-ins found by the build-time copy of `clock.c`, so its MFP timer code writes a dummy in RAM |
+| `src/rosco/include/stdarg.h` | **done (M2)** | gcc builtins; the `__GNUC__` branch of `include/stdarg.h` is for gcc 1/2 |
+| `src/rosco/tools/` | todo (M4) | ELF → Minix-ST executable converter (with relocations); image builder for kernel + mm + fs + init (fills `sizes[2..]`, found behind the magic `SIZE`) |
 | `src/mm/makefile.rosco`, `src/fs/makefile.rosco` | todo (M4) | Same as `makefile.st`, with the include override |
-| `src/rosco/loader/` | todo (M1) | Loader stub for `ROSCODE1.BIN` plus an image builder derived from `sttools/build.c` |
+
+### M2 result (2026-10-17, r68k -d)
+
+```
+Minix rosco loader
+rosco_m68k: 68020, 1024kB RAM, kernel 56kB
+Minix 2.0.4  Copyright 2001 Prentice-Hall, Inc.
+
+hi                                   <- typed, echoed by the tty layer
+uptime 120 ticks                     <- PF1, then PF1 again 2 s later:
+...                                     uptime 240, IDLE user time 240
+```
+
+* The kernel is 0x9700 bytes of text plus 0x49 clicks of data/bss (56 KB).
+* All kernel tasks start and wait in `receive(ANY)`. MM, FS and INIT are
+  not in the image yet, so they are not started.
+* The clock runs at 60 Hz from the DUART timer (120 ticks in 2 s).
+* Console input is interrupt-driven and echoed.
+
+Findings while doing M2:
+
+* **`tty.c` bug with `NR_PTYS 0`:** with `OPTIMIZE_FOR_SPEED`, `tty_init`
+  reads `tty_tbl_ptr[NR_CONS+NR_RS_LINES]`, which is one past the end of
+  that array. The ST config never hit this because it has PTYs. The rosco
+  config turns `OPTIMIZE_FOR_SPEED` off. This also affects mm/fs, which is
+  slower but correct.
+* **Emulator CPU type:** r68k's Musashi accepts 68020 opcodes in 68010
+  mode, so both its ROM and the kernel see a "68020". The real firmware
+  identifies a 68010 correctly. The kernel behaves the same either way:
+  format-0 frames, and the cache ops are harmless there.
+* ACK predefines that the headers rely on are passed as `-D` flags:
+  `_EM_WSIZE=2`, `_EM_PSIZE=4`, `_EM_LSIZE=4`, `__m68000`.
+* Without MM/FS the kernel needs only a few library routines (`libk.a`).
 
 ## 10. Immediate next actions (no changes to existing files required)
 

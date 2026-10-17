@@ -4,3 +4,7 @@
 *.BIN
 loader/mkrosco
 emu/r68k/
+kernel/kernel
+kernel/kernel.map
+kernel/clock.c
+kernel/libk.a

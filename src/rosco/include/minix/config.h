@@ -32,8 +32,10 @@
 #define AMIGA             61	/* Commodore Amiga (68000) */
 #define MACINTOSH         62	/* Apple Macintosh (68000) */
 
-/* Word size in bytes (a constant equal to sizeof(int)). */
-#if __ACK__
+/* Word size in bytes (a constant equal to sizeof(int)).  The rosco build
+ * uses gcc -mshort, which passes -D_EM_WSIZE=2 etc. like ACK predefines them.
+ */
+#if __ACK__ || __GNUC__
 #define _WORD_SIZE	_EM_WSIZE
 #endif
 
@@ -176,8 +178,11 @@
 
 #endif /* MACHINE == ATARI */
 
-/* use arrays of pointers to avoid table address calculations at runtime */
-#define	OPTIMIZE_FOR_SPEED 1
+/* use arrays of pointers to avoid table address calculations at runtime
+ * rosco: off.  With NR_PTYS 0, tty.c reads tty_tbl_ptr[NR_CONS+NR_RS_LINES],
+ * one past the end of that array, to find the end of the rs232 lines.
+ */
+#define	OPTIMIZE_FOR_SPEED 0
 
 /* Include or exclude backwards compatibility code. */
 #define ENABLE_BINCOMPAT   1	/* for binaries using obsolete calls */
