@@ -1,7 +1,9 @@
 # Makefile for lib/ack/libm2.
+# modula2
 
 M2	= m2
-CFLAGS	= -O -I../h -wo
+#CFLAGS	= -O -I../h -wo
+CFLAGS	= $(XCFLAGS) -O -I../h
 CC1	= $(CC) $(CFLAGS) -c
 M2FLAGS	= -O -ws -n
 M21	= $(M2) $(M2FLAGS) -c

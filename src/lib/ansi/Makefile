@@ -19,7 +19,7 @@
 # Many of the string functions in this directory are not used, because the
 # have fast assembly implementations.
 
-CFLAGS	= -O -D_MINIX -D_POSIX_SOURCE
+CFLAGS	= $(XCFLAGS) -O -D_MINIX -D_POSIX_SOURCE
 CC1	= $(CC) $(CFLAGS) -c
 
 LIBRARY	= ../libc.a
@@ -92,7 +92,7 @@ OBJECTS	= \
 	$(LIBRARY)(wctomb.o) \
 
 $(LIBRARY):	$(OBJECTS)
-	aal cr $@ *.o
+	ar cr $@ *.o
 	rm *.o
 
 $(LIBRARY)(abort.o):	abort.c

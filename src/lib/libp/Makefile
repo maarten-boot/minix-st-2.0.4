@@ -1,6 +1,7 @@
 # Makefile for lib/libp.
 
-CFLAGS	= -O -I../h -wo
+CFLAGS	= $(XCFLAGS) -O -I../h
+# CFLAGS	= -O -I../h -wo
 CC1	= $(CC) $(CFLAGS) -c
 
 LIBRARY	= ../libp.a

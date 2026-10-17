@@ -14,7 +14,7 @@ mk = mk
 # cfg = gnu-ack-16
 
 # SOZOBON front, ACK back, 16 bit, Register A2 nicht temporaer
-cfg = soz-ack-16
+# cfg = soz-ack-16
 
 # SOZOBON front, ACK back, 16 bit, Register A2 temporaer
 # cfg = soz-ack-162
@@ -27,4 +27,3 @@ cfg = soz-ack-16
 
 # CC68 front, ACK back, 32 bit
 # cfg = c68-ack-32
-

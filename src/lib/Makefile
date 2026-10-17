@@ -16,22 +16,22 @@ all:
 	cd curses && $(MAKE)
 	cd dummy && $(MAKE)
 	cd editline && $(MAKE)
-	cd end && $(MAKE)
+	# cd end && $(MAKE)
 	cd float && $(MAKE)
 	cd fphook && $(MAKE)
 	cd ip && $(MAKE)
-	cd libm2 && $(MAKE)
+	# cd libm2 && $(MAKE)
 	cd libp && $(MAKE)
 	cd liby && $(MAKE)
 	cd math && $(MAKE)
 	cd other && $(MAKE)
 	cd posix && $(MAKE)
-	test `arch` = i86 -o `arch` = m68000 || { cd regex && $(MAKE); }
-	test `arch` = m68000 || { cd rts && $(MAKE); }
+	#test `arch` = i86 -o `arch` = m68000 || { cd regex && $(MAKE); }
+	#test `arch` = m68000 || { cd rts && $(MAKE); }
 	cd stdio && $(MAKE)
 	cd syscall && $(MAKE)
 	cd syslib && $(MAKE)
-	cd `arch` && $(MAKE)
+	cd m68000 && $(MAKE)
 
 install:	all
 	$(MAKE) install_`arch`

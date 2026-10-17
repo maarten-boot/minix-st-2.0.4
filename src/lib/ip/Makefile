@@ -2,7 +2,7 @@
 #
 # Note: The oneC_sum.c file is not used if there is an assembly equivalent.
 
-CFLAGS	= -O -D_MINIX -D_POSIX_SOURCE -I. -DNDEBUG
+CFLAGS	= $(XCFLAGS) -O -D_MINIX -D_POSIX_SOURCE -I. -DNDEBUG
 CC1	= $(CC) $(CFLAGS) -c
 MAKE	= exec make -$(MAKEFLAGS)
 

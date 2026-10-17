@@ -1,6 +1,11 @@
 # Master Makefile to compile everything in /usr/src except the kernel.
-
+SHELL=/bin/bash
 MAKE	= exec make -$(MAKEFLAGS)
+
+XCFLAGS= -I  $(shell pwd)/../include -L $(shell pwd)/../include
+export XCFLAGS
+CPPFLAGS = -I  $(shell pwd)/../include
+export CPPFLAGS
 
 usage:
 	@echo "Usage:" >&2

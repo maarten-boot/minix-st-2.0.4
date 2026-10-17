@@ -29,7 +29,7 @@ OBJECTS	= \
 	$(LIBRARY)(fef8.o) \
 	$(LIBRARY)(fif4.o) \
 	$(LIBRARY)(fif8.o) \
-	$(LIBRARY)(fptrp.o) \
+	# $(LIBRARY)(fptrp.o) \
 	$(LIBRARY)(mlf4.o) \
 	$(LIBRARY)(mlf8.o) \
 	$(LIBRARY)(mul_ext.o) \

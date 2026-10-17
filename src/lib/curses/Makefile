@@ -1,6 +1,6 @@
 # Makefile for lib/curses.
 
-CFLAGS	= -O -D_MINIX -D_POSIX_SOURCE
+CFLAGS	= $(XCFLAGS) -O -D_MINIX -D_POSIX_SOURCE
 CC1	= $(CC) $(CFLAGS) -c
 
 LIBRARY	= ../libcurses.a
@@ -47,7 +47,7 @@ OBJECTS	= \
 	$(LIBRARY)(wintouch.o) \
 
 $(LIBRARY):	$(OBJECTS)
-	aal cr $@ *.o
+	ar cr $@ *.o
 	rm *.o
 
 $(LIBRARY)(beep.o):	beep.c
