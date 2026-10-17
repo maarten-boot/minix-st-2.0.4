@@ -103,8 +103,9 @@ m68kmul.o:	../lib/m68kmul.S
 _sigset.o:	$l/posix/_sigset.c
 	$(CC) $(CFLAGS) -I$l -c $l/posix/_sigset.c
 
-u64.o:	$l/m68000/misc/u64.c
-	$(CC) $(CFLAGS) -c $l/m68000/misc/u64.c
+# ../lib/u64.c: lib/m68000/misc/u64.c with cmp64u() fixed
+u64.o:	../lib/u64.c
+	$(CC) $(CFLAGS) -c ../lib/u64.c
 
 $(filter-out printf.o _sigset.o u64.o m68kmul.o gccmem.o,$(LOBJ)): %.o: $l/ansi/%.c
 	$(CC) $(CFLAGS) -c $<

@@ -12,6 +12,11 @@ c /dev/kmem	640 1 2
 c /dev/null	666 1 3
 c /dev/zero	644 1 4
 b /dev/c0d0	600 3 0
+b /dev/c0d0p0	600 3 1
+b /dev/c0d0p1	600 3 2
+b /dev/c0d0p2	600 3 3
+b /dev/c0d0p3	600 3 4
+b /dev/c0d1	600 3 5
 
 d /etc 755
 f /etc/rc	644 ../rootfs/etc/rc
@@ -43,6 +48,7 @@ f /bin/umount	755 ../cmds/bin/umount
 f /bin/uname	755 ../cmds/bin/uname
 f /bin/wc	755 ../cmds/bin/wc
 
+d /mnt 755
 d /tmp 1777
 d /usr 755
 d /usr/adm 755

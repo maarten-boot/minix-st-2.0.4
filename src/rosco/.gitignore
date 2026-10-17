@@ -26,3 +26,6 @@ boot/image.bin
 boot/build.log
 lib/build.log
 cmds/build.log
+rosco_sd.bin
+ROSCODE1.BIN
+boot/sd/

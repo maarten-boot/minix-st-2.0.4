@@ -378,3 +378,53 @@ Result in `r68k -d`:
   `date` (1970, no RTC), `sleep`, `cd`/`pwd`.
 
 Not committed yet. Not run on hardware.
+
+## Follow-up 11: M5, SD card storage and root on SD (r68k)
+
+M4 committed as `b56e2af`.
+
+New and changed:
+
+* **Kernel:**
+  * `roscdisk.c` reworked: `c0d0` is the SD card through the firmware
+    EFP SD routines (whole card plus the four MBR primary partitions,
+    parsed in the driver); `c0d1` (minor 5) is the RAM root image;
+    `sd_root_minor()` finds the first Minix partition;
+  * `roscklib.S`: `sd_efp_init/read/write` call the firmware with its
+    register convention;
+  * `roscmain.c`: `rootdev` is `c0d1` with an image, else the SD
+    partition.
+* **`src/rosco/lib/u64.c`:** replaces `lib/m68000/misc/u64.c`. Its
+  `cmp64u()` was wrong (operator precedence), and `mul64u()` was
+  truncated.
+* **Tools:** `tools/mkfat.py` (FAT16 writer), and `tools/mksd.py` now has
+  typed partitions.
+* **Makefile:** `make sdcard` builds `rosco_sd.bin` (p0 FAT with
+  `ROSCODE1.BIN`, p1 Minix root); `make runsd` boots with the root on SD.
+* **Root filesystem:** device nodes `c0d0p0..p3` and `c0d1`, and `/mnt`.
+* **Emulator patch:**
+  * the ROM memory probe no longer overwrites the loaded program;
+  * debugging aids: SIGUSR1 register/disassembly dump with a RAM
+    snapshot, `R68K_TRACE`, `R68K_WATCH`, `R68K_DUMPAT`.
+
+Debugging story:
+
+* After adding device nodes, boot crashed with the kernel overwritten.
+* Bisecting showed the inode count (filesystem layout) and the kernel size
+  were only triggers.
+* The new emulator tools showed `/bin/sh`'s `getc` recursing forever and
+  its stack running over the kernel.
+* That was caused by four bytes of `sh` reading `0x12345678`: written into
+  the loaded file by r68k's ROM RAM probe at 0x80000. This is an emulator
+  artifact.
+* Separately, `mount /dev/c0d0p0` failed with EINVAL because of the
+  `cmp64u` bug.
+
+Result in `r68k -d`:
+
+* mount, read, write, umount and remount of SD partitions work, and data
+  persists;
+* boot with the root on SD works, with 816 KB free for processes.
+
+Not done in M5: card size, subpartitions, swap, native SPI driver. Not
+committed yet. Not run on hardware.

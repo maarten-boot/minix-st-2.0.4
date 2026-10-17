@@ -516,7 +516,7 @@ How this works without touching shared files:
 | `src/kernel/roscduart.h` | **done** | XR68C681 registers (odd bytes at 0xF00001), SR/ISR/CR/MR/ACR bits, CSR codes, timer macro, OP/IP pins (SPI pins flagged). Host syntax check passed. Items marked "verify" need the Exar datasheet or schematic |
 | `src/rosco/xrun` | **done** | Runs a command in the `roscopeco/rosco_m68k` toolchain container |
 | `src/rosco/.gitignore` | **done** | Ignores the build outputs |
-| `src/rosco/emu/r68k-duart.patch`, `build-r68k.sh` | **done** | XR68C681 model for the r68k emulator (`-d`); the script clones r68k at a fixed commit, patches and builds it (section 6.2) |
+| `src/rosco/emu/r68k-duart.patch`, `build-r68k.sh` | **done (M5 update)** | XR68C681 model for the r68k emulator (`-d`); the script clones r68k at a fixed commit, patches and builds it (section 6.2) |
 | `src/rosco/loader/loader.S`, `loader.ld` | **done (M1 passes in r68k -d; not yet run on hardware)** | `ROSCODE1.BIN` stub at 0x40000. Masks the DUART, reads `SDB_MEMSIZE`, moves its copier above the file, copies the payload to `load_addr` while skipping the keep range (default 0x400–0x2000), sets VBR=0, enters the payload with d0='ROSC', d1=memsize, a0/d2=extra image. Disassembly checked |
 | `src/rosco/loader/hello.S`, `payload.ld` | **done (M1 passes in r68k -d; not yet run on hardware)** | Test payload linked at 0, laid out like the kernel. Code starts at 0x2000. Prints the hand-over values, checks that the SDB magic survived, runs the DUART timer at 60 Hz on vector 0x45 (one '.' per second), echoes input, reports unexpected exceptions, and `q` reboots via the ROM vector |
 | `src/rosco/loader/mkrosco.c`, `Makefile` | **done** | Host tool that joins stub + payload (+ extra image) and fills the header. `make` builds `ROSCODE1.BIN` (9152 bytes); `make run` runs it in r68k with the DUART model |
@@ -525,18 +525,19 @@ How this works without touching shared files:
 | `src/kernel/roscmain.c` | **done (M2)** | From `stmain.c`: `main` (servers with size 0 are not started: kernel-only image), `initrosco()` (DUART A as the firmware sets it, channel B off, timer at HZ, IVR, kernel env), `duartint()`, IMR shadow, `trap`/`panic`/`wreboot`/`getenv`, fake tasks. Compile-time check of the proc offsets used by the assembler |
 | `src/kernel/roscons.c` | **done (M3)** | Console glue: `scr_init` hands channel A to `roscrs232.c`; polled `putk` (TxRDY test and write under `lock()`); debug keys PF1–PF3 (process table with uptime, memory map, registers) and PF4 (test line on `/dev/tty00`); stubs for `kb_timer`, `vdu_loadfont`, `vduswitch`, `func_key` |
 | `src/kernel/rosco.h` | **done (M2)** | Prototypes and variables of the rosco machine layer |
-| `src/kernel/roscdisk.c` | **done (M4)** | Disk driver on `driver.c`, registered as `acsi_task` (`NR_ACSI_DRIVES 1`, `c0=ACSI`): minor 0 is the root image the loader appends, kept in RAM (writes are lost on reset). SD card to follow in M5 |
+| `src/kernel/roscdisk.c` | **done (M5)** | Disk driver on `driver.c`, registered as `acsi_task` (`NR_ACSI_DRIVES 1`, `c0=ACSI`). `c0d0` (minors 0–4): the SD card through the firmware's EFP SD routines (`sd_efp_*` in `roscklib.S`), whole card plus the four MBR primary partitions, parsed here because `drvlib`'s `partition()` copies little-endian entries raw. `c0d1` (minor 5): the root image appended to `ROSCODE1.BIN`, in RAM. `sd_root_minor()` finds the first Minix partition for the root when there is no image |
 | `src/kernel/roscstub.c` | **done** | `fd_timer`, `errno`, the dummy MFP for `clock.c` |
 | `src/kernel/roscrs232.c` | **done (M3)** | `rs232.c` logic on the DUART for both lines: line 0 is the console (channel A), line 1 is `/dev/tty00` (channel B). Interrupt-driven buffered input and output; the TxRDY interrupt is only enabled while output may go out. termios speeds 50–115200 (CSR code + XR extended bit, ACR[7]=1), parity, data and stop bits. RTS input flow control on OP0/OP1. CTS is gated in hardware (MR2) unless CLOCAL; the console never waits for CTS and keeps `ROSCO_CONS_BAUD`. Errors are counted and the character dropped; break, HUPCL (drops RTS) |
 | `src/rosco/kernel/Makefile`, `kernel.ld` | **done (M2)** | GNU build in `src/rosco/kernel/` through `xrun`: rosco files + shared `proc system stshadow tty clock memory table dmp misc pty driver drvlib` + a small `libk.a` (kprintf, `_sigset`, u64, string functions). Links at 0, data on a click boundary, `sizes[0..1]` from the linker. `make` gives `kernel`, `kernel.bin` and `ROSCODE1.BIN` (loader + kernel); `make run` boots it in `r68k -d` |
 | `src/rosco/kernel/staddr.h`, `stmfp.h` | **done (M2)** | Stand-ins found by the build-time copy of `clock.c`, so its MFP timer code writes a dummy in RAM |
 | `src/rosco/include/stdarg.h` | **done (M2)** | gcc builtins; the `__GNUC__` branch of `include/stdarg.h` is for gcc 1/2 |
-| `src/rosco/Makefile` | **done (M4)** | Top level: builds loader, kernel, lib, boot, cmds, the root fs and `ROSCODE1.BIN`; `make run` boots it in `r68k -d` |
+| `src/rosco/Makefile` | **done (M5)** | Top level: builds loader, kernel, lib, boot, cmds, the root fs and `ROSCODE1.BIN`; `make run` boots it in `r68k -d`. `make sdcard` builds `rosco_sd.bin` (p0 FAT16 with the system without root image, p1 the Minix root, 8 MB each) to `dd` to a card; `make runsd` boots with the root on it |
+| `src/rosco/lib/u64.c` | **done (M5)** | Replaces `lib/m68000/misc/u64.c`, whose `cmp64u()` always returned 0 for `u == 0` (operator precedence), and whose `mul64u()` lost the high word |
 | `src/rosco/lib/` | **done (M4)** | C library build: `libc.a` (lib/ansi, posix, other, stdio; generated syscall stubs; fphook no-float printf/strtod), `libsys.a` (lib/syslib), `crtso.o`. GNU replacements: `crtso.S` (with the `0xDADA` data block), `sndrec.S`, `setjmp.S` (register-saving jmp_buf, `move ccr`), `sigret.S`, `brksz.S`, `m68kmul.S` (mul/div helpers, shared with the kernel), `gccmem.c`, `regexp.c` wrapper |
 | `src/rosco/include/string.h` | **done (M4)** | Renames the Minix `memcpy`/`memmove`/`memset`/`memcmp` to `_memcpy16` etc. (16 bit `size_t`); the plain names are the 32 bit versions gcc calls itself (`lib/gccmem.c`) |
 | `src/rosco/boot/` | **done (M4)** | Builds MM (6k stack), FS (4k), INIT (`sttools/init.c`, 2k) |
 | `src/rosco/cmds/` | **done (M4)** | Builds the old Minix shell (`commands/sh`) and 20 commands from `commands/simple`, with the ACK build's stack sizes (`tools/stacks.py`) |
-| `src/rosco/tools/` | **done (M4)** | `prog.ld` (program link script), `mkminix.py` (ELF → Minix-ST a.out with GEMDOS relocations), `mkimage.py` (boot image: relocates MM/FS/INIT, fills `sizes[]` behind the magic `rosSIZES`, patches INIT's origin into FS), `mkfs.py` (big endian Minix V2 file system from a proto file), `stacks.py` |
+| `src/rosco/tools/` | **done (M4)** | `prog.ld` (program link script), `mkminix.py` (ELF → Minix-ST a.out with GEMDOS relocations), `mkimage.py` (boot image: relocates MM/FS/INIT, fills `sizes[]` behind the magic `rosSIZES`, patches INIT's origin into FS), `mkfs.py` (big endian Minix V2 file system from a proto file), `stacks.py`; M5: `mkfat.py` (FAT16 with ROSCODE1.BIN for the firmware), `mksd.py` (SD card image with an MBR, typed partitions) |
 | `src/rosco/rootfs/` | **done (M4)** | Root file system: `proto` (devices, /etc, /bin, /tmp, /usr), `etc/rc`, `etc/ttytab` (console runs `sh` directly, no getty/login yet), `passwd`, `group`, `utmp` |
 | `src/mm/makefile.rosco`, `src/fs/makefile.rosco` | todo (M4) | Same as `makefile.st`, with the include override |
 
@@ -659,6 +660,56 @@ Findings while doing M4:
   cloned a static variadic function into a fixed-argument copy.
 * **The root image size is a RAM trade-off:** 400 blocks leave about
   418 KB for processes.
+
+### M5 result (2026-10-17, r68k -d): SD card storage, root on SD
+
+```
+Minix rosco loader
+c0d0p0: type 06, 16384 sectors at 2048
+c0d0p1: type 81, 16384 sectors at 18432
+root on the SD card: c0d0p1
+...
+Memory size = 1024K   MINIX = 209K   RAM disk = 0K   Available = 816K
+# df
+/dev/c0d0p1        8192     7853      339   5%     5%   /
+```
+
+* **SD access:** through the firmware's SD routines (EFP table), with the
+  same driver on the board and in r68k (`rosco_sd.bin`). The firmware's
+  SD timeouts are loop counts, and its SPI code only touches the DUART
+  input port and the OPR set/reset commands, so it coexists with the
+  kernel. Its state lives in firmware RAM 0x1800–0x1FFF, which is kept.
+* **Working:** `mount`/`umount` of `c0d0pN`, reading and writing, and
+  persistence across reboots.
+* **Root on SD:** used when no root image is appended. Programs then get
+  816 KB, against 416 KB with the RAM root.
+* **Card layout** (`make sdcard`): p0 FAT16 with `ROSCODE1.BIN` (the
+  firmware tries the partitions in order and boots the first FAT with
+  `ROSCODE1.BIN`), p1 the Minix root. `fsck.fat` accepts the FAT
+  partition.
+
+Findings while doing M5:
+
+* **The r68k ROM corrupted the loaded program.** r68k loads `ROSCODE1.BIN`
+  to 0x40000 before its ROM runs, and the ROM's RAM probe writes
+  0x12345678 at 0x80000, which is file offset 0x40000. This time it hit
+  the `lea` in `/bin/sh`'s `getc` inside the root image: `getc` recursed
+  forever, the shell's stack ran down through all of memory (no MMU) and
+  overwrote the kernel. The probe now restores the word it tests (emulator
+  patch only; the real firmware sizes RAM before loading). Found with the
+  new emulator aids: write watchpoints, PC trace, RAM snapshots.
+* **`cmp64u()` bug in the Minix-ST library** (see `src/rosco/lib/u64.c`);
+  it made the SD partition open fail with ENXIO.
+* **`drvlib`'s `partition()` is not big-endian safe;** `roscdisk.c` parses
+  the MBR itself.
+
+Still open for storage:
+
+* the card size (CSD register), so the whole-card device has a real size;
+* Minix subpartitions and extended partitions;
+* swap on SD (`ENABLE_SWAP`);
+* a native SPI driver that doesn't depend on the firmware (option B);
+* the SD routines block the kernel while a block moves.
 
 ## 10. Immediate next actions (no changes to existing files required)
 

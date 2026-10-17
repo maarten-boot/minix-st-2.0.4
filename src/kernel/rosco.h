@@ -14,6 +14,19 @@ extern char proctyp;			/* 0: 68000, 1: 68010, ... */
 /* clock.c (PUBLIC for MACHINE == ATARI, but not in proto.h) */
 _PROTOTYPE( int clock_handler, (int hook)				);
 
+/* roscdisk.c: minor device of the root image (c0d1); c0d0 is the SD card */
+#define	ROSCO_RD_MINOR	5
+
+/* roscklib.S: the firmware's SD card routines */
+_PROTOTYPE( long sd_efp_init, (char *sdcard)				);
+_PROTOTYPE( long sd_efp_read, (char *sdcard, unsigned long block,
+							char *buf)	);
+_PROTOTYPE( long sd_efp_write, (char *sdcard, unsigned long block,
+							char *buf)	);
+
+/* roscdisk.c */
+_PROTOTYPE( int sd_root_minor, (void)					);
+
 /* roscmain.c */
 _PROTOTYPE( void duartint, (int dummy)					);
 _PROTOTYPE( void duart_imr_set, (int bits)				);

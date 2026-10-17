@@ -42,9 +42,10 @@ ASFLAGS	= $(CPU) -Wa,--register-prefix-optional $(DEFS) $(INCS)
 CDIRS	= ansi posix other stdio
 EXCLUDE	= $l/other/regexp.c
 CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
+# u64.c replaces lib/m68000/misc/u64.c (cmp64u() fixed).
 # fphook/fltpr.c and strtod.c: printf and strtod without floating point,
 # as the ACK libc without the float library
-COBJ	= $(patsubst $l/%.c,obj/%.o,$(CSRC)) obj/m68000/misc/u64.o \
+COBJ	= $(patsubst $l/%.c,obj/%.o,$(CSRC)) obj/u64.o \
 	  obj/m68000/rts/__intsize.o obj/regexp.o \
 	  obj/fphook/fltpr.o obj/fphook/strtod.o
 

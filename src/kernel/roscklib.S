@@ -423,4 +423,48 @@ sigemptyset:	jmp	_sigemptyset
 sigfillset:	jmp	_sigfillset
 sigismember:	jmp	_sigismember
 
+|*===========================================================================*
+|*		calls into the firmware's SD card routines			     *
+|*===========================================================================*
+| The firmware's extension function table (EFP, kept intact at 0x420) points
+| to its SD card routines.  They take their arguments in registers (see the
+| firmware's InterfaceReference.md, TRAP 13): a1 = SDCard structure,
+| d1 = block number, a2 = 512 byte buffer; result in d0.  They are C code
+| compiled with 32 bit ints, so only the gcc scratch registers change, but
+| the documentation allows a0-a2/d1 to change: all of them are saved.
+|
+|	long sd_efp_init(char *sdcard)		0: ok, else SDInitStatus
+|	long sd_efp_read(char *sdcard, unsigned long block, char *buf)
+|	long sd_efp_write(char *sdcard, unsigned long block, char *buf)
+|						0: failed, 1: ok
+| Arguments are longs and pointers only, so -mshort does not matter.
+
+EFP_SD_INIT	= 0x44C
+EFP_SD_READ	= 0x450
+EFP_SD_WRITE	= 0x454
+
+	.globl	sd_efp_init, sd_efp_read, sd_efp_write
+
+sd_efp_init:
+	movem.l	d1-d7/a2-a6,-(sp)
+	move.l	4+48(sp),a1
+	move.l	EFP_SD_INIT,a0
+	jsr	(a0)
+	movem.l	(sp)+,d1-d7/a2-a6
+	rts
+
+sd_efp_read:
+	move.l	EFP_SD_READ,a0
+	bra	1f
+sd_efp_write:
+	move.l	EFP_SD_WRITE,a0
+1:	movem.l	d1-d7/a2-a6,-(sp)
+	move.l	4+48(sp),a1		| sdcard
+	move.l	8+48(sp),d1		| block
+	move.l	12+48(sp),a2		| buffer
+	jsr	(a0)
+	movem.l	(sp)+,d1-d7/a2-a6
+	and.l	#0xFF,d0		| the routines return a C bool
+	rts
+
 #endif /* CHIP == M68000 */

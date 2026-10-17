@@ -393,6 +393,9 @@ _CONST char *name;
  *===========================================================================*/
 PRIVATE void initrosco()
 {
+  int r;
+  unsigned root;
+
 /* Set up the DUART: console on channel A (8N1 at ROSCO_CONS_BAUD, RTS
  * asserted; roscrs232.c takes it over), channel B off,
  * the counter/timer as the clock at HZ, and the interrupt vector.  The
@@ -424,10 +427,18 @@ PRIVATE void initrosco()
   duart_imr_set(ISR_CTR);
 
 /* warning: fs expects decimal numbers.  The root is the image that came
- * with ROSCODE1.BIN (roscdisk.c, controller 0, drive 0, whole disk).
+ * with ROSCODE1.BIN (roscdisk.c, controller 0, drive 1: c0d1), else the
+ * first Minix partition on the SD card (c0d0pN).
  */
-  k_putenv("rootdev", ul2a((unsigned long)
-			(rosco_extralen != 0 ? DEV_HD0 : DEV_RAM), 10));
+  if (rosco_extralen != 0) {
+	root = DEV_HD0 + ROSCO_RD_MINOR;
+  } else if ((r = sd_root_minor()) >= 0) {
+	root = DEV_HD0 + r;
+	printf("root on the SD card: c0d0p%d\n", r - 1);
+  } else {
+	root = DEV_RAM;		/* FS will complain */
+  }
+  k_putenv("rootdev", ul2a((unsigned long) root, 10));
   k_putenv("ramimagedev", ul2a((unsigned long) DEV_RAM, 10));
   k_putenv("c0", "ACSI");
   k_putenv("ramsize", ul2a((unsigned long) 0, 10));	/* size of ramdisk */
