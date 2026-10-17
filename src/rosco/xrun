@@ -1,0 +1,20 @@
+#!/bin/sh
+# Run a command with the rosco_m68k GNU toolchain (m68k-elf-gcc 13.3,
+# binutils 2.40) from the roscopeco/rosco_m68k docker image.
+#
+#	xrun m68k-elf-gcc -mcpu=68010 -c foo.c
+#
+# The repository is mounted at its own path, so absolute and relative paths
+# work unchanged, and the command runs as the calling user.  The toolchain
+# lives in /home/linuxbrew, which is only readable for the linuxbrew group
+# (gid 1001 in the image), hence --group-add.
+
+IMAGE=${ROSCO_IMAGE:-roscopeco/rosco_m68k}
+BREW_GID=${ROSCO_BREW_GID:-1001}
+TOP=$(cd "$(dirname "$0")/../.." && pwd)
+
+exec docker run --rm -i \
+	-u "$(id -u):$(id -g)" --group-add "$BREW_GID" \
+	-v "$TOP:$TOP" -w "$(pwd)" \
+	--entrypoint /usr/bin/env "$IMAGE" \
+	PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin "$@"

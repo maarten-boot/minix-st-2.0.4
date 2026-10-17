@@ -1,0 +1,339 @@
+diff --git a/Makefile b/Makefile
+index ffe0799..6234a2e 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2,7 +2,7 @@
+ # (c) 2023 Ross Bamford & Contribs
+ 
+ CLEAN_FILES=r68k *.o rosco_m68k_glue/*.o machine/*.o
+-R68K_OBJS=machine/AddressDecoder.o machine/Memory.o rosco_m68k_glue/cpuglue.o rosco_m68k_glue/memoryglue.o main.o
++R68K_OBJS=machine/AddressDecoder.o machine/Duart.o machine/Memory.o rosco_m68k_glue/cpuglue.o rosco_m68k_glue/memoryglue.o main.o
+ MUSASHI_OBJS=musashi/m68kcpu.o musashi/m68kdasm.o musashi/m68kops.o musashi/softfloat/softfloat.o
+ ROM_BINARY=firmware/rosco_m68k.rom
+ CXXFLAGS=-Wall -Wextra -Wpedantic -Iinclude
+diff --git a/include/AddressDecoder.h b/include/AddressDecoder.h
+index 0aa41a8..62be974 100644
+--- a/include/AddressDecoder.h
++++ b/include/AddressDecoder.h
+@@ -9,6 +9,7 @@
+ #include <fstream>
+ #include <memory>
+ #include "Memory.h"
++#include "Duart.h"
+ 
+ namespace rosco {
+     namespace m68k {
+@@ -32,11 +33,14 @@ namespace rosco {
+ 
+                 void LoadMemoryFile(const uint32_t baseAddr, char const* filename);
+ 
++                void setDuart(Duart* d) { this->duart = d; }
++
+             private:
+                 std::unique_ptr<Memory> rom;
+                 std::unique_ptr<Memory> ram;
+                 bool bootLineActive;
+                 uint32_t bootReadCount;
++                Duart* duart = nullptr;
+ 
+                 void ReadRomData(char const* filename);
+             };
+diff --git a/include/Duart.h b/include/Duart.h
+new file mode 100644
+index 0000000..69731db
+--- /dev/null
++++ b/include/Duart.h
+@@ -0,0 +1,59 @@
++//
++// Minimal XR68C681 DUART model for r68k (rosco_m68k Classic v2 mainboard).
++//
++// Registers live on odd addresses from 0xF00001, register n at +2n.
++// Channel A is connected to stdin/stdout, channel B transmit goes to stderr.
++// The counter/timer runs in real time in timer mode; the interrupt output is
++// level sensitive: (ISR & IMR) != 0 asserts IPL 4, the vector comes from IVR.
++//
++
++#ifndef ROSCOM68K_EMU_DUART_H
++#define ROSCOM68K_EMU_DUART_H
++
++#include <chrono>
++#include <cstdint>
++#include <deque>
++#include <functional>
++
++namespace rosco {
++    namespace m68k {
++        namespace emu {
++            class Duart {
++            public:
++                static constexpr std::uint32_t BASE = 0x00F00000;
++                static constexpr std::uint32_t END  = 0x00F00020;
++                static constexpr unsigned int IRQ_LEVEL = 4;
++
++                explicit Duart(std::function<void(bool)> setIrq);
++
++                static bool contains(std::uint32_t address) {
++                    return address >= BASE && address < END;
++                }
++
++                std::uint8_t read(std::uint32_t address);
++                void write(std::uint32_t address, std::uint8_t data);
++
++                // Called regularly from the main loop: timer and input.
++                void poll();
++
++                std::uint8_t vector() const { return ivr; }
++
++            private:
++                std::function<void(bool)> setIrq;
++                std::deque<std::uint8_t> rxA;
++                std::uint8_t mrA[2] = {0, 0}, mrB[2] = {0, 0};
++                int mrPtrA = 0, mrPtrB = 0;
++                std::uint8_t acr = 0, imr = 0, ivr = 0x0F;
++                std::uint16_t preset = 0xFFFF;
++                bool counterRunning = false, counterReady = false;
++                std::chrono::steady_clock::time_point nextExpiry;
++
++                std::uint8_t isr() const;
++                void update();
++                std::chrono::nanoseconds period() const;
++            };
++        }
++    }
++}
++
++#endif //ROSCOM68K_EMU_DUART_H
+diff --git a/machine/AddressDecoder.cpp b/machine/AddressDecoder.cpp
+index e6be77b..ef07ef5 100644
+--- a/machine/AddressDecoder.cpp
++++ b/machine/AddressDecoder.cpp
+@@ -107,6 +107,10 @@ namespace rosco {
+             }
+ 
+             std::uint8_t AddressDecoder::read8(std::uint32_t address) {
++                if (this->duart != nullptr && Duart::contains(address)) {
++                    return this->duart->read(address);
++                }
++
+                 Memory *mem = this->getMemoryForAddress(address);
+ 
+                 if (mem != NULL) {
+@@ -138,6 +142,11 @@ namespace rosco {
+             }
+ 
+             void AddressDecoder::write8(std::uint32_t address, std::uint8_t data) {
++                if (this->duart != nullptr && Duart::contains(address)) {
++                    this->duart->write(address, data);
++                    return;
++                }
++
+                 Memory *mem = this->getMemoryForAddress(address);
+ 
+                 if (mem != NULL) {
+diff --git a/machine/Duart.cpp b/machine/Duart.cpp
+new file mode 100644
+index 0000000..35d0b73
+--- /dev/null
++++ b/machine/Duart.cpp
+@@ -0,0 +1,133 @@
++//
++// Minimal XR68C681 DUART model for r68k, see Duart.h.
++//
++
++#include <iostream>
++#include <sys/select.h>
++#include <unistd.h>
++#include "Duart.h"
++
++namespace rosco {
++    namespace m68k {
++        namespace emu {
++            // Register numbers (address = BASE + 2*n + 1)
++            enum {
++                MRA = 0, SRA_CSRA = 1, MISR_CRA = 2, RHRA_THRA = 3,
++                IPCR_ACR = 4, ISR_IMR = 5, CTU_CTUR = 6, CTL_CTLR = 7,
++                MRB = 8, SRB_CSRB = 9, CRB = 10, RHRB_THRB = 11,
++                IVR = 12, IP_OPCR = 13, STARTCC_OPSET = 14, STOPCC_OPCLR = 15
++            };
++
++            // Status register bits
++            static constexpr std::uint8_t SR_RXRDY = 0x01, SR_TXRDY = 0x04, SR_TXEMT = 0x08;
++            // Interrupt status bits
++            static constexpr std::uint8_t ISR_TXRDYA = 0x01, ISR_RXRDYA = 0x02,
++                ISR_CTR = 0x08, ISR_TXRDYB = 0x10;
++
++            static constexpr long XTAL = 3686400;
++
++            Duart::Duart(std::function<void(bool)> setIrq) : setIrq(std::move(setIrq)) {
++            }
++
++            std::uint8_t Duart::isr() const {
++                std::uint8_t v = ISR_TXRDYA | ISR_TXRDYB;   // transmitters never busy
++                if (!rxA.empty()) v |= ISR_RXRDYA;
++                if (counterReady) v |= ISR_CTR;
++                return v;
++            }
++
++            void Duart::update() {
++                setIrq((isr() & imr) != 0);
++            }
++
++            std::chrono::nanoseconds Duart::period() const {
++                // Timer mode, X1/16 (ACR 0x70) toggles every preset counts:
++                // one interrupt per 2 * preset * 16 / XTAL seconds.
++                long divider = (acr & 0x10) ? 16 : 1;
++                long long ns = 2LL * (preset ? preset : 0x10000) * divider * 1000000000LL / XTAL;
++                return std::chrono::nanoseconds(ns);
++            }
++
++            std::uint8_t Duart::read(std::uint32_t address) {
++                if ((address & 1) == 0) return 0xFF;        // even bytes not decoded
++                std::uint8_t v = 0;
++
++                switch ((address - BASE) >> 1) {
++                case MRA:       v = mrA[mrPtrA]; mrPtrA = 1; break;
++                case SRA_CSRA:  v = SR_TXRDY | SR_TXEMT | (rxA.empty() ? 0 : SR_RXRDY); break;
++                case MISR_CRA:  v = isr() & imr; break;
++                case RHRA_THRA:
++                    if (!rxA.empty()) {
++                        v = rxA.front();
++                        rxA.pop_front();
++                    }
++                    break;
++                case IPCR_ACR:  v = 0; break;
++                case ISR_IMR:   v = isr(); break;
++                case CTU_CTUR:  v = preset >> 8; break;
++                case CTL_CTLR:  v = preset & 0xFF; break;
++                case MRB:       v = mrB[mrPtrB]; mrPtrB = 1; break;
++                case SRB_CSRB:  v = SR_TXRDY | SR_TXEMT; break;
++                case IVR:       v = ivr; break;
++                case IP_OPCR:   v = 0; break;               // CTS inputs asserted (low)
++                case STARTCC_OPSET:
++                    counterRunning = true;
++                    counterReady = false;
++                    nextExpiry = std::chrono::steady_clock::now() + period();
++                    break;
++                case STOPCC_OPCLR:
++                    // Timer mode: only clears the ready bit, counter mode: stop
++                    counterReady = false;
++                    if ((acr & 0x40) == 0) counterRunning = false;
++                    break;
++                default:        break;
++                }
++                update();
++                return v;
++            }
++
++            void Duart::write(std::uint32_t address, std::uint8_t data) {
++                if ((address & 1) == 0) return;
++
++                switch ((address - BASE) >> 1) {
++                case MRA:       mrA[mrPtrA] = data; mrPtrA = 1; break;
++                case MISR_CRA:  if ((data & 0x70) == 0x10) mrPtrA = 0; break;
++                case RHRA_THRA: std::cout.put((char)data); std::cout.flush(); break;
++                case IPCR_ACR:  acr = data; break;
++                case ISR_IMR:   imr = data; break;
++                case CTU_CTUR:  preset = (preset & 0x00FF) | (data << 8); break;
++                case CTL_CTLR:  preset = (preset & 0xFF00) | data; break;
++                case MRB:       mrB[mrPtrB] = data; mrPtrB = 1; break;
++                case CRB:       if ((data & 0x70) == 0x10) mrPtrB = 0; break;
++                case RHRB_THRB: std::cerr.put((char)data); std::cerr.flush(); break;
++                case IVR:       ivr = data; break;
++                default:        break;                      // CSR, OPCR, OP set/reset
++                }
++                update();
++            }
++
++            void Duart::poll() {
++                if (counterRunning) {
++                    auto now = std::chrono::steady_clock::now();
++                    if (now >= nextExpiry) {
++                        counterReady = true;
++                        nextExpiry += period();
++                        if (nextExpiry < now) nextExpiry = now + period();
++                    }
++                }
++
++                if (rxA.empty()) {
++                    fd_set fds;
++                    struct timeval tv = {0, 0};
++                    FD_ZERO(&fds);
++                    FD_SET(STDIN_FILENO, &fds);
++                    if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) > 0) {
++                        char c;
++                        if (::read(STDIN_FILENO, &c, 1) == 1) rxA.push_back((std::uint8_t)c);
++                    }
++                }
++                update();
++            }
++        }
++    }
++}
+diff --git a/main.cpp b/main.cpp
+index 453acd8..a102363 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -97,6 +97,7 @@ static char* print_unsigned(uint32_t num, uint8_t base) {
+ 
+ extern "C" {
+     rosco::m68k::emu::AddressDecoder* __mem;
++    rosco::m68k::emu::Duart* __duart = nullptr;
+     std::fstream ifs("rosco_sd.bin", std::ios::binary | std::ios::ate | std::ios::in | std::ios::out);
+ 
+     int illegal_instruction_handler(int __attribute__((unused)) opcode) {
+@@ -483,6 +484,10 @@ extern "C" {
+     int interrupt_ack_handler(unsigned int irq) {
+         switch (irq) {
+         case DUART_IRQ:
++            if (__duart != nullptr) {
++                // Emulated XR68C681: level sensitive, vector from IVR
++                return __duart->vector();
++            }
+             // DUART timer tick - vector to 0x45
+             m68k_set_irq(0);
+             return DUART_VEC;
+@@ -509,8 +514,15 @@ void timer_interrupt() {
+ }
+ 
+ int main(int argc, char** argv) {
++    bool emulateDuart = argc == 3 && std::string(argv[1]) == "-d";
++    if (emulateDuart) {
++        argv[1] = argv[2];
++        argc = 2;
++    }
++
+     if (argc != 2) {
+-        cout << "Usage: xl86 <binary>" << endl;
++        cout << "Usage: r68k [-d] <binary>" << endl;
++        cout << "  -d  emulate the XR68C681 DUART registers and timer" << endl;
+         return 1;
+     } else {
+         init_term();
+@@ -521,6 +533,13 @@ int main(int argc, char** argv) {
+         __mem = new rosco::m68k::emu::AddressDecoder(0x40000, 0x100000, path.string().c_str());
+         __mem->LoadMemoryFile(0x40000, argv[1]);
+ 
++        if (emulateDuart) {
++            __duart = new rosco::m68k::emu::Duart([](bool asserted) {
++                m68k_set_irq(asserted ? DUART_IRQ : 0);
++            });
++            __mem->setDuart(__duart);
++        }
++
+         m68k_set_cpu_type(M68K_CPU_TYPE_68010);
+         m68k_init();
+         m68k_pulse_reset();
+@@ -528,6 +547,13 @@ int main(int argc, char** argv) {
+         m68ki_cpu_core ctx;
+         m68k_get_context(&ctx);
+         
++        if (emulateDuart) {
++            while (1) {
++                m68k_execute(10000);
++                __duart->poll();
++            }
++        }
++
+         std::thread timer_thread(timer_interrupt);
+         while (1) {
+             m68k_execute(100000);

@@ -1,0 +1,6 @@
+# build outputs of the rosco port
+*.o
+*.bin
+*.BIN
+loader/mkrosco
+emu/r68k/
