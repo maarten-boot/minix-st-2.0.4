@@ -29,7 +29,7 @@ DEFS	= -D_EM_WSIZE=2 -D_EM_PSIZE=4 -D_EM_LSIZE=4 -D__m68000=1 -D__minix=1 -D__MS
 	  -D_MINIX -D_POSIX_SOURCE
 CFLAGS	= $(CPU) -O2 -std=gnu89 -fno-builtin -fno-common \
 	  -fno-strict-aliasing -fno-delete-null-pointer-checks \
-	  -w $(DEFS) -I$(ri) -I$i -I../..
+	  -w -include $(ri)/rosco_sizeof.h $(DEFS) -I$(ri) -I$i -I../..
 LDFLAGS	= $(CPU) -nostdlib -T $(TOOLS)/prog.ld -Wl,--emit-relocs
 LIBS	= $L/libc.a
 
@@ -72,9 +72,7 @@ obj/ps.o:	../../sttools/ps.c
 	@mkdir -p obj
 	$(CC) $(CFLAGS) -I../../kernel -c -o $@ ../../sttools/ps.c
 
-# aal (ar): the ACK archiver, commands/aal (64k in the ACK build).  aal
-# and make call malloc() & co. without prototypes, with sizeof arguments:
-# include/rosco_sizeof.h makes sizeof(...) 16 bits as with ACK.
+# aal (ar): the ACK archiver, commands/aal (64k in the ACK build).
 AALOBJ	= $(addprefix obj/aal/,archiver.o print.o rd.o rd_arhdr.o rd_unsig2.o \
 	  sprint.o wr_arhdr.o wr_bytes.o wr_int2.o wr_long.o wr_ranlib.o \
 	  format.o rd_bytes.o system.o write.o long2str.o)
@@ -85,7 +83,7 @@ bin/aal:	$(AALOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 
 obj/aal/%.o:	$c/aal/%.c
 	@mkdir -p obj/aal
-	$(CC) $(CFLAGS) -include $(ri)/rosco_sizeof.h -I$c/aal -DAAL -DSTB \
+	$(CC) $(CFLAGS) -I$c/aal -DAAL -DSTB \
 		-DNDEBUG -DDISTRIBUTION -c -o $@ $<
 
 # make: commands/make (96k in the ACK build)
@@ -98,7 +96,7 @@ bin/make:	$(MAKEOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 
 obj/make/%.o:	$c/make/%.c $c/make/h.h
 	@mkdir -p obj/make
-	$(CC) $(CFLAGS) -include $(ri)/rosco_sizeof.h -Dunix -c -o $@ $<
+	$(CC) $(CFLAGS) -Dunix -c -o $@ $<
 
 # patch: commands/patch (32kw in the ACK build), K&R code like aal
 PATCHOBJ = $(addprefix obj/patch/,patch.o pch.o inp.o util.o version.o)
@@ -109,7 +107,7 @@ bin/patch:	$(PATCHOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 
 obj/patch/%.o:	$c/patch/%.c
 	@mkdir -p obj/patch
-	$(CC) $(CFLAGS) -include $(ri)/rosco_sizeof.h -I$c/patch -DVOIDSIG -DSMALL \
+	$(CC) $(CFLAGS) -I$c/patch -DVOIDSIG -DSMALL \
 		-c -o $@ $<
 
 bin/%:	obj/%.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py stacks.mk

@@ -601,3 +601,34 @@ User:
 * **Default card rebuilt** (38400).
 
 Not committed yet.
+
+## Follow-up 17: rosco_sizeof.h everywhere
+
+Committed `fbba4cf` (ar/aal, make, patch, diff).
+
+User:
+> commit this first, then apply rosco_sizeof.h everywhere
+
+* **`include/rosco_sizeof.h`:** `sizeof(x)` becomes
+  `(unsigned) (sizeof(x) + 0 * sizeof(char [sizeof(x) <= 0xFFFF ? 1 : -1]))`.
+  It has the ACK type (16-bit unsigned int), and an object of 64K or more
+  is a compile error ("size of unnamed array is negative") instead of a
+  silently truncated size.
+* **Applied** via `-include $(ri)/rosco_sizeof.h` in the CFLAGS of
+  `kernel/`, `lib/`, `boot/`, `cmds/` and `test/Makefile`. The per-rule
+  includes for aal/make/patch were removed. A clean rebuild of everything
+  gave no errors.
+* **Result in MAME (full suite):**
+  * 39 passed, 1 failed (test14, the known pid artifact);
+  * troscorun and texecl pass.
+* **sh1 in the full run:** 3× "compress: program too big" and "Error on
+  uue/uud test 3".
+  * Not a regression. suite3.log from before the change shows the same
+    lines, and sh1 run alone passes ("Shell test 1 ok"). Compress and
+    uncompress by hand also work.
+  * Cause: exec ENOMEM. compress needs 470K contiguous out of 733K free,
+    and memory is fragmented after the 40 tests. Recorded in the spec
+    under "Known and not fixed".
+* **Default card rebuilt** (38400) and checked in r68k.
+
+Not committed yet.

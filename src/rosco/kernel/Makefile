@@ -43,7 +43,7 @@ CFLAGS	= $(CPU) -O2 -std=gnu89 -ffreestanding -fno-builtin -fno-common \
 	  -Wall -Wno-implicit-int -Wno-return-type -Wno-main \
 	  -Wno-parentheses -Wno-unused -Wno-char-subscripts \
 	  -Wno-pointer-sign -Wno-missing-braces \
-	  $(DEFS) $(INCS)
+	  -include $(ri)/rosco_sizeof.h $(DEFS) $(INCS)
 ASFLAGS	= $(CPU) -Wa,--register-prefix-optional $(DEFS) $(INCS)
 
 # roscompx.o must be first: see kernel.ld and genint in roscompx.S

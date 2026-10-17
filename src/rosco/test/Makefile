@@ -34,7 +34,7 @@ DEFS	= -D_EM_WSIZE=2 -D_EM_PSIZE=4 -D_EM_LSIZE=4 -D__m68000=1 -D__minix=1 \
 # keep them in registers.  gcc -O2 does, and the loop never ends.
 CFLAGS	= $(CPU) -O0 -std=gnu89 -fno-builtin -fno-common \
 	  -fno-strict-aliasing -fno-delete-null-pointer-checks \
-	  -w $(DEFS) -I$(ri) -I$i
+	  -w -include $(ri)/rosco_sizeof.h $(DEFS) -I$(ri) -I$i
 LDFLAGS	= $(CPU) -nostdlib -T $(TOOLS)/prog.ld -Wl,--emit-relocs
 LIBS	= $L/libc.a
 

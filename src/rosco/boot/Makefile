@@ -32,7 +32,7 @@ DEFS	= -D_EM_WSIZE=2 -D_EM_PSIZE=4 -D_EM_LSIZE=4 -D__m68000=1 -D__minix=1 -D__MS
 INCS	= -I$(ri) -I$i
 CFLAGS	= $(CPU) -O2 -std=gnu89 -fno-builtin -fno-common \
 	  -fno-strict-aliasing -fno-delete-null-pointer-checks \
-	  -w $(DEFS) $(INCS)
+	  -w -include $(ri)/rosco_sizeof.h $(DEFS) $(INCS)
 LDFLAGS	= $(CPU) -nostdlib -T $(TOOLS)/prog.ld -Wl,--emit-relocs
 LIBC	= $L/libc.a
 LIBSYS	= $L/libsys.a

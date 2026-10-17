@@ -539,7 +539,7 @@ How this works without touching shared files:
 | `src/rosco/cmds/` | **done (M4)** | Builds the old Minix shell (`commands/sh`) and 20 commands from `commands/simple`, with the ACK build's stack sizes (`tools/stacks.py`) |
 | `src/rosco/tools/` | **done (M4)** | `prog.ld` (program link script), `mkminix.py` (ELF → Minix-ST a.out with GEMDOS relocations), `mkimage.py` (boot image: relocates MM/FS/INIT, fills `sizes[]` behind the magic `rosSIZES`, patches INIT's origin into FS), `mkfs.py` (big endian Minix V2 file system from a proto file), `stacks.py`; M5: `mkfat.py` (FAT16 with ROSCODE1.BIN for the firmware), `mksd.py` (SD card image with an MBR, typed partitions) |
 | `src/rosco/test/` | **done (M6)** | Builds the Minix test suite (`src/test`, at `-O0`: the tests busy-wait on non-volatile flags set by signal handlers), plus `troscorun` (gcc runtime helpers, struct copies, varargs, `move sr` emulation) and `texecl` (execl directly and after fork) |
-| `src/rosco/include/rosco_sizeof.h` | **done (M6)** | `sizeof(...)` as a 16-bit unsigned int, as with ACK, for K&R code that calls functions without prototypes (used for aal, make, patch) |
+| `src/rosco/include/rosco_sizeof.h` | **done (M6)** | `sizeof(...)` as a 16-bit unsigned int, as with ACK, for K&R code that calls functions without prototypes; `-include`d by every rosco Makefile (kernel, lib, boot, cmds, test), with a compile-time check that the object is smaller than 64K |
 | `src/rosco/lib/_uname.c` | **done (M6)** | `uname`: machine `rosco_m68k` (arch stays `m68000`); node name from `/etc/hostname.file` (`rosco`) |
 | `src/rosco/lib/system.c` | **done (M6)** | `system()` waits for its own child with `waitpid()`; the original reaped any child with `wait()` (test28) |
 | `src/rosco/tools/mamesession.py` | **done (M6)** | Scripted console sessions in the rosco-emulator (MAME): console on a TCP socket, `expect`/`send` script, log |
@@ -655,8 +655,8 @@ Findings while doing M4:
   `gccmem.c`. A scan of all built sources found no implicit mem*
   declarations that would bypass the renaming.
 * **`sizeof` is 32 bits with gcc** (ACK: 16 bits). Code that passes
-  `sizeof` straight to a `%d` varargs argument would break; none was found
-  in the built sources.
+  `sizeof` to an unprototyped function or a `%d` varargs argument breaks.
+  Fixed globally by `include/rosco_sizeof.h` (see section 9).
 * **ACK predefines needed by the headers and sources:** `__minix`,
   `__m68000`, `_EM_WSIZE/PSIZE/LSIZE`. Plus `_MINIX`, `_POSIX_SOURCE` and
   `__MSHORT__` from the old gnu-16 library config.
@@ -767,18 +767,24 @@ Known and not fixed:
 
 * **test14:** it builds a file name from the pid, which contains `/`
   when pid & 31 == 14, so it fails at random.
-* **Shell tests:** `sh1` passes. `sh2` fails only where it needs a C
-  compiler (`cc`, its `a.out`, `strings a.out`); `make` itself works.
+* **Shell tests:** `sh1` passes when run alone. In the full `run`
+  sequence (after tests 1–40) its four `compress` runs can fail with
+  "program too big" (exec ENOMEM): compress needs 470K contiguous (450K
+  stack/heap for 16-bit codes) out of 733K free, and memory is then
+  fragmented. Seen before and after the global `sizeof` change, so not a
+  regression. `sh2` fails only where it needs a C compiler (`cc`, its
+  `a.out`, `strings a.out`); `make` itself works.
 * **The 32-bit `sizeof` hazard:**
   * gcc's `sizeof` is 32 bits even with `-mshort` (ACK: 16 bits). In a call
     without a prototype (K&R `char *malloc();`) a `sizeof` argument is
     pushed as 4 bytes where 2 are read. `aal` failed with "Out of core"
     because of this.
-  * `include/rosco_sizeof.h` (`#define sizeof(x) ((unsigned) sizeof(x))`,
-    with `-include`) restores the ACK type; it is used for `aal`, `make` and
-    `patch`.
-  * Using it for all user code would fix such calls everywhere, but needs
-    a full test-suite run first.
+  * Fixed: `include/rosco_sizeof.h` (`#define sizeof(x)` as
+    `(unsigned) sizeof(x)` plus a negative-array check that fails the
+    build for objects of 64K or more) restores the ACK type. It is
+    `-include`d by all rosco Makefiles: kernel, lib, boot, cmds, test.
+  * Full MAME suite with it: 39/40 (only test14), troscorun and texecl
+    pass, as before.
 * **`rs2s.s` fast path:** not needed; the C interrupt handlers are in use.
 * **Expansion RAM:** contiguous expansion is already used via the
   firmware's RAM size (up to 14 MB); untested.
