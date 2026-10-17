@@ -43,13 +43,13 @@ ASFLAGS	= $(CPU) -Wa,--register-prefix-optional $(DEFS) $(INCS)
 
 # roscompx.o must be first: see kernel.ld and genint in roscompx.S
 SOBJ	= roscompx.o roscklib.o
-ROBJ	= roscmain.o roscons.o roscrs232.o roscstub.o
+ROBJ	= roscmain.o roscons.o roscrs232.o roscdisk.o roscstub.o
 COBJ	= proc.o system.o stshadow.o tty.o clock.o memory.o table.o \
 	  dmp.o misc.o pty.o driver.o drvlib.o
 OBJ	= $(SOBJ) $(ROBJ) $(COBJ)
 
 # library routines the kernel uses, compiled the same way
-LOBJ	= printf.o _sigset.o u64.o \
+LOBJ	= printf.o _sigset.o u64.o m68kmul.o gccmem.o \
 	  strcpy.o strcat.o strcmp.o strncmp.o strncpy.o strlen.o \
 	  memcpy.o memmove.o memset.o memcmp.o
 
@@ -94,17 +94,23 @@ $(ROBJ) $(filter-out clock.o,$(COBJ)): %.o: $k/%.c
 printf.o:	$l/syslib/kprintf.c
 	$(CC) $(CFLAGS) -c -o $@ $l/syslib/kprintf.c
 
+gccmem.o:	../lib/gccmem.c
+	$(CC) $(CFLAGS) -fno-tree-loop-distribute-patterns -c ../lib/gccmem.c
+
+m68kmul.o:	../lib/m68kmul.S
+	$(CC) $(ASFLAGS) -c ../lib/m68kmul.S
+
 _sigset.o:	$l/posix/_sigset.c
 	$(CC) $(CFLAGS) -I$l -c $l/posix/_sigset.c
 
 u64.o:	$l/m68000/misc/u64.c
 	$(CC) $(CFLAGS) -c $l/m68000/misc/u64.c
 
-$(filter-out printf.o _sigset.o u64.o,$(LOBJ)): %.o: $l/ansi/%.c
+$(filter-out printf.o _sigset.o u64.o m68kmul.o gccmem.o,$(LOBJ)): %.o: $l/ansi/%.c
 	$(CC) $(CFLAGS) -c $<
 
 # too crude, as in makefile.st
-$(OBJ) $(LOBJ):	$(ri)/minix/config.h $k/rosco.h $k/roscaddr.h \
+$(OBJ) $(LOBJ):	$(ri)/minix/config.h $(ri)/string.h $(ri)/stdarg.h $k/rosco.h $k/roscaddr.h \
 		$k/roscduart.h $k/proc.h $k/const.h $k/glo.h $k/proto.h
 
 clean:

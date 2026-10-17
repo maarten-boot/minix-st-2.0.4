@@ -24,5 +24,6 @@ _PROTOTYPE( int cons_debug_key, (struct tty *tp, int c)			);
 
 /* roscrs232.c */
 _PROTOTYPE( void rs_cons_init, (struct tty *tp)				);
+_PROTOTYPE( void rs_cons_setup, (void)					);
 _PROTOTYPE( void rs_duart_int, (int isr)				);
 _PROTOTYPE( void rs_test_line, (struct tty *tp)				);

@@ -1,0 +1,8 @@
+# /etc/rc - system startup script, rosco_m68k bring-up version.
+# INIT runs it as "sh /etc/rc start" before it starts the ttytab lines.
+
+echo "rosco_m68k: running /etc/rc"
+
+# The root file system, for df and mount.
+printroot >/etc/mtab
+sync

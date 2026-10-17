@@ -122,7 +122,11 @@
 
 /* rosco_m68k hardware options */
 #define	ROSCO_HZ	  60	/* must equal HZ; DUART timer divisor 115200/HZ */
-#define	ROSCO_CONS_BAUD	115200	/* console on DUART channel A */
+#define	ROSCO_CONS_BAUD	 38400	/* console on DUART channel A; must match the
+				 * terminal and the firmware (the loader
+				 * prints at the firmware's speed).  The
+				 * stock firmware 2.x uses 115200; the
+				 * target board's firmware uses 38400. */
 #define	ROSCO_DUART_VEC	0x45	/* DUART IVR, same vector as the firmware */
 #define	ROSCO_KEEP_FW	   1	/* 1: keep the firmware's RAM (0x400-0x2000)
 				 *    so the EFP SD routines stay usable */
@@ -154,7 +158,8 @@
 #define	AHDILIKE	   0
 
 /* Define the number of hard disk drives in your system */
-#define	NR_ACSI_DRIVES	   0	/* rosco: none */
+#define	NR_ACSI_DRIVES	   1	/* rosco: the disk driver (roscdisk.c) is
+				 * acsi_task, see table.c */
 #define	USE_LUN1	   0	/* use LUN 0 and 1 on any controller or not */
 #define	NR_SCSI_DRIVES	   0	/* typically 0 (ST, STe) or 1 (TT) */
 #define	NR_IDE_DRIVES	   0	/* typically 0 */

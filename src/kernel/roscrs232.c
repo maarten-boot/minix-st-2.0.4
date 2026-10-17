@@ -20,12 +20,13 @@
  *    waits for CTS: on the board CTS has no pull resistor, and a console
  *    that hangs without a cable handshake is no use.
  *  - The console's speed is fixed at ROSCO_CONS_BAUD (tty.c resets the
- *    termios on the last close, which would set 9600).
+ *    termios on the last close, which would set 9600), see rs_cons_setup.
  *  - Received characters with errors are counted and dropped; a received
  *    break is dropped too.
  *
  * The entries into this file are:
  *   rs_init:		initialize channel B (from tty.c)
+ *   rs_cons_setup:	early polled setup of channel A (from initrosco)
  *   rs_cons_init:	initialize channel A (from scr_init in roscons.c)
  *   rs_duart_int:	DUART receive/transmit interrupts
  *   rs_test_line:	send a test line (debug key PF4, roscons.c)
@@ -134,29 +135,34 @@ PRIVATE rs232_t rs_lines[1 + NR_RS_LINES];
  */
 PRIVATE struct speed2csr {
   speed_t	speed;
+  long		baud;		/* the same as a number */
   unsigned char	csr;		/* code for RX and TX (same nibble) */
   unsigned char	ext;		/* 1: extended rate */
 } s2c[] = {
-  { B50,	0x0, 1 },
-  { B75,	0x0, 0 },
-  { B110,	0x1, 0 },
-  { B134,	0x2, 0 },
-  { B150,	0x3, 0 },
-  { B200,	0x3, 1 },
-  { B300,	0x4, 0 },
-  { B600,	0x5, 0 },
-  { B1200,	0x6, 0 },
-  { B1800,	0xA, 0 },
-  { B2400,	0x8, 0 },
-  { B4800,	0x9, 0 },
-  { B9600,	0xB, 0 },
-  { B19200,	0xC, 0 },
-  { B38400,	0xC, 1 },
-  { B57600,	0x7, 1 },
-  { B115200,	0x8, 1 },
+  { B50,	50,	0x0, 1 },
+  { B75,	75,	0x0, 0 },
+  { B110,	110,	0x1, 0 },
+  { B134,	134,	0x2, 0 },
+  { B150,	150,	0x3, 0 },
+  { B200,	200,	0x3, 1 },
+  { B300,	300,	0x4, 0 },
+  { B600,	600,	0x5, 0 },
+  { B1200,	1200,	0x6, 0 },
+  { B1800,	1800,	0xA, 0 },
+  { B2400,	2400,	0x8, 0 },
+  { B4800,	4800,	0x9, 0 },
+  { B9600,	9600,	0xB, 0 },
+  { B19200,	19200,	0xC, 0 },
+  { B38400,	38400,	0xC, 1 },
+  { B57600,	57600,	0x7, 1 },
+  { B115200,	115200,	0x8, 1 },
 };
+#define	S2C_END	(s2c + sizeof(s2c)/sizeof(s2c[0]))
+
+PRIVATE struct speed2csr *cons_speed;	/* entry for ROSCO_CONS_BAUD */
 
 FORWARD _PROTOTYPE( void rs_line_init, (tty_t *tp, rs232_t *rs)		);
+FORWARD _PROTOTYPE( void set_speed, (rs232_t *rs, struct speed2csr *sp)	);
 FORWARD _PROTOTYPE( void in_int, (rs232_t *rs)				);
 FORWARD _PROTOTYPE( void out_int, (rs232_t *rs)				);
 FORWARD _PROTOTYPE( void rs_write, (tty_t *tp)				);
@@ -300,7 +306,7 @@ rs232_t *rs;			/* which line */
 
   if (rs->console) {
 	/* The console keeps its speed. */
-	tp->tty_termios.c_ispeed = tp->tty_termios.c_ospeed = B115200;
+	tp->tty_termios.c_ispeed = tp->tty_termios.c_ospeed = cons_speed->speed;
   }
 
   /* RS232 needs to know the xoff character, and if CTS works. */
@@ -310,7 +316,7 @@ rs232_t *rs;			/* which line */
 
   /* Look up the clock select code from the output speed. */
   sp = NULL;
-  for (s2cp = s2c; s2cp < s2c + sizeof(s2c)/sizeof(s2c[0]); s2cp++) {
+  for (s2cp = s2c; s2cp < S2C_END; s2cp++) {
 	if (s2cp->speed == tp->tty_termios.c_ospeed) sp = s2cp;
   }
   if (sp == NULL) return;	/* B0? */
@@ -335,15 +341,60 @@ rs232_t *rs;			/* which line */
   du_cr(rs) = CR_RSTMR;
   du_mr(rs) = mr1;
   du_mr(rs) = mr2;
-  du_cr(rs) = sp->ext ? CR_XRXEXT : CR_XRXCLR;
-  du_cr(rs) = sp->ext ? CR_XTXEXT : CR_XTXCLR;
-  du_csr(rs) = (sp->csr << 4) | sp->csr;
+  set_speed(rs, sp);
 
   /* CTS is checked by the DUART, so it is always "ready" here. */
   rs->ostate |= ODEVREADY | ORAW;
   if ((tp->tty_termios.c_lflag & IXON) && rs->oxoff != _POSIX_VDISABLE)
 	rs->ostate &= ~ORAW;
   unlock();
+}
+
+
+/*==========================================================================*
+ *				set_speed				    *
+ *==========================================================================*/
+PRIVATE void set_speed(rs, sp)
+rs232_t *rs;
+struct speed2csr *sp;
+{
+/* Select a speed for receiver and transmitter: the XR extended rate bits,
+ * then the clock select register.  ACR[7] (rate set 2) is always on.
+ */
+  du_cr(rs) = sp->ext ? CR_XRXEXT : CR_XRXCLR;
+  du_cr(rs) = sp->ext ? CR_XTXEXT : CR_XTXCLR;
+  du_csr(rs) = (sp->csr << 4) | sp->csr;
+}
+
+
+/*==========================================================================*
+ *				rs_cons_setup				    *
+ *==========================================================================*/
+PUBLIC void rs_cons_setup()
+{
+/* Set up channel A for the console before anything else: 8N1 at
+ * ROSCO_CONS_BAUD, RTS asserted.  Polled output (putk) works after this.
+ * Called from initrosco() with interrupts off; ACR is already written.
+ */
+  static rs232_t early;		/* just enough of a line for the macros */
+  register rs232_t *rs = &early;
+
+  for (cons_speed = s2c; cons_speed < S2C_END; cons_speed++) {
+	if (cons_speed->baud == ROSCO_CONS_BAUD) break;
+  }
+  if (cons_speed == S2C_END) cons_speed = &s2c[12];	/* 9600, see table */
+
+  rs->ch = CH_A;
+  rs->op_rts = OP_RTSA;
+  while ((du_sr(rs) & SR_TXEMT) == 0)	/* let the loader's output finish */
+	;
+  du_cr(rs) = CR_RSTERR;
+  du_cr(rs) = CR_RSTMR;
+  du_mr(rs) = MR1_NOPAR | MR1_CS8;
+  du_mr(rs) = MR2_NORMAL | MR2_STOP1;
+  set_speed(rs, cons_speed);
+  istart(rs);
+  du_cr(rs) = CR_RXEN | CR_TXEN;
 }
 
 

@@ -1,0 +1,48 @@
+# Root file system of the rosco_m68k Minix boot image (src/rosco/tools/mkfs.py).
+# Host paths are relative to src/rosco/boot, where mkfs.py runs.
+
+d /dev 755
+c /dev/console	622 4 0
+c /dev/log	222 4 15
+c /dev/tty00	666 4 16
+c /dev/tty	666 5 0
+c /dev/ram	600 1 0
+c /dev/mem	640 1 1
+c /dev/kmem	640 1 2
+c /dev/null	666 1 3
+c /dev/zero	644 1 4
+b /dev/c0d0	600 3 0
+
+d /etc 755
+f /etc/rc	644 ../rootfs/etc/rc
+f /etc/ttytab	644 ../rootfs/etc/ttytab
+f /etc/passwd	644 ../rootfs/etc/passwd
+f /etc/group	644 ../rootfs/etc/group
+f /etc/utmp	644 ../rootfs/etc/utmp
+
+d /bin 755
+f /bin/sh	755 ../cmds/bin/sh
+f /bin/cat	755 ../cmds/bin/cat
+f /bin/cp	755 ../cmds/bin/cp
+f /bin/date	755 ../cmds/bin/date
+f /bin/df	755 ../cmds/bin/df
+f /bin/echo	755 ../cmds/bin/echo
+f /bin/kill	755 ../cmds/bin/kill
+f /bin/ls	755 ../cmds/bin/ls
+f /bin/mkdir	755 ../cmds/bin/mkdir
+f /bin/mknod	755 ../cmds/bin/mknod
+f /bin/mount	755 ../cmds/bin/mount
+f /bin/printroot	755 ../cmds/bin/printroot
+f /bin/pwd	755 ../cmds/bin/pwd
+f /bin/rmdir	755 ../cmds/bin/rmdir
+f /bin/sleep	755 ../cmds/bin/sleep
+f /bin/stty	755 ../cmds/bin/stty
+f /bin/sync	755 ../cmds/bin/sync
+f /bin/touch	755 ../cmds/bin/touch
+f /bin/umount	755 ../cmds/bin/umount
+f /bin/uname	755 ../cmds/bin/uname
+f /bin/wc	755 ../cmds/bin/wc
+
+d /tmp 1777
+d /usr 755
+d /usr/adm 755

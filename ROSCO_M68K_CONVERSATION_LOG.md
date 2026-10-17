@@ -282,3 +282,99 @@ Result in `r68k -d`:
 * the tty00 test line comes out on channel B with CR LF.
 
 `stty` waits for M4 (needs MM/FS). Not committed yet. Not run on hardware.
+
+## Follow-up 9: M4 started; console speed
+
+M3 committed as `bd2a449`.
+
+User:
+> just to be sure , you keep a running log of the changes yoy make for the
+> changelog later ?
+
+Yes: this log (one entry per step), the spec's file plan and results
+sections, and one commit per milestone. Also saved as a memory for future
+sessions.
+
+User:
+> the current hardware board has a defaut firmware with 38400 baud on
+> serial 1
+
+* The kernel used to force 115200 on channel A, which would garble the
+  console on that board after the loader banner.
+* `ROSCO_CONS_BAUD` (rosco `config.h`) now defaults to 38400 and is used.
+* `roscrs232.c` has a new `rs_cons_setup()` (called from `initrosco`). It
+  programs channel A from the shared speed table, which now also holds the
+  numeric baud rates; the 38400 entry still needs checking on the board.
+* The console line reports and keeps that speed.
+* r68k run still OK (it ignores baud rates).
+
+M4 analysis so far:
+
+* **Executable format:** 32-byte a.out header (`A_M68K`, `A_EXEC`), text
+  and data linked at 0, symbols, then a GEMDOS relocation stream.
+* **Boot image (`build.c`):** each program is relocated to its absolute
+  address and padded to a click; `sizes[]` holds (0, total clicks) per
+  program; FS data starts with `0xDADA`, then INIT's origin and size.
+* **Root device:** a rosco disk task, hooked in as `acsi_task`
+  (`NR_ACSI_DRIVES 1`, `c0=ACSI`), will serve the appended filesystem image
+  from RAM now and the SD card in M5.
+* **Memory:** the kernel moves that image to the top of RAM, out of MM's
+  way.
+
+## Follow-up 10: M4, Minix boots to a shell (r68k)
+
+New in this step:
+
+* **Library** (`src/rosco/lib`):
+  * `libc.a`, `libsys.a` and `crtso.o`, built from `src/lib` with gcc;
+  * GNU versions of the ACK assembly runtime: `crtso`, `sndrec`,
+    `setjmp`/`longjmp` (with `move ccr`), the `__sigreturn` trampoline,
+    `_brksize`;
+  * the mul/div helpers, moved here from `roscklib.S` and shared with the
+    kernel;
+  * the 97 syscall stubs, generated from `lib/syscall/*.s`.
+* **Tools** (`src/rosco/tools`):
+  * `prog.ld`;
+  * `mkminix.py`, an ELF to Minix a.out converter with GEMDOS
+    relocations;
+  * `mkimage.py`, the boot image builder (what `build.c` does);
+  * `mkfs.py`, a big-endian Minix V2 file system builder;
+  * `stacks.py`.
+* **Builds:** `src/rosco/boot` (MM, FS, INIT); `src/rosco/cmds` (`sh` and
+  20 simple commands); the top-level `src/rosco/Makefile`.
+* **Root filesystem:** `src/rosco/rootfs` (`proto`, `etc/rc`,
+  `etc/ttytab`, ...).
+* **Kernel:**
+  * `roscdisk.c`, the disk driver registered as `acsi_task`, which serves
+    the appended root image;
+  * `place_image()` moves the image to the top of RAM and keeps it out of
+    MM's memory;
+  * `rootdev=DEV_HD0`, `c0=ACSI`;
+  * `panic()` now dumps the process table;
+  * the sizes magic is now `rosSIZES` (the 4-byte `SIZE` also occurred in
+    strings).
+* **Config:** `NR_ACSI_DRIVES 1`.
+* **Headers:**
+  * the rosco `<stdarg.h>` changed (char* `va_list`,
+    `__builtin_va_start`);
+  * new rosco `<string.h>` (renames the 16-bit mem* functions).
+
+Bugs found and fixed along the way:
+
+* **gcc's struct copies call `memcpy` with a 32-bit length;** the Minix
+  `memcpy` read 16 bits and copied nothing. Symptom: MM panic "MM can't
+  reply to 3" on the first fork. Found by temporarily instrumenting
+  `do_fork` and reading the generated code.
+* **mkminix used section offsets for relocations in an executable,** where
+  they are already addresses.
+* **mkminix stack sizes:** the "kw" suffix was not parsed.
+* **Stale library objects:** objects built before the `-D_MINIX` change
+  had to be rebuilt.
+
+Result in `r68k -d`:
+
+* `/etc/rc` runs and a shell prompt appears on the console;
+* tested: `ls`, `cat`, pipes, redirection, `mkdir`, `stty` (38400), `df`,
+  `date` (1970, no RTC), `sleep`, `cd`/`pwd`.
+
+Not committed yet. Not run on hardware.

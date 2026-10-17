@@ -35,6 +35,7 @@
 #include "rosco.h"
 
 FORWARD _PROTOTYPE( void initrosco, (void)				);
+FORWARD _PROTOTYPE( void place_image, (void)				);
 FORWARD _PROTOTYPE( void fake_task, (char *s)				);
 FORWARD _PROTOTYPE( void k_putenv, (_CONST char *name, _CONST char *val));
 FORWARD _PROTOTYPE( char *ul2a, (u32_t n, unsigned base)		);
@@ -85,6 +86,7 @@ PUBLIC void main()
   tot_mem_size = mem[0].size + mem[1].size;	/* total RAM */
 
   initrosco();
+  place_image();
 
   /* Clear the process table.
    * Set up mappings for proc_addr() and proc_number() macros.
@@ -165,11 +167,58 @@ PUBLIC void main()
 
   mem[0].size -= base;			/* used by system */
   mem[0].base += base;			/* memory no longer free */
+  if (rosco_extralen != 0) {
+	/* The root image sits at the top of RAM: not free either. */
+	mem[0].size = ((phys_bytes) rosco_extra >> CLICK_SHIFT) - mem[0].base;
+  }
 
   proc[NR_TASKS+INIT_PROC_NR].p_pid = 1;/* INIT of course has pid 1 */
   bill_ptr = proc_addr(HARDWARE);	/* it has to point somewhere */
   proc_addr(IDLE)->p_priority = PPRI_IDLE;
   lock_pick_proc();
+}
+
+
+/*===========================================================================*
+ *                              place_image                                  *
+ *===========================================================================*/
+PRIVATE void place_image()
+{
+/* The loader leaves the file system image (rosco_extra) where the firmware
+ * loaded ROSCODE1.BIN, above the system.  Move it to the top of RAM, on a
+ * click boundary, so that the memory between the system and the image is
+ * one free chunk.  The image is the root device (roscdisk.c).
+ */
+  phys_bytes sysend, top;
+  unsigned long n;
+  register long *s, *d;
+  int i;
+
+  if (rosco_extralen == 0) return;
+
+  /* sizes[]: text and data clicks of kernel, MM, FS (, INET), INIT */
+  for (sysend = 0, i = 0; i < 2 * (INIT_PROC_NR + 2); i++)
+	sysend += (phys_bytes) sizes[i] << CLICK_SHIFT;
+  if ((phys_bytes) rosco_extra < sysend)
+	panic("root image overwritten by the system image", NO_NUM);
+
+  top = (rosco_memsize - rosco_extralen) & ~((phys_bytes) CLICK_SIZE - 1);
+  if (top < sysend) panic("root image does not fit in RAM", NO_NUM);
+
+  /* Copy longs; upwards from the end, the areas may overlap. */
+  n = (rosco_extralen + 3) / 4;
+  s = (long *) rosco_extra;
+  d = (long *) top;
+  if (d > s) {
+	s += n;
+	d += n;
+	while (n-- > 0) *--d = *--s;
+  } else {
+	while (n-- > 0) *d++ = *s++;
+  }
+  rosco_extra = (char *) top;
+  printf("root image: %ldkB at %lx\n", (long) rosco_extralen >> 10,
+							(long) top);
 }
 
 
@@ -272,6 +321,7 @@ int n;
 	if (n != NO_NUM) printf(" %d", n);
 	printf("\n");
   }
+  p_dmp();			/* what was running, for the bug report */
 #ifdef REBOOT_AFTER_PANIC
   wreboot(RBT_REBOOT);
 #else
@@ -343,30 +393,24 @@ _CONST char *name;
  *===========================================================================*/
 PRIVATE void initrosco()
 {
-/* Set up the DUART: console on channel A as the firmware has it (8N1,
- * 115200 baud, RTS asserted; roscrs232.c takes it over), channel B off,
+/* Set up the DUART: console on channel A (8N1 at ROSCO_CONS_BAUD, RTS
+ * asserted; roscrs232.c takes it over), channel B off,
  * the counter/timer as the clock at HZ, and the interrupt vector.  The
  * SD card pins on the output port are not touched.
  */
 
   DUART->du_imr = duart_imr = 0;	/* everything masked */
 
-  /* Channel A: the firmware's settings (firmware duart.asm), so a console
-   * without firmware initialization works too.  Let the loader's last
-   * characters go out first; the receiver and transmitter are not reset.
+  /* Baud rate set 2 as the firmware selects it (firmware duart.asm), and
+   * the counter/timer mode; ACR is shared by both channels.
    */
-  while ((DUART->du_sra & SR_TXEMT) == 0)
-	;
-  DUART->du_cra = CR_RSTERR;
-  DUART->du_cra = CR_RSTMR;
-  DUART->du_mra = MR1_NOPAR | MR1_CS8;	/* MR1A */
-  DUART->du_mra = MR2_NORMAL | MR2_STOP1; /* MR2A */
   DUART->du_acr = ACR_BRG2 | ACR_TIMER16;
-  DUART->du_cra = CR_XRXEXT;		/* XR extended rates: 115200 */
-  DUART->du_cra = CR_XTXEXT;
-  DUART->du_csra = CSR_115200_X;
-  DUART->du_opset = OP_RTSA;		/* assert RTS A */
-  DUART->du_cra = CR_RXEN | CR_TXEN;
+
+  /* Channel A: 8N1 at ROSCO_CONS_BAUD, RTS asserted, so a console without
+   * firmware initialization works too.  rs_cons_setup() waits for the
+   * loader's last characters to go out; it does not reset the channel.
+   */
+  rs_cons_setup();
 
   /* Channel B: disabled until rs_init() (roscrs232.c) sets it up. */
   DUART->du_crb = CR_RXDIS | CR_TXDIS;
@@ -379,9 +423,13 @@ PRIVATE void initrosco()
   DUART->du_ivr = ROSCO_DUART_VEC;
   duart_imr_set(ISR_CTR);
 
-/* warning: fs expects decimal numbers */
-  k_putenv("rootdev", ul2a((unsigned long) DEV_RAM, 10));
+/* warning: fs expects decimal numbers.  The root is the image that came
+ * with ROSCODE1.BIN (roscdisk.c, controller 0, drive 0, whole disk).
+ */
+  k_putenv("rootdev", ul2a((unsigned long)
+			(rosco_extralen != 0 ? DEV_HD0 : DEV_RAM), 10));
   k_putenv("ramimagedev", ul2a((unsigned long) DEV_RAM, 10));
+  k_putenv("c0", "ACSI");
   k_putenv("ramsize", ul2a((unsigned long) 0, 10));	/* size of ramdisk */
   k_putenv("processor", ul2a((unsigned long) M68000, 10));
   k_putenv("NR_BUFS", ul2a((unsigned long) NR_BUFS, 10));

@@ -525,12 +525,19 @@ How this works without touching shared files:
 | `src/kernel/roscmain.c` | **done (M2)** | From `stmain.c`: `main` (servers with size 0 are not started: kernel-only image), `initrosco()` (DUART A as the firmware sets it, channel B off, timer at HZ, IVR, kernel env), `duartint()`, IMR shadow, `trap`/`panic`/`wreboot`/`getenv`, fake tasks. Compile-time check of the proc offsets used by the assembler |
 | `src/kernel/roscons.c` | **done (M3)** | Console glue: `scr_init` hands channel A to `roscrs232.c`; polled `putk` (TxRDY test and write under `lock()`); debug keys PF1–PF3 (process table with uptime, memory map, registers) and PF4 (test line on `/dev/tty00`); stubs for `kb_timer`, `vdu_loadfont`, `vduswitch`, `func_key` |
 | `src/kernel/rosco.h` | **done (M2)** | Prototypes and variables of the rosco machine layer |
+| `src/kernel/roscdisk.c` | **done (M4)** | Disk driver on `driver.c`, registered as `acsi_task` (`NR_ACSI_DRIVES 1`, `c0=ACSI`): minor 0 is the root image the loader appends, kept in RAM (writes are lost on reset). SD card to follow in M5 |
 | `src/kernel/roscstub.c` | **done** | `fd_timer`, `errno`, the dummy MFP for `clock.c` |
-| `src/kernel/roscrs232.c` | **done (M3)** | `rs232.c` logic on the DUART for both lines: line 0 is the console (channel A), line 1 is `/dev/tty00` (channel B). Interrupt-driven buffered input and output; the TxRDY interrupt is only enabled while output may go out. termios speeds 50–115200 (CSR code + XR extended bit, ACR[7]=1), parity, data and stop bits. RTS input flow control on OP0/OP1. CTS is gated in hardware (MR2) unless CLOCAL; the console never waits for CTS and keeps 115200. Errors are counted and the character dropped; break, HUPCL (drops RTS) |
+| `src/kernel/roscrs232.c` | **done (M3)** | `rs232.c` logic on the DUART for both lines: line 0 is the console (channel A), line 1 is `/dev/tty00` (channel B). Interrupt-driven buffered input and output; the TxRDY interrupt is only enabled while output may go out. termios speeds 50–115200 (CSR code + XR extended bit, ACR[7]=1), parity, data and stop bits. RTS input flow control on OP0/OP1. CTS is gated in hardware (MR2) unless CLOCAL; the console never waits for CTS and keeps `ROSCO_CONS_BAUD`. Errors are counted and the character dropped; break, HUPCL (drops RTS) |
 | `src/rosco/kernel/Makefile`, `kernel.ld` | **done (M2)** | GNU build in `src/rosco/kernel/` through `xrun`: rosco files + shared `proc system stshadow tty clock memory table dmp misc pty driver drvlib` + a small `libk.a` (kprintf, `_sigset`, u64, string functions). Links at 0, data on a click boundary, `sizes[0..1]` from the linker. `make` gives `kernel`, `kernel.bin` and `ROSCODE1.BIN` (loader + kernel); `make run` boots it in `r68k -d` |
 | `src/rosco/kernel/staddr.h`, `stmfp.h` | **done (M2)** | Stand-ins found by the build-time copy of `clock.c`, so its MFP timer code writes a dummy in RAM |
 | `src/rosco/include/stdarg.h` | **done (M2)** | gcc builtins; the `__GNUC__` branch of `include/stdarg.h` is for gcc 1/2 |
-| `src/rosco/tools/` | todo (M4) | ELF → Minix-ST executable converter (with relocations); image builder for kernel + mm + fs + init (fills `sizes[2..]`, found behind the magic `SIZE`) |
+| `src/rosco/Makefile` | **done (M4)** | Top level: builds loader, kernel, lib, boot, cmds, the root fs and `ROSCODE1.BIN`; `make run` boots it in `r68k -d` |
+| `src/rosco/lib/` | **done (M4)** | C library build: `libc.a` (lib/ansi, posix, other, stdio; generated syscall stubs; fphook no-float printf/strtod), `libsys.a` (lib/syslib), `crtso.o`. GNU replacements: `crtso.S` (with the `0xDADA` data block), `sndrec.S`, `setjmp.S` (register-saving jmp_buf, `move ccr`), `sigret.S`, `brksz.S`, `m68kmul.S` (mul/div helpers, shared with the kernel), `gccmem.c`, `regexp.c` wrapper |
+| `src/rosco/include/string.h` | **done (M4)** | Renames the Minix `memcpy`/`memmove`/`memset`/`memcmp` to `_memcpy16` etc. (16 bit `size_t`); the plain names are the 32 bit versions gcc calls itself (`lib/gccmem.c`) |
+| `src/rosco/boot/` | **done (M4)** | Builds MM (6k stack), FS (4k), INIT (`sttools/init.c`, 2k) |
+| `src/rosco/cmds/` | **done (M4)** | Builds the old Minix shell (`commands/sh`) and 20 commands from `commands/simple`, with the ACK build's stack sizes (`tools/stacks.py`) |
+| `src/rosco/tools/` | **done (M4)** | `prog.ld` (program link script), `mkminix.py` (ELF → Minix-ST a.out with GEMDOS relocations), `mkimage.py` (boot image: relocates MM/FS/INIT, fills `sizes[]` behind the magic `rosSIZES`, patches INIT's origin into FS), `mkfs.py` (big endian Minix V2 file system from a proto file), `stacks.py` |
+| `src/rosco/rootfs/` | **done (M4)** | Root file system: `proto` (devices, /etc, /bin, /tmp, /usr), `etc/rc`, `etc/ttytab` (console runs `sh` directly, no getty/login yet), `passwd`, `group`, `utmp` |
 | `src/mm/makefile.rosco`, `src/fs/makefile.rosco` | todo (M4) | Same as `makefile.st`, with the include override |
 
 ### M2 result (2026-10-17, r68k -d)
@@ -584,6 +591,16 @@ Hardware facts checked against the r2 schematic
 * SPI on IP2 / OP2 / OP4 / OP6 / OP7;
 * CTS runs straight to the 6-pin UART headers J1/J2 with no pull resistor.
 
+Console speed (2026-10-17): the target board's firmware runs the console
+(serial 1 = channel A) at **38400**. The stock firmware 2.x uses 115200.
+`ROSCO_CONS_BAUD` in the rosco `config.h` (default 38400) sets channel A
+in `rs_cons_setup()`, which is called from `initrosco()`. The speed comes
+from the same table as `tty00`: 38400 = CSR code C with the extended bit,
+under rate set 2. That entry is not confirmed by firmware source; if the
+console garbles after the loader banner, this table entry is the first
+suspect. The loader does not touch the speed, so it always prints at the
+firmware's rate.
+
 Still "verify" on the board:
 
 * the extended baud rate table (only 115200 is confirmed by the firmware);
@@ -592,6 +609,56 @@ Still "verify" on the board:
 Risk: interrupt-driven output at 115200 baud means one interrupt per
 character (about 11,500/s) on a 10 MHz 68010. If that costs too much CPU,
 fall back to 38400 on the console, or send bursts from the TTY task.
+
+### M4 result (2026-10-17, r68k -d): shell prompt
+
+```
+Minix rosco loader
+rosco_m68k: 68020, 1024kB RAM, kernel 62kB
+root image: 400kB at 9c000
+Minix 2.0.4  Copyright 2001 Prentice-Hall, Inc.
+
+Memory size = 1024K   MINIX = 207K   RAM disk = 0K   Available = 418K
+
+rosco_m68k: running /etc/rc
+# cat /tmp/f | wc
+      2      4     18
+# stty
+speed 38400 baud; 24 rows 80 columns
+# df
+Filesystem    1k-Blocks     free     used    %  FUsed%  Mounted on
+/dev/c0d0           400      118      282  71%    56%   /
+```
+
+* Boot path: the loader copies kernel, MM, FS and INIT (`boot/image.bin`,
+  206 KB) to 0. The kernel moves the root image (400 KB) to the top of
+  RAM, and FS mounts it from `roscdisk.c`.
+* INIT runs `/etc/rc`, then the ttytab entry: `sh` on the console.
+* Tested and working: fork/exec, pipes, redirection, files and
+  directories, `stty`, `sleep` (alarm), `df`/`mtab`.
+* The date is 1970, because there is no RTC.
+* `make` in `src/rosco` builds it all; `make run` boots it.
+
+Findings while doing M4:
+
+* **gcc's own `memcpy` calls pass a 32-bit length.** Struct assignment
+  (`*rpc = *rpp` in the kernel's `do_fork`) compiles to a `memcpy` call
+  with gcc's `size_t`, which is 32 bits even with `-mshort`. The Minix
+  `memcpy` took a 16-bit length and copied nothing, so fork failed ("MM
+  can't reply to 3"). Fixed with the rosco `<string.h>` renaming plus
+  `gccmem.c`. A scan of all built sources found no implicit mem*
+  declarations that would bypass the renaming.
+* **`sizeof` is 32 bits with gcc** (ACK: 16 bits). Code that passes
+  `sizeof` straight to a `%d` varargs argument would break; none was found
+  in the built sources.
+* **ACK predefines needed by the headers and sources:** `__minix`,
+  `__m68000`, `_EM_WSIZE/PSIZE/LSIZE`. Plus `_MINIX`, `_POSIX_SOURCE` and
+  `__MSHORT__` from the old gnu-16 library config.
+* **`<stdarg.h>`:** `va_list` stays `char *` (Minix prototypes), and
+  `va_start` uses `__builtin_va_start`. With `__builtin_next_arg`, gcc
+  cloned a static variadic function into a fixed-argument copy.
+* **The root image size is a RAM trade-off:** 400 blocks leave about
+  418 KB for processes.
 
 ## 10. Immediate next actions (no changes to existing files required)
 

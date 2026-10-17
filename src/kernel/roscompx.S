@@ -545,9 +545,9 @@ get_mem_size:
 
 /* Patched by the boot image builder; sizes[0] and sizes[1] (kernel text
  * and data in clicks) are filled in by the linker.  The magic in front lets
- * the builder find the table.
+ * the builder (src/rosco/tools/mkimage.py) find the table.
  */
-	.long	0x53495A45		/* 'SIZE' */
+	.ascii	"rosSIZES"
 sizes:
 	.short	__ktext_clicks, __kdata_clicks, 0, 0, 0, 0, 0, 0
 #if (ENABLE_NETWORKING == 1)

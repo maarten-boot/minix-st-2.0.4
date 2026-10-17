@@ -126,7 +126,7 @@ struct duart {
  * 0x8 gives 115200; this is what the firmware uses.  The rest of the
  * extended table is "verify".
  */
-#define	CSR_115200_X	0x88	/* ACR_BRG2 + extended rates */
+#define	CSR_115200_X	0x88	/* ACR_BRG2 + extended rates (firmware) */
 /* Standard MC68681 set 2 codes (extended bits clear), "verify": */
 #define	CSR_1200	0x66
 #define	CSR_2400	0x88
