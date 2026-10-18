@@ -38,9 +38,11 @@ PARTS	= loader kernel lib boot cmds test
 # root file system size in 1k blocks; it lives in RAM next to the system
 ROOTBLOCKS = 400
 # SD card: FAT partition in 512 byte sectors, Minix root in 1k blocks
+# (64MB: room for a compiler and sources; i-node numbers are 16 bits, so
+# at most 65535 i-nodes)
 SDFATSECTORS = 16384
-SDROOTBLOCKS = 8192
-SDROOTINODES = 1024
+SDROOTBLOCKS = 65536
+SDROOTINODES = 8192
 
 all:	ROSCODE1.BIN
 

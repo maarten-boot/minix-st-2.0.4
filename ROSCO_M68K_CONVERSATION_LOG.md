@@ -806,4 +806,47 @@ User:
   (the `echo` after it does not run); `TZ=GMT0`.
 * **Default card rebuilt** (38400).
 
+Committed `978aea9`.
+
+* **Board (user):** "ctrl-c works on the board".
+
+Not committed yet.
+
+## Follow-up 21: 64MB SD root
+
+User:
+> i cannot currently test the other tty ; first do 3 and then 2
+
+(3 = a bigger SD root, 2 = a C compiler on the target.)
+
+* **Limits checked:** `block_t`, `zone_t` and `bit_t` are 32 bits; the FS
+  has no fixed bitmap slots (bitmap blocks go through the cache); the SD
+  driver keeps positions in 32/64 bits. Only `ino_t` is 16 bits (at most
+  65535 i-nodes).
+* **Makefile:** `SDROOTBLOCKS = 65536` (64MB), `SDROOTINODES = 8192`
+  (mkfs makes 8207, a whole number of i-node blocks). `rosco_sd.bin` is
+  now 73MB (1MB + 8MB FAT + 64MB Minix).
+* **Fill test, MAME, firmware 2.42, 5MB:** 34 copies of a 1MB file
+  (`cp`), all compared ok (`cmp`); `df`: 39848 of 65536 blocks used, so
+  well past block 32768 (where 16-bit block or sector numbers would wrap).
+  Writing 34MB took about 50 minutes in unthrottled MAME, comparing too.
+* **fsck** then reported "zone 65536 is missing" ... and "inode 8208 is
+  missing" ...: exactly the bitmap bits beyond the last zone and i-node,
+  which `tools/mkfs.py` set. Minix mkfs leaves them clear, fsck expects
+  them clear, and the FS never looks past them (`alloc_bit()` stops at
+  `map_bits`). `mkfs.py` now leaves them clear (also for the RAM root).
+  This was already so on the 8MB card; fsck had not been run before.
+* **ACK** (user: the old Minix site has the 16-bit ACK ANSI compilers):
+  http://download.minix3.org/previous-versions/ANSI-compilers/ has only
+  binaries (plus the `ncc.c` driver), the 32-bit directory is empty, and
+  the binaries are i8086 (a.out CPU byte 0x04, code `89 e3 8b 0f`). Not
+  usable on the 68010.
+* **Rerun with the fixed mkfs.py (MAME, 2.42, 5MB):**
+  * fsck on the new card: no errors (62975 free zones);
+  * fill with 34 x 1MB (51 minutes), `df` 39844 used; fsck: no errors;
+  * after a restart: `/usr/x34` (the highest blocks) compares ok; after
+    `rm /usr/x*` `df` shows 4858 used, and fsck: no errors, free zones
+    matching `df`.
+* **Default card rebuilt** (38400), 73MB.
+
 Not committed yet.

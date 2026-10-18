@@ -204,14 +204,11 @@ def main():
 
     for bit in range(len(nodes)):		# bit 0 and the used inodes
         setbit(2, bit)
-    for bit in range(ninodes + 1, imap_blocks * BLOCK * 8):
-        setbit(2, bit)				# beyond the last inode
     zmap = 2 + imap_blocks
-    nzones = blocks - first + 1			# bits: 0 + data zones
     for bit in range(0, nextzone - first + 1):
         setbit(zmap, bit)
-    for bit in range(nzones, zmap_blocks * BLOCK * 8):
-        setbit(zmap, bit)
+    # Bits beyond the last i-node and zone stay clear, as with Minix mkfs:
+    # fsck expects that, and the FS never looks past them (alloc_bit()).
 
     max_size = (NR_DZONES + NR_INDIRECTS + NR_INDIRECTS ** 2) * BLOCK
     struct.pack_into(">HHhhHhIhhI", img, BLOCK, ninodes,
