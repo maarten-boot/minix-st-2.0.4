@@ -814,3 +814,33 @@ Known and not fixed:
    `stop`, `reset`, `movec`).
 5. Draft `include/minix/config.h` settings for `MACHINE == ROSCO` (RAM budget,
    drivers off).
+
+## 11. Ideas for later
+
+### 11.1 Minix in the unused part of the 1MB flash ROM (noted 2026-10-18)
+
+The ROM space is 1MB at 0xE00000-0xEFFFFF (two SST39SF040, even and odd
+bytes: the firmware build makes `rosco_m68k_even.rom` and
+`rosco_m68k_odd.rom`). Firmware 2.42 uses only 43792 bytes of it (2.50.DEV
+892928), so with 2.42 about 980kB are free. Possible uses, cheapest first:
+
+* **Boot image in ROM.** The boot image (kernel, MM, FS, INIT, about 292kB)
+  at a fixed ROM offset, e.g. 0xE80000. A small ROSCODE1.BIN (just the
+  loader) or a firmware hook copies it to RAM: no 14 s SD load at 21kB/s,
+  and the SD card is only the root file system. The loader already copies
+  a payload; it would take the source address from the ROM instead of
+  from the file.
+* **Read-only ROM disk.** A Minix file system image in ROM as another
+  minor of the rosco disk driver (like c0d1, the RAM root, but with
+  `dv_base` in ROM and writes refused): a fast /usr with the commands
+  that rarely change, mounted read-only, using no RAM and no SD time.
+* **Execute in place:** kernel text run from ROM. Not worth it: the
+  kernel is small, and Minix-ST shadowing and the image layout assume
+  everything in RAM.
+
+To check first: how the board's ROMs are (re)programmed (external
+programmer, or an in-system flash tool in the firmware: not in 2.42 as far
+as seen); that the firmware leaves the rest of the ROM alone; and the
+even/odd split for the image tools. MAME can try it first: its ROM region
+is the whole 1MB, so a ROM file with the image appended can be loaded with
+`-bios` once the driver gets an entry for it.

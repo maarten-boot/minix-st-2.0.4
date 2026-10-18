@@ -850,3 +850,65 @@ User:
 * **Default card rebuilt** (38400), 73MB.
 
 Not committed yet.
+
+Committed `1a4a11a`.
+
+## Follow-up 22: compiler plan; Minix in the flash ROM (note)
+
+User:
+> commit this first, then go ahead with the plan; make a note if we cand
+> use the unused space in the 1M flash rom to host parts of minix
+
+* **ROM note:** spec section 11.1. Firmware 2.42 uses 43792 bytes of the
+  1MB ROM; ideas: the boot image in ROM (no SD load), a read-only ROM
+  disk as another disk minor; execute in place not worth it. Open: how
+  the ROMs are programmed, the even/odd split.
+* **Compiler survey** (downloads in the scratchpad only, nothing imported):
+  * c68 V4 on FUNET (`/minix/lang/c68/V4/src.tar.Z`) is damaged: it
+    unpacks to five headers. V3 (+patch1, 1991) is intact: 16-bit int by
+    default, ACK/gas/CP-M output, but no ANSI prototypes (4.0 added them,
+    "to compile the ANSI'fied code of Minix").
+  * xtc68 (codeberg.org/stronnag/xtc68, MIT for its changes): the last
+    c68 code base (4.x), building on modern hosts; ACK output by default
+    (`out68k_a.c`), `int=16`/`int=32`, plus `src/cpp` (old GNU cccp, GPL).
+    c68 itself: "may be redistributed as long there is no commercial
+    interest ... must not be redistributed without its full sources".
+  * Sozobon 2.0 sources (sourceforge.net/projects/sozobon, "Source
+    code"): hcc, top, jas, ld, ar, nm, size, cc, make. jas 1.2 has
+    "changes for minix: input compatibility with ack"; ld built with
+    `-DMINIX` writes the 32-byte Minix header with the stack size.
+    License: free, no charge beyond reproduction, modified versions
+    must be marked.
+  * SozobonX on FUNET: binaries only. ACK: i8086 only (see above).
+* **Plan:** c68 (ACK syntax, int=16) -> jas -> Sozobon ld (-DMINIX) ->
+  Minix a.out; cpp from xtc68; the Minix libc compiled with c68 into
+  Sozobon objects; a `cc` driver. First a host prototype (hello world in
+  r68k/MAME), then the import as new files under `src/rosco/cc/`, then
+  the target builds of the tools with m68k-elf-gcc.
+* **Host prototype (scratchpad):**
+  * xtc68 is now on Codeberg (user: "now on codeberg:
+    https://codeberg.org/stronnag/xtc68"); the snapshot used is its HEAD,
+    commit 206699274d70 (2026-06-28).
+  * c68 4.5 from xtc68 builds with the host cc as is (`-DXTC68`,
+    `src/include/xtc68.h`). `c68 -int=16 x.c x.s` writes ACK syntax with
+    16-bit int.
+  * Sozobon jas/ld: the sources have DOS line ends (converted to LF), and
+    are K&R code that assumes a 32-bit `long` (written to the object and
+    executable files). No `-m32` on this host or in the rosco image, so a
+    force-included `host32.h`: the system headers the sources need
+    (stdio, ctype, setjmp, fcntl, unistd, string), then `#define long
+    int`, and `link`, `strnlen`, `bcopy` renamed (they clash with libc).
+    Two K&R `lseek` declarations removed (marked "rosco:"). Built with
+    -Wint-to-pointer-cast etc.: no pointer truncation reported.
+  * jas needs `-DMINIX` for the ACK syntax (`.sect`, `!` comments).
+  * ld `-DMINIX` wrote a_cpu 0x04 (i8086, the old Minix-ST tools; MM
+    accepts it); changed to 0x0B (A_M68K) like our executables, marked.
+  * c68 calls `.Xldiv`, `.Xlrem`, `.Xlmul` (and unsigned and assigning
+    `.Xas*` forms) for long arithmetic, operands on the stack, the callee
+    pops them, result in d0. Written in ACK syntax (`sup.s`, prototype).
+  * Test: a crt0 and sendrec in ACK syntax, write()/_exit()/strlen() in C,
+    and a hello program, all through c68 -> jas -> ld (=8192 stack); put
+    on a MAME card with mkfs.py. Output in MAME (2.42, 5MB):
+    "hello from c68 on rosco", "0300007" (long arithmetic), exit status 7.
+
+Not committed yet.
