@@ -1122,3 +1122,52 @@ Committed `f9f60de`.
     OP7 alone.
 
 Not committed yet.
+
+Committed `ea7fbf9`.
+
+## Follow-up 28: status; the patches as branches in the sibling repos
+
+User (among others):
+> what is the current fastest serial speed we can realistically use
+> ... i was thinking of using SLIP on a serial line at a later stage.
+> ok what is the current status on minix
+> apply the patch to ../r68k in a new branch / commit it on the branch
+> ack is now at ../ack you can do the same on a new branch for your
+> patches of ack
+> update the log with the r68k and ack branches
+
+* **Serial speed (answer, no changes):** 115200 is the hardware ceiling
+  with the 3.6864 MHz DUART crystal (the counter/timer as clock source
+  tops out there too). Output at 115200 is safe; input bursts at 115200
+  are untested on the board (small RX FIFO, `overrun_errors` counted but
+  not reported). Console speed must match the firmware (38400 on the
+  board, 115200 with the stock 2.42 build); tty00 can be set with stty.
+* **SLIP (noted for later):** Minix 2.0.4 has it all: `src/inet` with
+  `psip`, `commands/simple/slip.c`, ifconfig, add_route, ping,
+  telnet(d), ftp(d), rlogind. Needs ENABLE_NETWORKING, the INET server in
+  the boot image, /dev/psip0, inet.conf; PC side slattach. The rosco
+  config already reserves "SLIP over DUART B".
+* **../r68k**, branch `rosco-minix-duart` from `main` at bac2219: commit
+  a3d2f10, the content of `src/rosco/emu/r68k-duart.patch` (XR68C681
+  model, non-destructive memory probe, R68K_RAM, debug aids). `main`
+  unchanged; not pushed.
+* **../ack**, branch `rosco-minix68k` from `default` at 7afa32a0a, the
+  content of `src/rosco/ack/ack-minix68k.patch` as four commits. First
+  made in a checkout of davidgiven/ack; the user then replaced ../ack
+  with a checkout of the fork (git@github.com:maarten-boot/ack.git, same
+  commit: "it should have been my fork") and the branch was made again
+  there:
+  * eaa025860 m68020 ncg: `con_mult()` emits `.data4` for 4-byte
+    constants (for upstream);
+  * 8625a2877 minix68k cv: 32-byte header on 64-bit hosts (for
+    upstream);
+  * 19b989ceb `sys_maketempfile()` for Minix (no clock_gettime);
+  * dae8173bc Makefile: build only minix68k (local configuration, not
+    for upstream).
+  `default` unchanged; not pushed (push it to the fork from a machine
+  with GitHub access: `git push -u origin rosco-minix68k`).
+* Both committed as Maarten Boot <11140490+maarten-boot@users.noreply.
+  github.com> (the repos have no identity of their own). The patch files
+  in this repo stay the source for build-r68k.sh and build-ack.sh.
+
+Not committed yet.
