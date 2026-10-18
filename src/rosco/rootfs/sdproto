@@ -170,3 +170,4 @@ f /usr/test/sh1	755 ../../test/sh1
 f /usr/test/sh2	755 ../../test/sh2
 f /usr/test/test1.c	644 ../../test/test1.c
 f /usr/test/texecl	755 ../test/bin/texecl
+f /usr/test/tshadow	755 ../test/bin/tshadow

@@ -1,7 +1,15 @@
 # SPEC: Porting Minix-ST 2.0.4 to the rosco_m68k Classic v2.1
 
-Status: analysis / proposal only. No existing file in this repository has been
-modified. Date: 2026-10-17.
+Status: started 2026-10-17 as an analysis; the port is implemented on the
+`rosco-m68k` branch (sections 9 and 11). Sections 2-8 and 10 are the
+original analysis and are kept as written; where they differ from the code,
+section 9 and the conversation log are current. Updated 2026-10-18.
+
+Existing files: the port is in new `rosco*` files. Since 2026-10-18 an
+existing file may be changed on `rosco-m68k` after the user approves the
+specific file; so far `src/kernel/system.c` (`umap()`, section 9 M6). The
+user's commit `8a7b10f` holds the host-build Makefile edits and `bin/aal`
+(section 2.2); they are not part of the port.
 
 ---
 
@@ -14,7 +22,8 @@ modified. Date: 2026-10-17.
   have, and move serial I/O (and therefore the console) to the on-board
   **XR68C681P DUART**.
 * **Constraint for this phase:** do not change existing files. This document
-  and `ROSCO_M68K_CONVERSATION_LOG.md` are the only new files.
+  and `ROSCO_M68K_CONVERSATION_LOG.md` are the only new files. (Later
+  relaxed; see the status note at the top.)
 
 ---
 
@@ -51,6 +60,11 @@ modified. Date: 2026-10-17.
 * Update 2026-10-17: the user removed these build remnants. No `.o`, `.a` or
   `a.out` files remain in the tree. The Makefile edits and `bin/aal` are still
   present.
+* Update 2026-10-18: the user committed the Makefile edits and `bin/aal` in
+  `8a7b10f` ("makefile updates and aal (outdated)"): `bin/aal`,
+  `src/Makefile`, `src/lib/Makefile`, `src/lib/makeconfig` and the
+  Makefiles of `src/lib/{ansi,curses,editline,end,float,ip,libm2,libp}`.
+  The rosco build does not use them.
 
 ### 2.3 Kernel files: ST-specific vs generic
 
@@ -135,6 +149,9 @@ Sources: the rosco_m68k repo, branch `release/version-2.4` (firmware equates
 
 ## 4. Gap analysis
 
+(The analysis as of 2026-10-17. Current values: console 38400 by default
+(`ROSCO_CONS_BAUD`, 115200 for MAME), `NR_BUFS` 128; see section 9.)
+
 | Area | Atari ST implementation | rosco Classic v2 | Required action |
 |---|---|---|---|
 | CPU | 68000/010/020/030 auto-detect in `stmpx.s` | 68010 | Detection already handles a 68010 (`_proctyp = 1`). The 68010 format‑8 bus-error frame is already in `.framesizes` (`62` bytes including the return address). Could be fixed with `FIXED_CPU=1` |
@@ -188,7 +205,7 @@ Sources: the rosco_m68k repo, branch `release/version-2.4` (firmware equates
   copied into a separate RAM disk, which would need twice the RAM in a 1 MB
   machine.
 
-### 5.2 Low-level kernel (`stmpx.s` → new `roscompx.s`)
+### 5.2 Low-level kernel (`stmpx.s` → new `roscompx.S`)
 
 * Keep: `save`, `restart`, `genint` (including the `k_reenter` logic), `sys`
   (trap #0), the synchronous trap handlers, `lock`/`unlock`/`restore`,
@@ -208,14 +225,14 @@ Sources: the rosco_m68k repo, branch `release/version-2.4` (firmware equates
 
 ### 5.3 Kernel C side
 
-* `rosmain.c` (from `stmain.c`): `initrosco()` replaces `initst()`. It
+* `roscmain.c` (from `stmain.c`): `initrosco()` replaces `initst()`. It
   * initialises the DUART (both channels, ACR, counter, IVR, IMR shadow);
   * removes the PSG/MFP/video setup;
   * sets the kernel env: `rootdev`, `ramsize=0`, `c0=SD`,
     `processor=M68000`, `NR_BUFS`, `NR_CONS=1`, `NR_PTYS=0`.
   Keep `main()`, `trap()`, `checksp()`, `panic()`, `getenv()` and
   `idle_task()` as they are.
-* `rosduart.h` (replaces `stmfp.h`/`staddr.h`): register struct on odd bytes
+* `roscduart.h` (replaces `stmfp.h`/`staddr.h`): register struct on odd bytes
   at `0xF00001`; bits for SR, ISR/IMR, ACR, CSR codes and OPR set/reset.
 * `roscons.c` (replaces `stcon.c`/`stvdu.c`/`stkbd.c`): the console tty on
   DUART A, with polled `putk` and interrupt-driven input. Keep the debug dump
@@ -448,6 +465,11 @@ Limits to keep in mind:
 
 ## 8. Risks and open questions
 
+(As of 2026-10-17. The questions are answered: the board has the 4MB
+expansion (5MB), runs firmware 2.42, the port uses new `rosco*` files, and
+the toolchain is gcc (section 6.1) with ACK on the target (11.2); M0 with
+Hatari was skipped. Open items are in section 12.)
+
 * **RAM.** 1 MB has to hold the kernel, MM, FS, the buffer cache, init, the
   shell and shadow copies for fork. That is tight but realistic for Minix 2
   (the ST ran in 1 MB) if the buffer cache and networking are cut. Expansion
@@ -480,7 +502,8 @@ Limits to keep in mind:
 ## 9. Implementation layout (decided 2026-10-17)
 
 **Decision (user): implement with new `rosco*` files on the `rosco-m68k`
-branch. Existing files are not edited.**
+branch. Existing files are not edited.** (Relaxed 2026-10-18: an existing
+file may be changed after the user approves it; see the status note.)
 
 How this works without touching shared files:
 
@@ -513,40 +536,43 @@ How this works without touching shared files:
 
 | File | Status | Contents |
 |---|---|---|
-| `src/rosco/include/minix/config.h` | **done** | Config override (48 buffers, 16 procs, 1 console + 1 RS line, no PTY/printer/ACSI/floppy/net/swap, `ATARI_TYPE ROSCO`, `ROSCO_HZ 60`, `ROSCO_KEEP_FW 1`: keep 0x400–0x2000, `OPTIMIZE_FOR_SPEED 0`, `_WORD_SIZE` also for gcc). Checked with host `cpp` |
+| `src/rosco/include/minix/config.h` | **done** | Config override (128 buffers (48 until M6), 16 procs, 1 console + 1 RS line, no PTY/printer/ACSI/floppy/net/swap, `ATARI_TYPE ROSCO`, `ROSCO_HZ 60`, `ROSCO_KEEP_FW 1`: keep 0x400–0x2000, `OPTIMIZE_FOR_SPEED 0`, `_WORD_SIZE` also for gcc). Checked with host `cpp` |
 | `src/kernel/roscaddr.h` | **done** | Address map, firmware SDB/EFP addresses, ROM reset vectors, load address |
-| `src/kernel/roscduart.h` | **done** | XR68C681 registers (odd bytes at 0xF00001), SR/ISR/CR/MR/ACR bits, CSR codes, timer macro, OP/IP pins (SPI pins flagged). Host syntax check passed. Items marked "verify" need the Exar datasheet or schematic |
+| `src/kernel/roscduart.h` | **done** | XR68C681 registers (odd bytes at 0xF00001), SR/ISR/CR/MR/ACR bits, CSR codes, timer macro, OP/IP pins (SPI pins flagged). Host syntax check passed; the pins were checked against the r2 schematic and the baud rates on the board (rate set 1) |
 | `src/rosco/xrun` | **done** | Runs a command in the `roscopeco/rosco_m68k` toolchain container |
 | `src/rosco/.gitignore` | **done** | Ignores the build outputs |
 | `src/rosco/emu/r68k-duart.patch`, `build-r68k.sh` | **done (M5 update)** | XR68C681 model for the r68k emulator (`-d`); the script clones r68k at a fixed commit, patches and builds it (section 6.2) |
-| `src/rosco/loader/loader.S`, `loader.ld` | **done (M1 passes in r68k -d; not yet run on hardware)** | `ROSCODE1.BIN` stub at 0x40000. Masks the DUART, reads `SDB_MEMSIZE`, moves its copier above the file, copies the payload to `load_addr` while skipping the keep range (default 0x400–0x2000), sets VBR=0, enters the payload with d0='ROSC', d1=memsize, a0/d2=extra image. Disassembly checked |
+| `src/rosco/loader/loader.S`, `loader.ld` | **done (runs on the board)** | `ROSCODE1.BIN` stub at 0x40000. Masks the DUART, reads `SDB_MEMSIZE` (prints `RAM xxxxxxxx`; firmware 2.42 overwrites the SDB magic, so a plausible size, a multiple of 512K from 1 to 14MB, is accepted without it), moves its copier above the file, copies the payload to `load_addr` while skipping the keep range (default 0x400–0x2000), sets VBR=0, enters the payload with d0='ROSC', d1=memsize, a0/d2=extra image. Disassembly checked |
 | `src/rosco/loader/hello.S`, `payload.ld` | **done (M1 passes in r68k -d; not yet run on hardware)** | Test payload linked at 0, laid out like the kernel. Code starts at 0x2000. Prints the hand-over values, checks that the SDB magic survived, runs the DUART timer at 60 Hz on vector 0x45 (one '.' per second), echoes input, reports unexpected exceptions, and `q` reboots via the ROM vector |
 | `src/rosco/loader/mkrosco.c`, `Makefile` | **done** | Host tool that joins stub + payload (+ extra image) and fills the header. `make` builds `ROSCODE1.BIN` (9152 bytes); `make run` runs it in r68k with the DUART model |
-| `src/kernel/roscompx.S` | **done (M2)** | GNU port of `stmpx.s`: vector table (DUART at IVR `0x45`, all autovectors → `rupt`), firmware gap 0x400–0x2000, bss clear, loader hand-over (`rosco_memsize`, `rosco_extra`), CPU type from `SDB_CPUINFO` (probe as fallback), unchanged `genint`/`save`/`restart`/`sys`, `kreboot` via `0xE00004`, `get_mem_size` from the loader. Still todo: `move sr` emulation in `prvtrp` (M4, for ACK binaries) |
+| `src/kernel/roscompx.S` | **done (M2)** | GNU port of `stmpx.s`: vector table (DUART at IVR `0x45`, all autovectors → `rupt`), firmware gap 0x400–0x2000, bss clear, loader hand-over (`rosco_memsize`, `rosco_extra`), CPU type by probing (firmware 2.42 overwrites the SDB, so `SDB_CPUINFO` is not usable), unchanged `genint`/`save`/`restart`/`sys`, `kreboot` via `0xE00004` after resetting the DUART (IVR 0x0F, MR pointers, ACR) so the firmware finds it again, `get_mem_size` from the loader, `move sr` emulation in the privilege-violation handler (M6) |
 | `src/kernel/roscklib.S` | **done (M2)** | `klib68k.s` in GNU syntax, plus `__mulsi3`/`__udivsi3`/`__divsi3`/`__umodsi3`/`__modsi3`, the `_send`/`_receive`/`_sendrec` trap stubs and the `sig*set` aliases |
 | `src/kernel/roscmain.c` | **done (M2)** | From `stmain.c`: `main` (servers with size 0 are not started: kernel-only image), `initrosco()` (DUART A as the firmware sets it, channel B off, timer at HZ, IVR, kernel env), `duartint()`, IMR shadow, `trap`/`panic`/`wreboot`/`getenv`, fake tasks. Compile-time check of the proc offsets used by the assembler |
 | `src/kernel/roscons.c` | **done (M3)** | Console glue: `scr_init` hands channel A to `roscrs232.c`; polled `putk` (TxRDY test and write under `lock()`); debug keys PF1–PF3 (process table with uptime, memory map, registers) and PF4 (test line on `/dev/tty00`); stubs for `kb_timer`, `vdu_loadfont`, `vduswitch`, `func_key` |
 | `src/kernel/rosco.h` | **done (M2)** | Prototypes and variables of the rosco machine layer |
 | `src/kernel/roscdisk.c` | **done (M5)** | Disk driver on `driver.c`, registered as `acsi_task` (`NR_ACSI_DRIVES 1`, `c0=ACSI`). `c0d0` (minors 0–4): the SD card through the firmware's EFP SD routines (`sd_efp_*` in `roscklib.S`), whole card plus the four MBR primary partitions, parsed here because `drvlib`'s `partition()` copies little-endian entries raw. `c0d1` (minor 5): the root image appended to `ROSCODE1.BIN`, in RAM. `sd_root_minor()` finds the first Minix partition for the root when there is no image |
 | `src/kernel/roscstub.c` | **done** | `fd_timer`, `errno`, the dummy MFP for `clock.c` |
-| `src/kernel/roscrs232.c` | **done (M3)** | `rs232.c` logic on the DUART for both lines: line 0 is the console (channel A), line 1 is `/dev/tty00` (channel B). Interrupt-driven buffered input and output; the TxRDY interrupt is only enabled while output may go out. termios speeds 50–115200 (CSR code + XR extended bit, ACR[7]=1), parity, data and stop bits. RTS input flow control on OP0/OP1. CTS is gated in hardware (MR2) unless CLOCAL; the console never waits for CTS and keeps `ROSCO_CONS_BAUD`. Errors are counted and the character dropped; break, HUPCL (drops RTS) |
+| `src/kernel/roscrs232.c` | **done (M3)** | `rs232.c` logic on the DUART for both lines: line 0 is the console (channel A), line 1 is `/dev/tty00` (channel B). Interrupt-driven buffered input and output; the TxRDY interrupt is only enabled while output may go out. termios speeds 50–115200 (CSR code + XR extended bit, rate set 1: ACR[7]=0), parity, data and stop bits; `rs_config()` writes only what changed, waits for TXEMT, then resets and re-enables the channel; B0 drops RTS, any other setting raises it again (after HUPCL at close). RTS input flow control on OP0/OP1. CTS is gated in hardware (MR2) unless CLOCAL; the console never waits for CTS and keeps `ROSCO_CONS_BAUD`. Errors are counted and the character dropped; break, HUPCL (drops RTS) |
 | `src/rosco/kernel/Makefile`, `kernel.ld` | **done (M2)** | GNU build in `src/rosco/kernel/` through `xrun`: rosco files + shared `proc system stshadow tty clock memory table dmp misc pty driver drvlib` + a small `libk.a` (kprintf, `_sigset`, u64, string functions). Links at 0, data on a click boundary, `sizes[0..1]` from the linker. `make` gives `kernel`, `kernel.bin` and `ROSCODE1.BIN` (loader + kernel); `make run` boots it in `r68k -d` |
 | `src/rosco/kernel/staddr.h`, `stmfp.h` | **done (M2)** | Stand-ins found by the build-time copy of `clock.c`, so its MFP timer code writes a dummy in RAM |
 | `src/rosco/include/stdarg.h` | **done (M2)** | gcc builtins; the `__GNUC__` branch of `include/stdarg.h` is for gcc 1/2 |
-| `src/rosco/Makefile` | **done (M5)** | Top level: builds loader, kernel, lib, boot, cmds, the root fs and `ROSCODE1.BIN`; `make run` boots it in `r68k -d`. `make sdcard` builds `rosco_sd.bin` (p0 FAT16 with the system without root image, p1 the Minix root, 8 MB each) to `dd` to a card; `make runsd` boots with the root on it |
+| `src/rosco/Makefile` | **done (M5)** | Top level: builds loader, kernel, lib, boot, cmds, the root fs and `ROSCODE1.BIN`; `make run` boots it in `r68k -d`. `make sdcard` builds `rosco_sd.bin` to `dd` to a card: four 150MB partitions, p0 FAT16 with `ROSCODE1.BIN` (no root image), p1 the Minix root (153600 blocks, 16384 i-nodes), p2/p3 empty Minix file systems (`SDEXTRA`); written sparse (601MB). `make runsd` boots it in r68k, `make CONSBAUD=115200 runmame` in MAME; `make cc` adds the C compiler |
 | `src/rosco/lib/u64.c` | **done (M5)** | Replaces `lib/m68000/misc/u64.c`, whose `cmp64u()` always returned 0 for `u == 0` (operator precedence), and whose `mul64u()` lost the high word |
 | `src/rosco/lib/` | **done (M4)** | C library build: `libc.a` (lib/ansi, posix, other, stdio; generated syscall stubs; fphook no-float printf/strtod), `libsys.a` (lib/syslib), `crtso.o`. GNU replacements: `crtso.S` (with the `0xDADA` data block), `sndrec.S`, `setjmp.S` (register-saving jmp_buf, `move ccr`), `sigret.S`, `brksz.S`, `m68kmul.S` (mul/div helpers, shared with the kernel), `gccmem.c`, `regexp.c` wrapper |
 | `src/rosco/include/string.h` | **done (M4)** | Renames the Minix `memcpy`/`memmove`/`memset`/`memcmp` to `_memcpy16` etc. (16 bit `size_t`); the plain names are the 32 bit versions gcc calls itself (`lib/gccmem.c`) |
 | `src/rosco/boot/` | **done (M4)** | Builds MM (6k stack), FS (4k), INIT (`sttools/init.c`, 2k) |
-| `src/rosco/cmds/` | **done (M4)** | Builds the old Minix shell (`commands/sh`) and 20 commands from `commands/simple`, with the ACK build's stack sizes (`tools/stacks.py`) |
+| `src/rosco/cmds/` | **done** | Builds the old Minix shell (`commands/sh`) and 114 commands (`commands/simple` and others: ps, aal, make, patch, mined, elvis, halt/shutdown, dosread/dosdir/doswrite, ...), with the ACK build's stack sizes (`tools/stacks.py`). Fixes as files here: `dosread.patch` (big-endian FAT access), `printfint.h`, `elvisproto.h`; curses programs link `libcurses.a` from `src/rosco/lib` |
 | `src/rosco/tools/` | **done (M4)** | `prog.ld` (program link script), `mkminix.py` (ELF → Minix-ST a.out with GEMDOS relocations), `mkimage.py` (boot image: relocates MM/FS/INIT, fills `sizes[]` behind the magic `rosSIZES`, patches INIT's origin into FS), `mkfs.py` (big endian Minix V2 file system from a proto file), `stacks.py`; M5: `mkfat.py` (FAT16 with ROSCODE1.BIN for the firmware), `mksd.py` (SD card image with an MBR, typed partitions) |
-| `src/rosco/test/` | **done (M6)** | Builds the Minix test suite (`src/test`, at `-O0`: the tests busy-wait on non-volatile flags set by signal handlers), plus `troscorun` (gcc runtime helpers, struct copies, varargs, `move sr` emulation) and `texecl` (execl directly and after fork) |
+| `src/rosco/test/` | **done (M6)** | Builds the Minix test suite (`src/test`, at `-O0`: the tests busy-wait on non-volatile flags set by signal handlers), plus `troscorun` (gcc runtime helpers, struct copies, varargs, `move sr` emulation), `texecl` (execl directly and after fork) and `tshadow` (kernel copies from a shadowed process, see M6) |
 | `src/rosco/include/rosco_sizeof.h` | **done (M6)** | `sizeof(...)` as a 16-bit unsigned int, as with ACK, for K&R code that calls functions without prototypes; `-include`d by every rosco Makefile (kernel, lib, boot, cmds, test), with a compile-time check that the object is smaller than 64K |
 | `src/rosco/lib/_uname.c` | **done (M6)** | `uname`: machine `rosco_m68k` (arch stays `m68000`); node name from `/etc/hostname.file` (`rosco`) |
 | `src/rosco/lib/system.c` | **done (M6)** | `system()` waits for its own child with `waitpid()`; the original reaped any child with `wait()` (test28) |
 | `src/rosco/tools/mamesession.py` | **done (M6)** | Scripted console sessions in the rosco-emulator (MAME): console on a TCP socket, `expect`/`send` script, log |
-| `src/rosco/rootfs/` | **done (M4)** | Root file system: `proto` (devices, /etc, /bin, /tmp, /usr), `etc/rc`, `etc/ttytab` (console runs `sh` directly, no getty/login yet), `passwd`, `group`, `utmp` |
-| `src/mm/makefile.rosco`, `src/fs/makefile.rosco` | todo (M4) | Same as `makefile.st`, with the include override |
+| `src/rosco/rootfs/` | **done** | Root file system: `proto` (devices, /etc, /bin, /tmp, /usr; RAM root), `sdproto` (the rest of the SD root: commands, tests), `emptyproto` (p2/p3), `etc/rc`, `etc/ttytab` (getty on the console, vt100, and on tty00), `etc/profile` (TZ, `stty intr ^C erase ^?`), `/etc/termcap`, `passwd`, `group`, `utmp` |
+| MM and FS build | **done** | In `src/rosco/boot/Makefile` (no `makefile.rosco` in `src/mm`, `src/fs`) |
+| `src/rosco/ack/` | **done** | The native C compiler (section 11.2) |
+| `src/rosco/cc/` | kept | The c68/Sozobon chain, host tools only; fallback |
+| `src/kernel/system.c` (existing file) | **changed 2026-10-18** | `umap()`: the shadow offset only for addresses in data and stack, not for text below the data (M6, create/stat anomaly) |
 
 ### M2 result (2026-10-17, r68k -d)
 
@@ -731,8 +757,9 @@ Still open for storage:
 
 The user built `../rosco-emulator` (MAME 0.289 cut down to the rosco
 machines: full DUART, bit-banged SPI SD card, bus errors, the real
-firmware). `make CONSBAUD=115200 sdcard` plus `make runmame` (or
-`tools/mamesession.py`) boots `rosco_sd.bin` there.
+firmware). `make CONSBAUD=115200 runmame` (or `make CONSBAUD=115200
+sdcard` and `tools/mamesession.py`) boots `rosco_sd.bin` there. A plain
+`make runmame` rebuilds the card with a 38400 console.
 
 The whole boot path works in MAME:
 
@@ -757,6 +784,21 @@ Test suite, run as `ast` after login:
   It came back on 2026-10-18 with the test suite built with ACK (MAME,
   firmware 2.42, 5MB): test18's identical create loop, "cannot stat f4".
   So it does not depend on the compiler or the library build.
+  **Solved 2026-10-18: a kernel bug in shadowing.** A forked child shares
+  its parent's memory slot; the clock task (`unshadow()`, every few
+  quanta) swaps one of them into the slot and copies the other out to a
+  shadow area, also while that one waits for FS. `umap()` then maps the
+  waiting process's addresses to its shadow, but it did so for every
+  address below the end of the data, text included, and only data and
+  stack are shadowed. String constants and const data are in text (ACK
+  and gcc), so FS copied the name "f4" (a constant in test18's text, with
+  a child left from an earlier subtest) from unrelated memory, got "",
+  and stat failed with ENOENT. Found with MAME debugger breakpoints at
+  FS's `do_stat()` and the kernel's `phys_copy()`, and the proc table at
+  the failure. Fixed in `umap()` (`src/kernel/system.c`): the shadow
+  offset only for addresses from the data base up. `tshadow` (write a
+  const buffer while a child keeps the slot busy, read back and compare):
+  76 of 6000 writes corrupted before, 0 after.
 
 Fixes found by the tests:
 
@@ -804,6 +846,8 @@ Known and not fixed:
   firmware's RAM size (up to 14 MB); untested.
 
 ## 10. Immediate next actions (no changes to existing files required)
+
+(Historical, 2026-10-17: all done or decided; see sections 6.1 and 9.)
 
 1. Decide on the toolchain path (section 6). If it is option 1, set up Hatari
    with a Minix-ST 2.0.4 disk image and confirm M0.
@@ -870,3 +914,16 @@ Minix-ST compiler, in `src/rosco/ack/`:
 The c68/Sozobon chain in `src/rosco/cc/` (host tools only) is kept as a
 fallback.
 
+## 12. Open items (2026-10-18)
+
+| Item | Status |
+|---|---|
+| SLIP over tty00 (also SNTP for the clock, section 4 RTC) | Open |
+| Brandy BASIC | Open; assessed only |
+| Second SD card on CS1 (OP7; schematic SPICS2, header J7) | Open; `OP_SPI_CS1` is left alone by the kernel |
+| Boot image or read-only ROM disk in the flash ROM (11.1) | Open |
+| 115200 input-overrun test on the board | Open; `overrun_errors` is counted but not reported |
+| Yellow firmware banner | Open; needs a firmware rebuild |
+| Swap on SD (`ENABLE_SWAP` 0), card size (CSD), subpartitions, native SPI driver | Open |
+| ttytab in the repo: tty00 without a "stty 38400" field (9600) | The user's board setting works; repo default unchanged |
+| create/stat anomaly (test17/test18) | Solved: `umap()` fix (M6) |

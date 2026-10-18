@@ -80,7 +80,7 @@
 #define ENABLE_CACHE2      0	/* rosco: no RAM to spare */
 
 /* Enable or disable swapping processes to disk. */
-#define ENABLE_SWAP	   0	/* rosco: enable once the SD driver works */
+#define ENABLE_SWAP	   0	/* rosco: swap on SD is not done yet */
 
 /* Include or exclude device drivers.  Set to 1 to include, 0 to exclude. */
 #define ENABLE_AT_WINI     0	/* enable AT winchester driver */

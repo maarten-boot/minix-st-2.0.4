@@ -1,7 +1,8 @@
 # Makefile for the Minix test suite (src/test), rosco GNU build.
 #
-# Builds test1..test40, t10a, t11a, t11b (and troscorun from this
-# directory, a test of the gcc run-time support) with src/rosco/lib as Minix
+# Builds test1..test40, t10a, t11a, t11b (and from this directory
+# troscorun, the gcc run-time support, texecl, execl() arguments, and
+# tshadow, kernel copies from a shadowed process) with src/rosco/lib as Minix
 # executables, with the stack sizes of the ACK build (10kw, 32kw for
 # test20 and test24).  They go into the SD card root under /usr/test
 # (rootfs/sdproto), with test/run, sh1 and sh2.  test11 and test33 must
@@ -40,7 +41,7 @@ LIBS	= $L/libc.a
 
 TESTS	= $(addprefix test,$(shell seq 1 40)) t10a t11a t11b
 # rosco specific: the gcc run-time support (this directory)
-ROSCO	= troscorun texecl
+ROSCO	= troscorun texecl tshadow
 BIG	= test20 test24
 
 all:	$(addprefix bin/,$(TESTS) $(ROSCO))

@@ -7,8 +7,8 @@
  * own vector from IVR.  Crystal 3.6864 MHz.
  *
  * Register layout as used by the rosco firmware 2.4 (rosco_m68k_public.asm,
- * duart.asm).  Values marked "verify" come from the MC68681 family data
- * and should be checked against the Exar XR68C681 datasheet.
+ * duart.asm) and the MC68681 family data; the pins are checked against the
+ * r2 schematic, the baud rates (rate set 1) on the board.
  */
 
 #define	DUART	((struct duart *)AD_DUART)

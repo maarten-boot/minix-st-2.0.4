@@ -1281,7 +1281,11 @@ vir_bytes bytes;		/* # of bytes to be copied */
   pa -= (phys_bytes)rp->p_map[seg].mem_vir << CLICK_SHIFT;
   pa += (phys_bytes)rp->p_map[seg].mem_phys << CLICK_SHIFT;
 #else
-  if (rp->p_shadow && seg != T) {
+  /* Only data and stack are shadowed; text below the data (string
+   * constants, rodata) stays in place.
+   */
+  if (rp->p_shadow && seg != T &&
+	vir_addr >= (phys_bytes) rp->p_map[D].mem_phys << CLICK_SHIFT) {
 	  pa -= (phys_bytes)rp->p_map[D].mem_phys << CLICK_SHIFT;
 	  pa += (phys_bytes)rp->p_shadow << CLICK_SHIFT;
   }

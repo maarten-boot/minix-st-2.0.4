@@ -24,12 +24,13 @@
 #	make runsd	boot boot/sd/ROSCODE1.BIN in r68k, root on rosco_sd.bin
 #	make runmame	boot rosco_sd.bin in the rosco-emulator (MAME, full
 #			hardware and the real firmware, MAMEDIR), console on
-#			a pty; needs make CONSBAUD=115200 sdcard.  Scripted:
-#			tools/mamesession.py
+#			a pty; run it as make CONSBAUD=115200 runmame (it
+#			rebuilds the card, so a plain make runmame gives a
+#			38400 console).  Scripted: tools/mamesession.py
 #	make CONSBAUD=115200 ...  console speed (default 38400, the target
 #			board's firmware; the stock firmware and the MAME based
-#			rosco-emulator use 115200).  Rebuild the kernel when
-#			changing it: make -C kernel clean
+#			rosco-emulator use 115200).  What depends on it is
+#			rebuilt when it changes (kernel/consbaud.stamp)
 #	make clean
 #
 # ROSCODE1.BIN is what the rosco firmware loads from the SD card (or over
