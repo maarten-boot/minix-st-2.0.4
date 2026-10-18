@@ -35,3 +35,4 @@ test/build.log
 boot/stamp
 kernel/consbaud.stamp
 __pycache__/
+cc/host/

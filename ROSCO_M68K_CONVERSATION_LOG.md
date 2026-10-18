@@ -912,3 +912,63 @@ User:
     "hello from c68 on rosco", "0300007" (long arithmetic), exit status 7.
 
 Not committed yet.
+
+Committed `b4f7a35`.
+
+## Follow-up 23: compiler step 1, sources imported
+
+User:
+> commit this first, then go ahead with step 1
+
+* **`src/rosco/cc/`** (new):
+  * `c68/`: xtc68 `src/c68` complete (c68 must not be redistributed
+    without its full sources, so also the other code generators) and
+    `src/include/xtc68.h`, `LICENSE.xtc68`; unchanged.
+  * `cpp/`: xtc68 `src/cpp` (GNU cccp, GPL), unchanged, not built yet.
+  * `sozobon/`: Sozobon 2.0 `jas`, `ld`, `tools`, `readme.src`, LF line
+    ends, `host32.h` (new), the changes from the prototype; the three
+    changed files (`ld/pass2.c`, `ld/utls.c`, `tools/ar.c`) carry a
+    MODIFIED note as the Sozobon license asks.
+  * `README`: provenance (xtc68 commit 206699274d70, the SourceForge
+    archive), licenses, the list of changes, the support routine
+    convention.
+  * `Makefile`: host builds into `host/` (c68, jas -DMINIX, ld -DMINIX,
+    ar); `cc/host/` added to `src/rosco/.gitignore`.
+* **Check:** clean build, no errors; the test program from the prototype
+  compiled, assembled, put into an archive with `host/ar` and linked
+  from it with `host/ld` runs in MAME ("hello from c68 on rosco",
+  "0300007", exit 7).
+
+Not committed yet.
+
+## Follow-up 24: evaluating the modern ACK (minix68k)
+
+User:
+> is this helpful? https://github.com/davidgiven/ack has a minix minix68k
+> produces Minix executables for m68000 Minix systems
+
+* **ACK `plat/minix68k`:** `ARCH=m68k2`, `NAME=minixST`, `-D_ATARI_ST`,
+  int 2 bytes, long and pointers 4, alignment 2; the ANSI C front end,
+  optimizer, m68k2 code generator and assembler, and `cv` to the Minix
+  a.out; its own Minix libraries. BSD license; last touched July 2025.
+* **Host build** (scratchpad clone, HEAD 7afa32a, `PLATS = minix68k` in
+  the Makefile, `make LUA=lua5.4`): needed Lua with lua-posix, flex,
+  yacc, plus the interpreter `lua5.4`, `ninja` and `bison` (not in the
+  README); the user installed them. Build time 48 s. `ack` finds its
+  passes with `ACKDIR=<staging>` (the compiled-in prefix is
+  /opt/pkg/ack).
+* **Two ACK bugs found and fixed in the clone:**
+  * `plat/minix68k/cv/cv.c`: the header is `long mh[8]`, written with
+    `sizeof(mh)`, so on a 64-bit host it was 64 bytes (each field padded
+    to 8). Now 32 big endian bytes.
+  * `mach/m68020/ncg/mach.c` `con_mult()`: always printed `.data8`. With
+    `WORD_SIZE=2` (m68k2) it is also called for 4-byte constants, so every
+    initialized `long` took 8 bytes and shifted the data behind it. Now
+    `.data4`/`.data8` by size. (Not a host problem: a bug in the current
+    ACK for this target.)
+* **Result in MAME (2.42, 5MB):** a test with stdio, qsort, struct
+  initializers (auto and static), long multiply and divide, argv: all
+  correct; `sizeof(int)=2`, exit status passed. The executable has a_cpu
+  0x04 like the old Minix-ST tools (MM accepts it).
+
+Not committed yet.

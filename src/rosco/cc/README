@@ -1,0 +1,71 @@
+C compiler for Minix on the rosco_m68k
+======================================
+
+The chain, as on the old Minix-ST with c68 and the Sozobon tools:
+
+	cpp -> c68 (ACK assembler syntax, 16 bit int) -> jas -> ld -> a.out
+
+	c68/		the C compiler
+	cpp/		the C preprocessor (not built yet)
+	sozobon/	assembler (jas), linker (ld), archiver (tools/ar.c)
+	Makefile	builds the host versions into host/
+
+`make` here builds host/c68, host/jas, host/ld and host/ar.  Example:
+
+	host/c68 -int=16 x.c x.s	# ACK syntax
+	host/jas -o x.o x.s
+	host/ar r lib.a x.o
+	host/ld -o prog =8192 crt0.o main.o lib.a	# =N: stack bytes
+
+ld writes a Minix executable (32 byte header with A_M68K, then text, data
+and the relocation in GEMDOS format), as src/rosco/tools/mkminix.py does
+for the gcc-built programs.
+
+Sources and licenses
+--------------------
+
+c68/ and cpp/: from xtc68, https://codeberg.org/stronnag/xtc68 (formerly
+github.com/stronnag/xtc68), commit 206699274d70 (2026-06-28), src/c68,
+src/cpp and src/include/xtc68.h, unchanged.  xtc68 is the c68 4.5 code
+base (27 Feb 99) made to build on modern hosts; LICENSE.xtc68 (MIT) covers
+the xtc68 changes.
+
+  c68: Copyright 1989-1991 Christoph van Wuellen, later Dave and Keith
+  Walker and others.  "This compiler may be redistributed as long there is
+  no commercial interest.  The compiler must not be redistributed without
+  its full sources."  Hence the whole src/c68 directory, also the code
+  generators for other processors.
+
+  cpp: GNU cccp (the GNU C preprocessor of gcc 1.x), GNU General Public
+  License, see the notices in cpp/cccp.c and cpp/cexp.c.
+
+sozobon/: the Sozobon C compiler 2.0 sources, "sozobon 2.0 (Original).zip"
+from https://sourceforge.net/projects/sozobon ("Source code"): jas, ld,
+tools and readme.src.  Copyright 1988-1991 Sozobon, Limited (Joseph M
+Treat, Johann Ruegg, Tony Andrews): free use and redistribution, no charge
+other than for reproduction, modified versions must be clearly marked.
+
+  MODIFIED for this port:
+  - all files: DOS line ends (CR LF) converted to LF;
+  - sozobon/host32.h (new): for the host build on an LP64 system, force
+    included: the system headers first, then "#define long int" (the
+    sources write longs to the object and executable files and assume 32
+    bits), and link, strnlen, bcopy renamed (they clash with the host C
+    library);
+  - ld/utls.c, tools/ar.c: K&R "long lseek();" declarations removed
+    (lseek() comes from <unistd.h> with its off_t argument);
+  - ld/pass2.c: MMAGIC writes a_cpu 0x0B (A_M68K) instead of 0x04 (i8086,
+    what the old Minix-ST tools used; MM accepts both).
+  The modified files carry a MODIFIED note and "rosco:" comments.
+
+jas must be built with -DMINIX for the ACK syntax (.sect, ! comments,
+input compatible with the Minix ACK assembler), ld with -DMINIX for the
+Minix output.
+
+Support routines
+----------------
+
+c68 calls .Xldiv, .Xlrem, .Xlmul, the unsigned .Xul* and the assigning
+.Xas* forms for long arithmetic: operands on the stack (4(sp) the left
+operand or a pointer to it, 8(sp) the right one), the routine pops them
+and returns the result in d0.  They go into the c68 library.
