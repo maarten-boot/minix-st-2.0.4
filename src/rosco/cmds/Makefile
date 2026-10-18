@@ -39,8 +39,11 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  mkfifo mkfs mknod mkswap mount od passwd printenv printroot pwd rmdir \
 	  sed sleep sort stat stty su sum sync tail tee test touch tr tty umount \
 	  uname uniq update wc which who whoami write yes \
-	  cdiff comm compress crc dd diff fgrep paste prep shar strings tsort uud uue
-CMDS	= sh ps aal make patch mined elvis $(SIMPLE)
+	  cdiff comm compress crc dd diff fgrep paste prep shar strings tsort uud uue \
+	  tar xargs printf pr split join rev fold expand unexpand file cksum \
+	  time chmem strip size nm install mkproto inodes ncheck \
+	  dhrystone gomoku life ttt factor
+CMDS	= sh ps aal make patch mined elvis halt shutdown $(SIMPLE)
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -110,6 +113,23 @@ obj/patch/%.o:	$c/patch/%.c
 	$(CC) $(CFLAGS) -I$c/patch -DVOIDSIG -DSMALL \
 		-c -o $@ $<
 
+# halt (also reboot, by its name) and shutdown: commands/reboot
+bin/halt:	obj/reboot/halt.o obj/reboot/log.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/halt.elf $L/crtso.o obj/reboot/halt.o obj/reboot/log.o $(LIBS)
+	$(MKMINIX) -S 4kw obj/halt.elf $@
+
+bin/shutdown:	obj/reboot/shutdown.o obj/reboot/sh_wall.o obj/reboot/log.o \
+		$L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/shutdown.elf $L/crtso.o obj/reboot/shutdown.o \
+		obj/reboot/sh_wall.o obj/reboot/log.o $(LIBS)
+	$(MKMINIX) -S 4kw obj/shutdown.elf $@
+
+obj/reboot/%.o:	$c/reboot/%.c
+	@mkdir -p obj/reboot
+	$(CC) $(CFLAGS) -I$c/reboot -c -o $@ $<
+
 # mined: commands/mined, the Minix screen editor (64k in the ACK build)
 MINEDOBJ = $(addprefix obj/mined/,mined1.o mined2.o)
 bin/mined:	$(MINEDOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
@@ -135,6 +155,13 @@ bin/elvis:	$(ELVISOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 obj/elvis/%.o:	$c/elvis/%.c elvisproto.h
 	@mkdir -p obj/elvis
 	$(CC) $(CFLAGS) -include elvisproto.h -I$c/elvis -c -o $@ $<
+
+# printf.c passes strtoul() results to printf("%d"), see printfint.h
+obj/printf.o:	CFLAGS += -include printfint.h
+obj/printf.o:	printfint.h
+
+# the curses programs
+bin/life bin/gomoku:	LIBS = $L/libcurses.a $L/libc.a
 
 bin/%:	obj/%.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py stacks.mk
 	@mkdir -p bin

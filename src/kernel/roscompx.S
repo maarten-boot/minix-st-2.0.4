@@ -513,6 +513,26 @@ invd1:
 kreboot:
 	move.w	#0x2700,sr
 	move.b	#0,DUART_IMR
+/* Put the DUART back in its reset state, as the firmware expects it after
+ * a hardware reset: it detects the DUART by IVR == 0x0F (we set the vector
+ * 0x45), and writes MR1/MR2 assuming the mode register pointers are at
+ * MR1.  Both channels: reset MR pointer, receiver, transmitter, error
+ * status, and clear the XR extended rate bits; stop the counter.
+ */
+	lea	AD_DUART,a0
+	moveq	#1,d1		/* channel A, then B (CRB is 16 bytes on) */
+	lea	5(a0),a1	/* CRA */
+1:	move.b	#0x10,(a1)	/* reset MR pointer */
+	move.b	#0x20,(a1)	/* reset receiver */
+	move.b	#0x30,(a1)	/* reset transmitter */
+	move.b	#0x40,(a1)	/* reset error status */
+	move.b	#0x90,(a1)	/* clear receiver extended rate bit */
+	move.b	#0xB0,(a1)	/* clear transmitter extended rate bit */
+	lea	16(a1),a1	/* CRB */
+	dbf	d1,1b
+	move.b	#0x0F,25(a0)	/* IVR: its reset value */
+	move.b	#0,9(a0)	/* ACR */
+	tst.b	31(a0)		/* stop the counter */
 	move.l	AD_ROM_SSP,sp
 	move.l	AD_ROM_PC,a0
 	jmp	(a0)

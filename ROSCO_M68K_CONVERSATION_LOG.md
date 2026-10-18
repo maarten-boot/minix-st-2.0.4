@@ -1273,3 +1273,51 @@ User:
   DUART directly; no TRAP calls.
 
 Not committed yet.
+
+Committed `d643368`.
+
+## Follow-up 31: halt/reboot, more commands; the four partitions tested
+
+User:
+> is there alorady a halt or reboot command available (i saw reboot in
+> the minix code) and can we add some of the other commands in the minix
+> command tree to this image
+
+* **halt, reboot, shutdown** (commands/reboot; halt.c acts by its name):
+  `/usr/bin/halt` (+ link reboot), `/usr/bin/shutdown`. The kernel already
+  had `wreboot()` (halt: "System halted"; reboot: `kreboot`).
+  * `reboot` printed "Rebooting ..." and then nothing: the firmware detects
+    the DUART by IVR == 0x0F (its reset value; we set 0x45) and writes
+    MR1/MR2 assuming the MR pointers at MR1. `kreboot` (roscompx.S) now
+    resets both channels (MR pointer, receiver, transmitter, errors,
+    extended rate bits), sets IVR 0x0F, ACR 0 and stops the counter.
+    MAME: reboot goes through the firmware banner and SD boot back to the
+    login prompt.
+* **More commands** (commands/simple): tar, xargs, printf, pr, split,
+  join, rev, fold, expand, unexpand, file, cksum, time, chmem, strip,
+  size, nm, install, mkproto, inodes, ncheck, dhrystone, gomoku, life,
+  ttt, factor (in /bin). life and gomoku need curses: `libcurses.a` from
+  lib/curses added to the rosco lib Makefile. 113 commands now.
+  * MAME: tar c/t, xargs, factor 360 = 2 2 2 3 3 5, file, dhrystone 3280
+    Dhrystones/s.
+  * printf printed 0 for %d/%x: printf.c has `#define atoi(a)
+    strtoul((a), NULL, 0)` and passes the unsigned long to printf("%d"),
+    a 16-bit int here (same with ACK: a fault of the original source).
+    `cmds/printfint.h` (forced into printf.c) makes strtoul() give an
+    unsigned int there. Now "42|ff|10|    7|3   |ok".
+  * Minix sh drops a backslash inside double quotes (`echo "q\nq"` gives
+    qnq); single quotes keep it. Original Minix behaviour.
+* **Four partitions, test in MAME (2.42, 5MB):** the firmware boots from
+  the 150MB FAT (4kB clusters); root on c0d0p1 (150MB).
+  * First run: p2 had a 71680000 byte pattern file, more than a V2 file
+    can hold (65799 zones = 67378176 bytes); mkfs.py wrote it anyway and
+    FS panicked at block 69999 ("Illegal zone number in indirect block").
+    The blocks 65534..65537 of that file (physical ~66600) read correctly.
+    mkfs.py now refuses files over the V2 maximum.
+  * Second run (big1 60000 blocks + big2 15000 blocks, so big2 lies at
+    physical ~61000..76000): reads across 65535 correct; 8 copies of
+    elvis written above ~76000 compare ok; fsck of c0d0p2: no errors; p3
+    mounts, a file written and read back.
+* **Default card rebuilt** (38400, four 150MB partitions).
+
+Not committed yet.

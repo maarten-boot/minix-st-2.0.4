@@ -41,6 +41,8 @@ INODE_SIZE = 64
 INODES_PER_BLOCK = BLOCK // INODE_SIZE
 NR_DZONES = 7
 NR_INDIRECTS = BLOCK // 4
+# direct, single and double indirect zones: 67378176 bytes with 1k blocks
+MAX_FILE = (NR_DZONES + NR_INDIRECTS + NR_INDIRECTS ** 2) * BLOCK
 DIRSIZ = 14
 
 S_IFDIR, S_IFREG, S_IFCHR, S_IFBLK = 0o040000, 0o100000, 0o020000, 0o060000
@@ -91,6 +93,9 @@ def parse(specs):
             elif kind == "f":
                 node = Inode(S_IFREG | mode)
                 node.data = open(w[3], "rb").read()
+                if len(node.data) > MAX_FILE:
+                    die("%s:%d: %s: %d bytes, a V2 file holds at most %d"
+                        % (spec, lineno, w[3], len(node.data), MAX_FILE))
             elif kind in "cb":
                 node = Inode((S_IFCHR if kind == "c" else S_IFBLK) | mode)
                 node.dev = (int(w[3]) << 8) | int(w[4])

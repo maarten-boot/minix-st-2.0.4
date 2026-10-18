@@ -64,6 +64,37 @@ f /usr/bin/aal	755 ../cmds/bin/aal
 l /usr/bin/ar	/usr/bin/aal
 f /usr/bin/make	755 ../cmds/bin/make
 f /usr/bin/patch	755 ../cmds/bin/patch
+# more commands from commands/simple
+f /bin/tar	755 ../cmds/bin/tar
+f /bin/xargs	755 ../cmds/bin/xargs
+f /bin/printf	755 ../cmds/bin/printf
+f /bin/pr	755 ../cmds/bin/pr
+f /bin/split	755 ../cmds/bin/split
+f /bin/join	755 ../cmds/bin/join
+f /bin/rev	755 ../cmds/bin/rev
+f /bin/fold	755 ../cmds/bin/fold
+f /bin/expand	755 ../cmds/bin/expand
+f /bin/unexpand	755 ../cmds/bin/unexpand
+f /bin/file	755 ../cmds/bin/file
+f /bin/cksum	755 ../cmds/bin/cksum
+f /bin/time	755 ../cmds/bin/time
+f /bin/chmem	755 ../cmds/bin/chmem
+f /bin/strip	755 ../cmds/bin/strip
+f /bin/size	755 ../cmds/bin/size
+f /bin/nm	755 ../cmds/bin/nm
+f /bin/install	755 ../cmds/bin/install
+f /bin/mkproto	755 ../cmds/bin/mkproto
+f /bin/inodes	755 ../cmds/bin/inodes
+f /bin/ncheck	755 ../cmds/bin/ncheck
+f /bin/dhrystone	755 ../cmds/bin/dhrystone
+f /bin/gomoku	755 ../cmds/bin/gomoku
+f /bin/life	755 ../cmds/bin/life
+f /bin/ttt	755 ../cmds/bin/ttt
+f /bin/factor	755 ../cmds/bin/factor
+# halt, reboot (the same program) and shutdown: commands/reboot
+f /usr/bin/halt	744 ../cmds/bin/halt
+l /usr/bin/reboot	/usr/bin/halt
+f /usr/bin/shutdown	744 ../cmds/bin/shutdown
 # editors: mined (the Minix editor) and elvis (vi, ex, view)
 f /usr/bin/mined	755 ../cmds/bin/mined
 f /usr/bin/elvis	755 ../cmds/bin/elvis

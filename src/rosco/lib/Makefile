@@ -4,6 +4,7 @@
 #	crtso.o		C start-off (put first when linking a program)
 #	libc.a		ansi, posix, other, stdio, syscall stubs, runtime
 #	libsys.a	syslib: the system library for MM, FS and INET
+#	libcurses.a	curses (lib/curses), for life and gomoku
 # The ACK assembly parts are replaced by the GNU files in this directory;
 # the system call stubs (lib/syscall/*.s, "_x: jmp __x") are generated.
 #
@@ -66,7 +67,10 @@ STUBS	= $(patsubst $l/syscall/%.s,obj/syscall/%.o,$(wildcard $l/syscall/*.s))
 SYSSRC	= $(wildcard $l/syslib/*.c)
 SYSOBJ	= $(patsubst $l/%.c,obj/%.o,$(SYSSRC))
 
-all:	crtso.o libc.a libsys.a
+CURSRC	= $(wildcard $l/curses/*.c)
+CUROBJ	= $(patsubst $l/%.c,obj/%.o,$(CURSRC))
+
+all:	crtso.o libc.a libsys.a libcurses.a
 
 crtso.o:	crtso.S
 	$(CC) $(ASFLAGS) -c -o $@ crtso.S
@@ -78,6 +82,10 @@ libc.a:	$(COBJ) $(ROBJ) $(STUBS)
 libsys.a:	$(SYSOBJ)
 	rm -f $@
 	$(AR) rcs $@ $(SYSOBJ)
+
+libcurses.a:	$(CUROBJ)
+	rm -f $@
+	$(AR) rcs $@ $(CUROBJ)
 
 obj/%.o:	$l/%.c
 	@mkdir -p $(@D)
@@ -109,7 +117,7 @@ obj/syscall/%.o:	obj/syscall/%.S
 	$(CC) $(ASFLAGS) -c -o $@ $<
 
 clean:
-	rm -rf obj crtso.o libc.a libsys.a
+	rm -rf obj crtso.o libc.a libsys.a libcurses.a
 
 .PRECIOUS:	obj/syscall/%.S
 
