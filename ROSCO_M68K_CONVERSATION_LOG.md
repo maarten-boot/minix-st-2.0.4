@@ -995,3 +995,49 @@ User:
   reference.
 
 Not committed yet.
+
+Committed `ccc531e`.
+
+## Follow-up 26: the Minix C library built with ACK
+
+User:
+> commit this first, then do step 1
+
+* **ACK's own libc does not fit:** `plat/minix68k/libsys` is the Minix
+  1.x system call layer (`_gtty`/`_stty`, old `signal`, no `sigaction`,
+  `waitpid`, termios). The commands here and our MM/FS are Minix 2.0.4.
+  So the library is this tree's `src/lib`, built with ACK as the ST port
+  did; its system call stubs and the 68000 run-time are in ACK syntax.
+* **ACK predefines** (minix68k): `__STDC__`, `_EM_WSIZE/PSIZE/LSIZE/
+  FSIZE`, `__unix`, `_ATARI_ST`, `m68k2`, `__m68k2`; not `__ACK__`,
+  `__minix`, `__m68000`, so those are passed with -D (plus `_MINIX`,
+  `_POSIX_SOURCE`). The rosco `<minix/config.h>` already handles ACK; the
+  rosco `string.h`/`stdarg.h` are for gcc, so only a copy of config.h
+  goes in front of `src/include`.
+* **New `src/rosco/ack/lib/`:**
+  * `Makefile`: `crtso.o` (lib/m68000/rts/ncrtso.s), `emrts.o`, and
+    `libc.a` (aal) from ansi, posix, other, stdio (same exclusions as the
+    gcc libc, same rosco replacements u64/regexp/system/_uname), the
+    syscall stubs and the rts files (incl. initlib). About 7 s.
+  * `emrts.s`: the EM symbols ACK's `libem.a` expects from ACK's own
+    start-off (`hol0`, `.lino`, `.filn`, `.reghp`, `.limhp`, `.ignmask`,
+    the error numbers, `BRK`/`WRITE` jumping to `_brk`/`_write`).
+* **New `src/rosco/ack/acc-minix`:** compile and link a Minix program:
+  `crtso.o emrts.o files libc.a libem.a libend.a`; `-S stack` sets the
+  a.out total like chmem (cv only takes `=N`, which `ack -R` cannot pass).
+* **Results in MAME (2.42, 5MB):** cat, echo, ls, sort, wc from
+  commands/simple built with acc-minix work like the gcc ones (pipes,
+  `sort -r`, `sort +4n`, `ls -l`); much smaller (echo 1020 bytes, cat
+  3744). The test suite (tests 1-40, t10a, t11a, t11b) builds without
+  errors; run in /usr/acktest: see below.
+* **ACK test suite in MAME (2.42, 5MB, ast):** "All 40 tests completed
+  without error", sh1 ok, sh2 only the cc parts (no cc on the target yet).
+* **The intermittent create/stat anomaly again:** during the run,
+  "stat: cannot stat f4" and "creat: incorrect mode set while creating
+  many files" (test18 `test02`: creat f0..f16, stat each right after the
+  successful creat). Before: once in test17 with the gcc build (f7, same
+  code). So not compiler related: now and then a file just created is not
+  found by name by the following stat. Open; to investigate in FS, the
+  buffer cache and the SD driver.
+
+Not committed yet.

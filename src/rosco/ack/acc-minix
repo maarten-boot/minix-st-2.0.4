@@ -1,0 +1,75 @@
+#!/bin/sh
+# Compile and link Minix programs for the rosco_m68k with ACK and the Minix
+# C library built in lib/ (make -C lib):
+#
+#	acc-minix [-O] [-Dx] [-Ux] [-Idir] [-c] [-S stack] [-o out] files
+#
+# Compiles .c and .s files with acc (ack -mminix68k) and the Minix headers
+# (src/include, the rosco <minix/config.h>), and links
+#	lib/crtso.o lib/emrts.o files lib/libc.a libem.a libend.a
+# (the last two are ACK's own).  -c only compiles (one file, -o allowed).
+# -S sets the stack as chmem does (8k, 4kw, 8192): the a.out total becomes
+# text + data + bss + stack; without -S, cv leaves 64k for all of them.
+# This is a host program.
+
+here=$(cd "$(dirname "$0")" && pwd)
+lib=$here/lib
+plat=$here/ack/.obj/staging/share/ack/minix68k
+defs="-D__ACK__ -D__minix=1 -D__m68000=1 -D_MINIX -D_POSIX_SOURCE"
+incs="-I$lib/inc -I$here/../../../include"
+
+compile=
+out=
+stack=
+flags=
+files=
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-c)		compile=1 ;;
+	-o)		out=$2; shift ;;
+	-S)		stack=$2; shift ;;
+	-O*|-D*|-U*|-I*) flags="$flags $1" ;;
+	-*)		echo "acc-minix: unknown option $1" >&2; exit 1 ;;
+	*)		files="$files $1" ;;
+	esac
+	shift
+done
+
+if [ -n "$compile" ]; then
+	exec "$here/acc" $defs $flags $incs -c ${out:+-o "$out"} $files
+fi
+
+out=${out:-a.out}
+objs=
+for f in $files; do
+	case "$f" in
+	*.c|*.s)
+		o=${out%/*}
+		[ "$o" = "$out" ] && o=.
+		o=$o/$(basename "${f%.*}").o
+		"$here/acc" $defs $flags $incs -c -o "$o" "$f" || exit 1
+		objs="$objs $o" ;;
+	*)	objs="$objs $f" ;;
+	esac
+done
+"$here/acc" -o "$out" "$lib/crtso.o" "$lib/emrts.o" $objs \
+	"$lib/libc.a" "$plat/libem.a" "$plat/libend.a" || exit 1
+
+[ -z "$stack" ] && exit 0
+# a.out header (big endian longs): text 8, data 12, bss 16, total 24
+exec python3 - "$out" "$stack" <<'EOF'
+import struct, sys
+path, s = sys.argv[1], sys.argv[2].lower()
+mul = 1
+if s.endswith("w"):
+    mul, s = 2, s[:-1]
+if s.endswith("k"):
+    mul, s = mul * 1024, s[:-1]
+stack = int(s, 0) * mul
+with open(path, "r+b") as f:
+    h = bytearray(f.read(32))
+    text, data, bss = struct.unpack(">3I", h[8:20])
+    struct.pack_into(">I", h, 24, text + data + bss + stack)
+    f.seek(0)
+    f.write(h)
+EOF

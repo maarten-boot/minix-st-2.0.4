@@ -37,3 +37,7 @@ kernel/consbaud.stamp
 __pycache__/
 cc/host/
 ack/ack/
+ack/lib/obj/
+ack/lib/inc/
+ack/lib/*.a
+ack/lib/build.log

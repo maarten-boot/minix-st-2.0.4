@@ -754,6 +754,9 @@ Test suite, run as `ast` after login:
   (`BBSD_read_block` always reads the card), the SPI pins (atomic OPR
   set/reset), task preemption, the driver's sector loop. If it comes back,
   log directory block reads and writes in `roscdisk.c`.
+  It came back on 2026-10-18 with the test suite built with ACK (MAME,
+  firmware 2.42, 5MB): test18's identical create loop, "cannot stat f4".
+  So it does not depend on the compiler or the library build.
 
 Fixes found by the tests:
 
