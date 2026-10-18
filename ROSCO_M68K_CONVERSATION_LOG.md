@@ -972,3 +972,26 @@ User:
   0x04 like the old Minix-ST tools (MM accepts it).
 
 Not committed yet.
+
+Committed `b61212e` (c68/Sozobon import, kept as a fallback).
+
+## Follow-up 25: switch to ACK
+
+User:
+> commit this first, then switch to ACK
+
+* **`src/rosco/ack/`** (new), as for r68k: no ACK sources in the repo.
+  * `build-ack.sh`: clones https://github.com/davidgiven/ack at the pinned
+    commit 7afa32a0a0f1 (2026-07-18) into `src/rosco/ack/ack/`
+    (git-ignored), applies `ack-minix68k.patch` and runs `make LUA=lua5.4`
+    (`ACK_URL=` for a local clone). Lists the host tools it needs.
+  * `ack-minix68k.patch`: PLATS/DEFAULT_PLATFORM minix68k in the
+    Makefile, and the two fixes (ncg `con_mult()`, cv header).
+  * `acc`: `ack -mminix68k` with `ACKDIR` set to the staging tree.
+* **Check:** a clean build with the script (from the local clone) and the
+  two test programs compiled with `acc`: correct output in MAME (2.42,
+  5MB). The binary differs slightly from the one of the evaluation build,
+  which was rebuilt incrementally across the fixes; the clean one is the
+  reference.
+
+Not committed yet.

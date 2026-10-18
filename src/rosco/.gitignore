@@ -36,3 +36,4 @@ boot/stamp
 kernel/consbaud.stamp
 __pycache__/
 cc/host/
+ack/ack/

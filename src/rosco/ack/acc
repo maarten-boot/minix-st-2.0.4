@@ -1,0 +1,13 @@
+#!/bin/sh
+# Compile for Minix on the rosco_m68k with the ACK built by build-ack.sh:
+#
+#	acc [ack options] files	e.g. acc -O -o prog prog.c
+#
+# ack -mminix68k with ACKDIR pointing at the staging tree (the ACK looks
+# for its passes under the compiled-in prefix otherwise).  This is a host
+# program.
+
+here=$(cd "$(dirname "$0")" && pwd)
+ACKDIR=$here/ack/.obj/staging
+export ACKDIR
+exec "$ACKDIR/bin/ack" -mminix68k "$@"

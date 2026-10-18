@@ -1,0 +1,56 @@
+diff --git a/Makefile b/Makefile
+index 2624d43..bd2b66d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -5,12 +5,12 @@
+ 
+ # What platform to build for by default?
+ 
+-DEFAULT_PLATFORM ?= pc86
++DEFAULT_PLATFORM ?= minix68k
+ 
+ # Which architectures should get built?
+ 
+ $(if $(PLATS), $(error Don't set PLATS on the command line, because reasons. Edit the Makefile instead.))
+-PLATS = all
++PLATS = minix68k
+ # PLATS = linux386 linuxppc linuxmips
+ 
+ # Where should the ACK put its temporary files?
+diff --git a/mach/m68020/ncg/mach.c b/mach/m68020/ncg/mach.c
+index 484f6c0..abc72c1 100644
+--- a/mach/m68020/ncg/mach.c
++++ b/mach/m68020/ncg/mach.c
+@@ -51,7 +51,7 @@ con_mult(word sz) {
+ 
+ 	if ((sz != 4) && (sz != 8))
+ 		fatal("bad icon/ucon size");
+-	fprintf(codefile,".data8\t%s\n", str);
++	fprintf(codefile,".data%d\t%s\n", (int)sz, str);
+ }
+ 
+ #define IEEEFLOAT
+diff --git a/plat/minix68k/cv/cv.c b/plat/minix68k/cv/cv.c
+index 8365417..5b824f1 100644
+--- a/plat/minix68k/cv/cv.c
++++ b/plat/minix68k/cv/cv.c
+@@ -80,12 +80,17 @@ static void minixhead(void)
+ 	if ((mh[0] & 0x00200000L) == 0) /* not SEPARATE */
+ 		mh[6] += mh[2];
+ 	mh[7] = 0;
++	/* 32 big endian bytes, whatever the size of a long on the host */
++	unsigned char hb[32];
+ 	for (i = 0; i < 8; i++)
+ 	{
+-		cvlong(&mh[i]);
++		hb[4 * i] = mh[i] >> 24;
++		hb[4 * i + 1] = mh[i] >> 16;
++		hb[4 * i + 2] = mh[i] >> 8;
++		hb[4 * i + 3] = mh[i];
+ 	}
+ 
+-	if (write(output, (char*)mh, sizeof(mh)) != sizeof(mh))
++	if (write(output, (char*)hb, sizeof(hb)) != sizeof(hb))
+ 		fatal("write error\n");
+ }
+ 
