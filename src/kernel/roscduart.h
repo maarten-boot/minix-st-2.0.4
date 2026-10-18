@@ -110,6 +110,7 @@ struct duart {
 #define	MR2_STOP2	0x0F	/* 2 stop bits (6-8 data bits) */
 
 /* bits in ACR: */
+#define	ACR_BRG1	0x00	/* baud rate generator set 1 (both channels!) */
 #define	ACR_BRG2	0x80	/* baud rate generator set 2 (both channels!) */
 #define	ACR_TIMER16	0x70	/* counter/timer: timer mode, X1/X2 clock / 16 */
 #define	ACR_IP0		0x01	/* interrupt on change of IP0 (CTS A) */
@@ -121,18 +122,10 @@ struct duart {
 #define	IPCR_DIP0	0x10	/* IP0 changed */
 #define	IPCR_DIP1	0x20	/* IP1 changed */
 
-/* Clock select values (RX in high nibble, TX in low nibble).
- * With ACR_BRG2 and the XR extended bits set (CR_XRXEXT, CR_XTXEXT) code
- * 0x8 gives 115200; this is what the firmware uses.  The rest of the
- * extended table is "verify".
+/* Clock select values (RX in high nibble, TX in low nibble): see the
+ * speed table in roscrs232.c.  The firmware uses ACR_BRG2 with the XR
+ * extended bits set (CR_XRXEXT, CR_XTXEXT) and 0x88 for 115200.
  */
-#define	CSR_115200_X	0x88	/* ACR_BRG2 + extended rates (firmware) */
-/* Standard MC68681 set 2 codes (extended bits clear), "verify": */
-#define	CSR_1200	0x66
-#define	CSR_2400	0x88
-#define	CSR_4800	0x99
-#define	CSR_9600	0xBB
-#define	CSR_19200	0xCC
 
 /* Counter/timer: in timer mode with X1/16 the output toggles every
  * preset counts, so the interrupt rate is 3686400/16/(2*preset).

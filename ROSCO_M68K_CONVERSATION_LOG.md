@@ -632,3 +632,33 @@ User:
 * **Default card rebuilt** (38400) and checked in r68k.
 
 Not committed yet.
+
+## Follow-up 18: first boot on the real board, console at 19200
+
+Committed `3e713ba` (rosco_sizeof.h). The user committed the rest
+(`8a7b10f`).
+
+User:
+> ok i tested the image, one issue after the minix image loads it switches
+> to 19200, i lgged in as root (no pass that is fine) ls and du both work
+> fins , great progress
+
+* **First run on the Classic v2 board:** `rosco_sd.bin` boots from the SD
+  card, root login works, and `ls` and `du` work.
+* **Bug:** the firmware and loader print at 38400, but the Minix console
+  ran at 19200.
+  * The kernel selected 38400 as CSR code C with the XR extended bit under
+    rate set 2 (ACR[7] = 1).
+  * MAME's XR68C681 table gives 38400 for that. The real chip gave 19200,
+    the set 2 value without the extended bit.
+  * The CR command sequence is the same as the firmware's for 115200.
+* **Fix:** use rate set 1 (ACR[7] = 0).
+  * 38400 is then the standard MC68681 code C, without the extended bit.
+  * New speed table in `roscrs232.c` (set 1, X = 0/1 from MAME's table);
+    `ACR_BRG1` in `roscduart.h`; `initrosco()` writes `ACR_BRG1`.
+  * The unused `CSR_*` constants were removed.
+  * 115200 (code 8, extended) retested in MAME: login, `stty`, `ls`.
+* **Default card rebuilt** (38400) and checked in r68k.
+* **To check on the board:** that the console now stays at 38400.
+
+Not committed yet.

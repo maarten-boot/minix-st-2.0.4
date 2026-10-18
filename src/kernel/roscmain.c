@@ -463,10 +463,11 @@ PRIVATE void initrosco()
 
   DUART->du_imr = duart_imr = 0;	/* everything masked */
 
-  /* Baud rate set 2 as the firmware selects it (firmware duart.asm), and
-   * the counter/timer mode; ACR is shared by both channels.
+  /* Baud rate set 1 (the firmware selects set 2, see the speed table in
+   * roscrs232.c) and the counter/timer mode; ACR is shared by both
+   * channels.
    */
-  DUART->du_acr = ACR_BRG2 | ACR_TIMER16;
+  DUART->du_acr = ACR_BRG1 | ACR_TIMER16;
 
   /* Channel A: 8N1 at ROSCO_CONS_BAUD, RTS asserted, so a console without
    * firmware initialization works too.  rs_cons_setup() waits for the

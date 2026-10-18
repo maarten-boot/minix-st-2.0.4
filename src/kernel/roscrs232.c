@@ -129,9 +129,11 @@ typedef struct rs232 {
 PRIVATE rs232_t rs_lines[1 + NR_RS_LINES];
 
 /* Speeds: clock select code and whether the XR "extended" bit is needed,
- * with ACR[7] = 1 (baud rate set 2) for both channels; the console's
- * 115200 needs that.  From the 68681 family extended rate table; only
- * 115200 (0x8, extended) is confirmed by the rosco firmware.  "verify".
+ * with ACR[7] = 0 (baud rate set 1) for both channels.  38400 is then the
+ * plain MC68681 code 0xC.  Set 2 with the extended bit (code 0xC) should
+ * also give 38400, but on the real board it gave 19200.  115200 is code
+ * 0x8 with the extended bit in both sets (the firmware uses set 2).
+ * From the XR68C681 rate table as in MAME's mc68681.cpp.
  */
 PRIVATE struct speed2csr {
   speed_t	speed;
@@ -139,21 +141,21 @@ PRIVATE struct speed2csr {
   unsigned char	csr;		/* code for RX and TX (same nibble) */
   unsigned char	ext;		/* 1: extended rate */
 } s2c[] = {
-  { B50,	50,	0x0, 1 },
-  { B75,	75,	0x0, 0 },
+  { B50,	50,	0x0, 0 },
+  { B75,	75,	0x0, 1 },
   { B110,	110,	0x1, 0 },
   { B134,	134,	0x2, 0 },
-  { B150,	150,	0x3, 0 },
-  { B200,	200,	0x3, 1 },
+  { B150,	150,	0x3, 1 },
+  { B200,	200,	0x3, 0 },
   { B300,	300,	0x4, 0 },
   { B600,	600,	0x5, 0 },
   { B1200,	1200,	0x6, 0 },
-  { B1800,	1800,	0xA, 0 },
+  { B1800,	1800,	0xA, 1 },
   { B2400,	2400,	0x8, 0 },
   { B4800,	4800,	0x9, 0 },
   { B9600,	9600,	0xB, 0 },
-  { B19200,	19200,	0xC, 0 },
-  { B38400,	38400,	0xC, 1 },
+  { B19200,	19200,	0xC, 1 },
+  { B38400,	38400,	0xC, 0 },
   { B57600,	57600,	0x7, 1 },
   { B115200,	115200,	0x8, 1 },
 };
@@ -359,7 +361,7 @@ rs232_t *rs;
 struct speed2csr *sp;
 {
 /* Select a speed for receiver and transmitter: the XR extended rate bits,
- * then the clock select register.  ACR[7] (rate set 2) is always on.
+ * then the clock select register.  ACR[7] (rate set 2) is always off.
  */
   du_cr(rs) = sp->ext ? CR_XRXEXT : CR_XRXCLR;
   du_cr(rs) = sp->ext ? CR_XTXEXT : CR_XTXCLR;

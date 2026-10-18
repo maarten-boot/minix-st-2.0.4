@@ -236,9 +236,11 @@ Sources: the rosco_m68k repo, branch `release/version-2.4` (firmware equates
 ### 5.4 DUART serial driver (XR68C681)
 
 * Channel A = console, channel B = `/dev/tty00` (`NR_RS_LINES 1`).
-* Baud rates: set ACR[7] (rate set 2) and the XR68C681 extended-rate commands
-  in CRx (`0xA0` = extended TX, `0x80` = extended RX, as the firmware does),
-  so that 115200 is available. Build a table from termios `Bxxx` to the CSR
+* Baud rates: rate set 1 (ACR[7] = 0) plus the XR68C681 extended-rate
+  commands in CRx (`0xA0` = extended TX, `0x80` = extended RX) where a
+  speed needs them. 38400 is the plain code C, and 115200 is code 8 with
+  the extended bit. The firmware uses rate set 2; see the 2026-10-18 note
+  in section 9. Build a table from termios `Bxxx` to the CSR
   nibble (RX and TX are the same). Note that **ACR[7] is shared by both
   channels**, so the allowed speed combinations are limited.
 * Line control: MR1x (parity, bits, RxRTS), MR2x (stop bits, TxCTS). Write MR1
@@ -601,15 +603,23 @@ Console speed (2026-10-17): the target board's firmware runs the console
 (serial 1 = channel A) at **38400**. The stock firmware 2.x uses 115200.
 `ROSCO_CONS_BAUD` in the rosco `config.h` (default 38400) sets channel A
 in `rs_cons_setup()`, which is called from `initrosco()`. The speed comes
-from the same table as `tty00`: 38400 = CSR code C with the extended bit,
-under rate set 2. That entry is not confirmed by firmware source; if the
-console garbles after the loader banner, this table entry is the first
-suspect. The loader does not touch the speed, so it always prints at the
-firmware's rate.
+from the same table as `tty00`. The loader does not touch the speed, so it
+always prints at the firmware's rate.
+
+Board test (2026-10-18): with 38400 as CSR code C plus the extended bit
+under rate set 2, the console switched to **19200** once Minix started.
+That is the set 2 value without the extended bit, although MAME's
+XR68C681 table gives 38400 for it. The kernel now uses rate set 1, where
+38400 is the standard MC68681 code C and needs no XR extension. 115200
+(code 8, extended) is unchanged and was retested in MAME. 19200 is now
+code C with the extended bit, and is the entry to check on the board.
 
 Still "verify" on the board:
 
-* the extended baud rate table (only 115200 is confirmed by the firmware);
+* the extended baud rate table: 38400 under set 1 (plain code C) is the
+  standard 68681 value; the set 2 extended code C gave 19200 on the board;
+  115200 (code 8, extended) is confirmed by the firmware in set 2, and in
+  set 1 by MAME only;
 * the internal pull-ups on the IP pins.
 
 Risk: interrupt-driven output at 115200 baud means one interrupt per
