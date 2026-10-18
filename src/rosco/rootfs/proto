@@ -26,6 +26,7 @@ f /etc/group	644 ../rootfs/etc/group
 f /etc/utmp	644 ../rootfs/etc/utmp
 f /etc/stamp	644 stamp
 f /etc/hostname.file	644 ../rootfs/etc/hostname.file
+f /etc/profile	644 ../rootfs/etc/profile
 # the Minix termcap (src/etc/termcap) for clr, more, elvis, ...
 f /etc/termcap	644 ../../etc/termcap
 

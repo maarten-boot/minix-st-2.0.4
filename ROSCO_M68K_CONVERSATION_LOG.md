@@ -793,4 +793,17 @@ Committed `680eca7` (loader, mamesession -a); emulator branch
   parts that need a C compiler (`cc` via make, `a.out`, `strings a.out`);
   `df` works as ast. Everything that can pass without a compiler passes.
 
+Committed `fc51618`.
+
+User:
+> commit this first, then add the /etc/profile for ctrl-c
+
+* **`rootfs/etc/profile`** (new, in `proto`, so on the RAM root and the SD
+  root): `TZ` as in `src/etc/profile`, plus `stty intr '^C'`. sh reads it
+  for login shells; the tty resets termios on the last close, so every
+  login sets it again. DEL is then an ordinary character.
+* **MAME:** ast and root get `intr = ^C`; Ctrl-C interrupts `sleep 60`
+  (the `echo` after it does not run); `TZ=GMT0`.
+* **Default card rebuilt** (38400).
+
 Not committed yet.

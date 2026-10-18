@@ -1,0 +1,11 @@
+# /etc/profile - read by login shells, rosco_m68k.
+
+# Set timezone (as src/etc/profile).
+
+TZ='GMT0'	export TZ
+
+# Interrupt with Ctrl-C, as most terminals expect, instead of the Minix
+# default DEL.  The tty resets this on the last close, so every login
+# sets it again.  DEL then does nothing special.
+
+stty intr '^C'
