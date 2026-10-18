@@ -776,3 +776,21 @@ User:
   are fixed on the new card.
 
 Not committed yet.
+
+## Follow-up 20: new card on the board
+
+Committed `680eca7` (loader, mamesession -a); emulator branch
+`rosco-m68k-ram-bios` (`de3ef70395b`) in ../rosco-emulator.
+
+* **Memory:** "Memory size = 5120K   MINIX = 292K   RAM disk = 0K
+  Available = 4829K", the full 5MB with the expansion, firmware 2.42.
+* **Logout:** `exit` brings back the login prompt (the `rs_config()`
+  change in roscrs232.c).
+* **clr:** the screen clear at the start of `run` works (termcap, vt100).
+* **Interrupt:** the Minix interrupt key is DEL (`intr = ^?`); it works.
+  Ctrl-C is not mapped (`stty intr '^C'` per session).
+* **Shell tests:** sh1 ok on the board (also compress now). sh2 only the
+  parts that need a C compiler (`cc` via make, `a.out`, `strings a.out`);
+  `df` works as ast. Everything that can pass without a compiler passes.
+
+Not committed yet.
