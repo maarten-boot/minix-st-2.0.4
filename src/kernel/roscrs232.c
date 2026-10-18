@@ -353,14 +353,29 @@ rs232_t *rs;			/* which line */
 		;
   }
   lock();
-  if (mr1 != rs->mr1 || mr2 != rs->mr2) {
-	du_cr(rs) = CR_RSTMR;
-	du_mr(rs) = rs->mr1 = mr1;
-	du_mr(rs) = rs->mr2 = mr2;
-  }
-  if (sp != rs->speed) {
-	set_speed(rs, sp);
-	rs->speed = sp;
+  if (mr1 != rs->mr1 || mr2 != rs->mr2 || sp != rs->speed) {
+	/* Reprogram with receiver and transmitter disabled: the real
+	 * XR68C681 may not take a new mode or rate on a running channel
+	 * (tty00 changed by stty gave no output at 38400 on the board).
+	 */
+	du_cr(rs) = CR_RXDIS | CR_TXDIS;
+	if (mr1 != rs->mr1 || mr2 != rs->mr2) {
+		du_cr(rs) = CR_RSTMR;
+		du_mr(rs) = rs->mr1 = mr1;
+		du_mr(rs) = rs->mr2 = mr2;
+	}
+	/* The full reset as at boot (rs_line_init): after a rate change on
+	 * the board the channel stopped sending, also when set back.
+	 */
+	du_cr(rs) = CR_RSTRX;
+	du_cr(rs) = CR_RSTTX;
+	du_cr(rs) = CR_RSTERR;
+	du_cr(rs) = CR_RSTBRK;
+	if (sp != rs->speed) {
+		set_speed(rs, sp);
+		rs->speed = sp;
+	}
+	du_cr(rs) = CR_RXEN | CR_TXEN;
   }
 
   /* CTS is checked by the DUART, so it is always "ready" here. */

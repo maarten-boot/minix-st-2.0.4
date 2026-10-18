@@ -1363,3 +1363,64 @@ a FAT tool for p0.)
 * **Default card rebuilt** (38400).
 
 Not committed yet.
+
+Committed `e71f78e`.
+
+* **Board (user):** dosdir, doswrite TEST.TXT < /etc/rc and dosread work;
+  `reboot` goes through the firmware 2.42 banner, loads ROSCODE1.BIN from
+  the 150MB FAT partition (so the FAT stayed valid after the write),
+  shows c0d0p0..p3, root on c0d0p1, login; TEST.TXT is still there after
+  the reboot. The four 150MB partitions, reboot and FAT access are
+  confirmed on the real hardware.
+
+User:
+> looks like when i set in ttytab the speed ot tty00 to "stty 38400" i no
+> longer get a login prompt, setting it back to nothing and a reboot
+> restores the login. and when i login backspace does not work when
+> editing on the sh
+
+* **tty00 with `"stty 38400"`:** init (sttools/init.c) keeps the line
+  open, runs the init field with a path search (/sbin:/bin:/usr/sbin:
+  /usr/bin), and starts no getty if it exits non-zero ("bad exit
+  status"); getttyent handles the quotes; stty knows 38400. In MAME with
+  exactly that line: getty runs on 00 and `stty -a < /dev/tty00` says
+  38400. Open on the board: the user is to check `ps` for the getty,
+  `stty -a < /dev/tty00`, the terminal speed, and the console messages.
+* **Backspace:** most terminal programs send DEL for Backspace; the Minix
+  erase character is ^H. `/etc/profile` now sets `stty intr '^C' erase
+  '^?'` (DEL was the interrupt key before Ctrl-C). MAME: abcX DEL d gives
+  abcd.
+* **Board (user):** with "stty 38400", `stty < /dev/tty00` shows 38400,
+  but picocom (also at 38400) shows no prompt. The Minix getty has no
+  BREAK speed cycling (removed, see its header); killing the getty makes
+  init start the init command and a new getty.
+* **Suspect:** tty00 starts at 9600 with receiver and transmitter
+  enabled, and stty then rewrites CSR and the extended rate bits on the
+  running channel (the console's speed is set once, before enabling, and
+  works at 38400). `rs_config()` now disables receiver and transmitter,
+  reprograms MR/CSR, resets the receiver and enables both again.
+* **MAME, tty00 on a second socket** (`-host null_modem -bitb2
+  socket.localhost:PORT`, `dbg/tty00.py` in the scratchpad; MAME's port
+  runs at 115200, so "stty 115200" in ttytab): the getty's banner and
+  "rosco login:" arrive (one garbage byte from the switch). First time
+  tty00 output was seen in an emulator.
+* **Board (user), more tests:** with picocom at 38400 nothing, once some
+  garbage; "kill tty does not make the prompt re appear at 9600, setting
+  the tty to 38400 and echo hello works at the sending side but no data
+  appears ... switching to 38400 and back to 9600 on a previously working
+  9600 does not work, it looks the tty gets locked." So after one rate
+  change channel B stops sending for good, also with the code before the
+  disable/enable change. Like the console logout hang before (a running
+  channel reprogrammed).
+* The firmware's run-time rate change (D_CTRL_DUART_A/B in duart.asm)
+  only writes CSR. At boot our reprogramming works because rs_line_init()
+  follows it with resets and an enable.
+* **rs_config()** on a change now does the boot sequence: wait for TXEMT,
+  disable RX/TX, MR1/MR2 if changed, reset receiver, transmitter, error
+  status and break change, extended rate bits and CSR, enable RX/TX.
+* **MAME (tty00 on a socket at 115200):** "one", then stty 9600, 38400,
+  115200, "two", then 19200, 115200, "three": all three arrive. To be
+  confirmed on the board.
+* **Default card rebuilt** (38400).
+
+Not committed yet.

@@ -5,7 +5,8 @@
 TZ='GMT0'	export TZ
 
 # Interrupt with Ctrl-C, as most terminals expect, instead of the Minix
-# default DEL.  The tty resets this on the last close, so every login
-# sets it again.  DEL then does nothing special.
+# default DEL, and erase with DEL, which is what the Backspace key of most
+# terminal programs sends (the Minix default is ^H).  The tty resets this
+# on the last close, so every login sets it again.
 
-stty intr '^C'
+stty intr '^C' erase '^?'
