@@ -1447,4 +1447,11 @@ Committed `f94ab6c`.
   input; toggling should release output stuck waiting for CTS.
 * **Default card rebuilt** (38400).
 
+Committed `4e0f2da`.
+
+* **Board (user):** "tty00 works now, new prompt after logout and switching
+  to new speed happens automatic after logout; super and backspace works".
+  tty00 with "stty 38400" in ttytab, logout and getty restart, and
+  Backspace (erase DEL) confirmed on the real hardware.
+
 Not committed yet.
