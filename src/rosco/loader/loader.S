@@ -65,10 +65,16 @@ entry:
 
 	/* Memory size from the firmware, if its SDB looks valid. */
 	move.l	#DEFAULT_MEM,%d6
+	lea	ramdef(%pc),%a0		/* "RAM? xxxxxxxx": SDB not valid */
 	cmp.l	#SDB_MAGIC_VAL,SDB_MAGIC
 	bne.s	1f
 	move.l	SDB_MEMSIZE,%d6
-1:
+	lea	ramis(%pc),%a0		/* "RAM xxxxxxxx" (hex, bytes) */
+1:	bsr	puts
+	move.l	%d6,%d1
+	bsr	puthex
+	lea	crlf(%pc),%a0
+	bsr	puts
 	lea	_start(%pc),%a5		/* where the firmware loaded us */
 
 	/* a4 = end of the loaded file, rounded up to 16 bytes */
@@ -154,10 +160,29 @@ puts:
 	bra.s	puts
 2:	rts
 
+/* Polled output of d1 as 8 hex digits; trashes d0, d1, d2. */
+puthex:
+	moveq	#7,%d2
+1:	rol.l	#4,%d1
+	move.b	%d1,%d0
+	and.b	#15,%d0
+	add.b	#'0',%d0
+	cmp.b	#'9',%d0
+	bls.s	2f
+	addq.b	#'A'-'9'-1,%d0
+2:	btst	#SR_TXRDY,DUART_SRA
+	beq.s	2b
+	move.b	%d0,DUART_THRA
+	dbf	%d2,1b
+	rts
+
 halt:
 	stop	#0x2700
 	bra.s	halt
 
 banner:	.asciz	"\r\nMinix rosco loader\r\n"
+ramis:	.asciz	"RAM "
+ramdef:	.asciz	"RAM? "
+crlf:	.asciz	"\r\n"
 nomem:	.asciz	"loader: image too large for RAM\r\n"
 	.even

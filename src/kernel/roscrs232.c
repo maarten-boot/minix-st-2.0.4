@@ -117,6 +117,8 @@ typedef struct rs232 {
   unsigned char isr_tx;
   unsigned char op_rts;		/* output port bit for RTS */
   unsigned char cts_mr2;	/* MR2_TXCTS if CTS gates the transmitter */
+  unsigned char mr1, mr2;	/* mode registers as last set (0: not yet) */
+  struct speed2csr *speed;	/* speed as last set (NULL: not yet) */
 
   unsigned framing_errors;	/* error counts (no reporting yet) */
   unsigned overrun_errors;
@@ -339,11 +341,27 @@ rs232_t *rs;			/* which line */
   mr2 |= (tp->tty_termios.c_cflag & CSTOPB) || sp->speed == B110
 					? MR2_STOP2 : MR2_STOP1;
 
+  /* Program the DUART only if something changes (for the console nothing
+   * ever does, e.g. on the termios reset at the last close), and not in
+   * the middle of a character: the output buffer is empty, but the
+   * transmitter may still be sending.  Bounded, in case CTS holds it.
+   */
+  if (mr1 != rs->mr1 || mr2 != rs->mr2 || sp != rs->speed) {
+	unsigned wait = 0xFFFF;
+
+	while ((du_sr(rs) & SR_TXEMT) == 0 && --wait != 0)
+		;
+  }
   lock();
-  du_cr(rs) = CR_RSTMR;
-  du_mr(rs) = mr1;
-  du_mr(rs) = mr2;
-  set_speed(rs, sp);
+  if (mr1 != rs->mr1 || mr2 != rs->mr2) {
+	du_cr(rs) = CR_RSTMR;
+	du_mr(rs) = rs->mr1 = mr1;
+	du_mr(rs) = rs->mr2 = mr2;
+  }
+  if (sp != rs->speed) {
+	set_speed(rs, sp);
+	rs->speed = sp;
+  }
 
   /* CTS is checked by the DUART, so it is always "ready" here. */
   rs->ostate |= ODEVREADY | ORAW;

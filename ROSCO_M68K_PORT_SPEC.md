@@ -610,14 +610,15 @@ Board test (2026-10-18): with 38400 as CSR code C plus the extended bit
 under rate set 2, the console switched to **19200** once Minix started.
 That is the set 2 value without the extended bit, although MAME's
 XR68C681 table gives 38400 for it. The kernel now uses rate set 1, where
-38400 is the standard MC68681 code C and needs no XR extension. 115200
+38400 is the standard MC68681 code C and needs no XR extension. Confirmed
+on the board: the console stays at 38400. 115200
 (code 8, extended) is unchanged and was retested in MAME. 19200 is now
 code C with the extended bit, and is the entry to check on the board.
 
 Still "verify" on the board:
 
-* the extended baud rate table: 38400 under set 1 (plain code C) is the
-  standard 68681 value; the set 2 extended code C gave 19200 on the board;
+* the extended baud rate table: 38400 under set 1 (plain code C) works on
+  the board; the set 2 extended code C gave 19200 on the board;
   115200 (code 8, extended) is confirmed by the firmware in set 2, and in
   set 1 by MAME only;
 * the internal pull-ups on the IP pins.

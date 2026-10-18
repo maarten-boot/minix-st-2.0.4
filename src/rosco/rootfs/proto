@@ -26,13 +26,15 @@ f /etc/group	644 ../rootfs/etc/group
 f /etc/utmp	644 ../rootfs/etc/utmp
 f /etc/stamp	644 stamp
 f /etc/hostname.file	644 ../rootfs/etc/hostname.file
+# the Minix termcap (src/etc/termcap) for clr, more, elvis, ...
+f /etc/termcap	644 ../../etc/termcap
 
 d /bin 755
 f /bin/sh	755 ../cmds/bin/sh
 f /bin/cat	755 ../cmds/bin/cat
 f /bin/cp	755 ../cmds/bin/cp
 f /bin/date	755 ../cmds/bin/date
-f /bin/df	755 ../cmds/bin/df
+f /bin/df	4755 ../cmds/bin/df
 f /bin/echo	755 ../cmds/bin/echo
 f /bin/getty	755 ../cmds/bin/getty
 f /bin/kill	755 ../cmds/bin/kill
@@ -40,7 +42,7 @@ f /bin/login	755 ../cmds/bin/login
 f /bin/ls	755 ../cmds/bin/ls
 f /bin/mkdir	755 ../cmds/bin/mkdir
 f /bin/mknod	755 ../cmds/bin/mknod
-f /bin/mount	755 ../cmds/bin/mount
+f /bin/mount	4755 ../cmds/bin/mount
 f /bin/printroot	755 ../cmds/bin/printroot
 f /bin/pwd	755 ../cmds/bin/pwd
 f /bin/rmdir	755 ../cmds/bin/rmdir
@@ -48,7 +50,7 @@ f /bin/sleep	755 ../cmds/bin/sleep
 f /bin/stty	755 ../cmds/bin/stty
 f /bin/sync	755 ../cmds/bin/sync
 f /bin/touch	755 ../cmds/bin/touch
-f /bin/umount	755 ../cmds/bin/umount
+f /bin/umount	4755 ../cmds/bin/umount
 f /bin/uname	755 ../cmds/bin/uname
 l /bin/arch	/bin/uname
 # true and false: one script that looks at its name

@@ -35,7 +35,7 @@ f /bin/passwd	4755 ../cmds/bin/passwd
 f /bin/paste	755 ../cmds/bin/paste
 f /bin/prep	755 ../cmds/bin/prep
 f /bin/printenv	755 ../cmds/bin/printenv
-f /bin/ps	755 ../cmds/bin/ps
+f /bin/ps	4755 ../cmds/bin/ps
 f /bin/sed	755 ../cmds/bin/sed
 f /bin/shar	755 ../cmds/bin/shar
 f /bin/sort	755 ../cmds/bin/sort

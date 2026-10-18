@@ -3,5 +3,6 @@
 # name		type	getty			init
 # The console is DUART channel A, tty00 is DUART channel B.  The accounts
 # have no passwords yet (/etc/passwd); set them with passwd.
-console		minix	getty
+# The console is a serial terminal (emulator), hence vt100, not minix.
+console		vt100	getty
 tty00		vt100	getty

@@ -13,6 +13,7 @@
 # DUART directly (loader, Minix kernel) can be run.  The SD card is the
 # file rosco_sd.bin in the working directory (firmware EFP SD routines).
 #
+# R68K_RAM=5M (or 2048K, ...) sets the RAM size, default 1M (on-board).
 # The patch also makes the ROM's memory probe non-destructive (r68k loads
 # the program before the ROM runs; the probe wrote 0x12345678 at 0x80000,
 # into the loaded file) and adds debugging aids:

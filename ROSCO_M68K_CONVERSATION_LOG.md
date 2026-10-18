@@ -659,6 +659,67 @@ User:
   * The unused `CSR_*` constants were removed.
   * 115200 (code 8, extended) retested in MAME: login, `stty`, `ls`.
 * **Default card rebuilt** (38400) and checked in r68k.
-* **To check on the board:** that the console now stays at 38400.
+Committed `8de1d42`.
+
+* **Board test (user):** "console stays at 38400 now, works on the board".
+* **Write test on the board (user):** a new empty file, `sync` and a reset;
+  the file is still there.
+* **Test suite on the board (user, as root, partial):** tests 1, 2, 4, 5,
+  7–10, 12–16, 22–24, 26, 27 ok. 3, 6, 11, 17–21 and 25 refuse to run as
+  root; run them as `ast`. Rest of the run: 28–32 and 34–40 ok; 33 needs
+  a non-root login too. Score 30 passed, 10 failed, all 10 being the
+  "as root" refusals, so no real failure. Shell tests as in MAME: sh1
+  "compress: program too big" (memory) and uue/uud test 3; sh2 only the
+  cc parts. `texecl` (fork and direct) and `troscorun` ok on the board.
+* **`clr: Unknown terminal`** (from `run`): there was no `/etc/termcap`.
+  * `rootfs/proto` now installs the Minix `src/etc/termcap`.
+  * `etc/ttytab` gives the console type `vt100` instead of `minix`: the
+    console is a serial terminal (emulator).
+  * Checked in MAME: `TERM=vt100`, and `clr` sends the VT100 clear
+    sequence.
+* **Hang on logout (board):** after the root test run, `exit` gave no
+  response and no new prompt; the board needed a reset. Not reproduced in
+  MAME (repeated login and `exit` as root and ast, also after tests).
+  * Suspect: on the last close, tty.c resets the termios and the driver
+    reprogrammed MR1/MR2, the extended-rate bits and the CSR as soon as its
+    output buffer was empty, while the transmitter could still be sending
+    the last characters. MAME does not care about that; a real XR68C681
+    may.
+  * Change in `roscrs232.c`: `rs_config()` remembers what it last
+    programmed (`mr1`, `mr2`, `speed`) and only writes what changes, so the
+    console (fixed speed and format) is not touched at all. Before a change
+    it waits for TXEMT (bounded, in case CTS holds the transmitter).
+  * MAME: `stty 9600` on the console, tests 1 and 5, and three logins with
+    `exit`, all fine; the console stays at 115200.
+  * To check on the board: `exit` brings back the login prompt.
+* **Shell tests as ast on the board:** sh1 ok (it failed only after the
+  40 tests, memory). sh2: only the cc parts, plus
+  `df: /dev/c0d0p1: Permission denied`.
+  * The original install has df, mount and umount setuid root (`install -o
+    root -m 4755`, commands/simple/Makefile); the rosco protos had 755.
+    `ps` (reads /dev/kmem, "Permission denied" for ast) likewise.
+  * Now 4755: `/bin/df`, `/bin/mount`, `/bin/umount` (proto) and `/bin/ps`
+    (sdproto). MAME as ast: `df` and `ps` work.
+* **4 MB expansion not used:** the board has the 4 MB RAM expansion. The
+  firmware banner says "MC68010 CPU @ 10.0MHz with 5242880 bytes RAM",
+  but the kernel says "1024kB RAM" and MM "Memory size = 1024K".
+  * The chain looks right on paper: the firmware stores the size of the
+    first contiguous RAM block at SDB 0x414 (`INITMEMCOUNT`, bootstrap.asm),
+    the loader reads it if the SDB magic 0xB105D47A is there (else 1 MB),
+    and passes it in d1 with d0 = 'ROSC'; the kernel uses it (else 1 MB).
+    Clicks are 256 bytes and 16 bits, so up to 16 MB fits.
+  * Diagnostic: the loader now prints `RAM xxxxxxxx` (hex bytes from the
+    SDB) or `RAM? xxxxxxxx` (SDB magic missing, default used). That shows
+    whether the loader or the kernel loses the size.
+  * User: "can we recompile one of the emulators with 2mb for example".
+    r68k now takes `R68K_RAM` (e.g. `R68K_RAM=5M`, multiple of 512K, 512K
+    to 14M; default 1M); `r68k-duart.patch` regenerated (checked against a
+    fresh checkout of bac2219), documented in `build-r68k.sh`.
+  * r68k results: 2M gives `RAM 00200000`, "2048kB RAM", Available 1757K;
+    5M gives `RAM 00500000`, "5120kB RAM", Available 4829K. With 5M,
+    test1, sh1 and compress/uncompress of /bin/sh work. So loader, kernel
+    and MM handle the larger size; on the board the size is lost before or
+    in the loader's SDB read (the new `RAM` line will tell).
+* **Default card rebuilt** (38400).
 
 Not committed yet.

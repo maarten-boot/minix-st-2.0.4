@@ -286,16 +286,17 @@ index 0000000..35d0b73
 +    }
 +}
 diff --git a/main.cpp b/main.cpp
-index 453acd8..1725f29 100644
+index 453acd8..7031eb7 100644
 --- a/main.cpp
 +++ b/main.cpp
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
 +#include <csignal>
 +#include <cstdio>
++#include <cstdlib>
  #include <iostream>
  #include <filesystem>
  #include <stdint.h>
-@@ -97,6 +99,7 @@ static char* print_unsigned(uint32_t num, uint8_t base) {
+@@ -97,6 +100,7 @@ static char* print_unsigned(uint32_t num, uint8_t base) {
  
  extern "C" {
      rosco::m68k::emu::AddressDecoder* __mem;
@@ -303,7 +304,7 @@ index 453acd8..1725f29 100644
      std::fstream ifs("rosco_sd.bin", std::ios::binary | std::ios::ate | std::ios::in | std::ios::out);
  
      int illegal_instruction_handler(int __attribute__((unused)) opcode) {
-@@ -483,6 +486,10 @@ extern "C" {
+@@ -483,6 +487,10 @@ extern "C" {
      int interrupt_ack_handler(unsigned int irq) {
          switch (irq) {
          case DUART_IRQ:
@@ -314,7 +315,7 @@ index 453acd8..1725f29 100644
              // DUART timer tick - vector to 0x45
              m68k_set_irq(0);
              return DUART_VEC;
-@@ -508,9 +515,90 @@ void timer_interrupt() {
+@@ -508,9 +516,109 @@ void timer_interrupt() {
      }
  }
  
@@ -325,6 +326,24 @@ index 453acd8..1725f29 100644
 +static unsigned int pc_pos;
 +
 +static bool pc_frozen;
++// RAM size: 1MB (the on-board RAM) unless R68K_RAM gives another, e.g.
++// R68K_RAM=5M (on-board plus the 4MB expansion) or R68K_RAM=2048K
++static unsigned int ram_size = 0x100000;
++
++static unsigned int get_ram_size() {
++    const char *e = getenv("R68K_RAM");
++    if (e == NULL || *e == 0) return 0x100000;
++    char *end;
++    unsigned long n = strtoul(e, &end, 0);
++    if (*end == 'M' || *end == 'm') n <<= 20;
++    else if (*end == 'K' || *end == 'k') n <<= 10;
++    if (n < 0x80000 || n > 0xE00000 || (n & 0x7FFFF) != 0) {
++        fprintf(stderr, "r68k: R68K_RAM must be a multiple of 512K, 512K-14M\n");
++        exit(1);
++    }
++    return n;
++}
++
 +static void dump_cpu();
 +
 +extern "C" void r68k_trace_pc(unsigned int pc) {
@@ -352,7 +371,7 @@ index 453acd8..1725f29 100644
 +    static unsigned int zeros;
 +    zeros = (pc & 1) == 0 && m68k_read_memory_16(pc) == 0 ? zeros + 1 : 0;
 +    if ((pc & 1) || zeros >= 2 ||
-+        (pc >= 0x100000 && (pc < 0xE00000 || pc >= 0xF00000))) {
++        (pc >= ram_size && (pc < 0xE00000 || pc >= 0xF00000))) {
 +        pc_frozen = true;
 +        fprintf(stderr, "\n[r68k] PC went wild: %08X (trace frozen)\n", pc);
 +    }
@@ -375,7 +394,7 @@ index 453acd8..1725f29 100644
 +    }
 +    // the RAM, for a closer look
 +    if (FILE *f = fopen("r68k-ram.bin", "wb")) {
-+        for (unsigned int a = 0; a < 0x100000; a++) fputc(m68k_read_memory_8(a), f);
++        for (unsigned int a = 0; a < ram_size; a++) fputc(m68k_read_memory_8(a), f);
 +        fclose(f);
 +        fprintf(stderr, "[r68k] RAM written to r68k-ram.bin\n");
 +    }
@@ -403,11 +422,17 @@ index 453acd8..1725f29 100644
 -        cout << "Usage: xl86 <binary>" << endl;
 +        cout << "Usage: r68k [-d] <binary>" << endl;
 +        cout << "  -d  emulate the XR68C681 DUART registers and timer" << endl;
++        cout << "  R68K_RAM=5M  RAM size (default 1M, the on-board RAM)" << endl;
          return 1;
      } else {
          init_term();
-@@ -521,6 +609,13 @@ int main(int argc, char** argv) {
-         __mem = new rosco::m68k::emu::AddressDecoder(0x40000, 0x100000, path.string().c_str());
+@@ -518,9 +626,17 @@ int main(int argc, char** argv) {
+         std::filesystem::path path = std::filesystem::path(argv[0]).parent_path();
+         path += "/firmware/rosco_m68k.rom";
+ 
+-        __mem = new rosco::m68k::emu::AddressDecoder(0x40000, 0x100000, path.string().c_str());
++        ram_size = get_ram_size();
++        __mem = new rosco::m68k::emu::AddressDecoder(0x40000, ram_size, path.string().c_str());
          __mem->LoadMemoryFile(0x40000, argv[1]);
  
 +        if (emulateDuart) {
@@ -420,7 +445,7 @@ index 453acd8..1725f29 100644
          m68k_set_cpu_type(M68K_CPU_TYPE_68010);
          m68k_init();
          m68k_pulse_reset();
-@@ -528,6 +623,17 @@ int main(int argc, char** argv) {
+@@ -528,6 +644,17 @@ int main(int argc, char** argv) {
          m68ki_cpu_core ctx;
          m68k_get_context(&ctx);
          
