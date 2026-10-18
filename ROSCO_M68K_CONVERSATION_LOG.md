@@ -1105,3 +1105,20 @@ User:
 * **Default card rebuilt** (38400) with cc.
 
 Not committed yet.
+
+Committed `f9f60de`.
+
+* **Board (user):** "cc works on the board, sh2 ok". So on the real
+  Classic v2 (68010, 5MB, firmware 2.42): tests 1-40, sh1 and sh2 pass,
+  and programs are compiled on the board itself.
+* **Intermezzo questions (no changes):**
+  * Brandy 1.19 (BBC BASIC, GPL): portable with moderate work: its
+    `int32` is `int` (needs `long` here, plus an audit of int/int32
+    mixing), it needs double floating point and libm (soft-float libgcc
+    or ACK), and `select()` for INKEY (use termios VMIN/VTIME).
+  * Second SPI: no second port, but a second chip select: `SPICS2` on
+    DUART OP7 goes to header J7; clock/MOSI/MISO are shared on J4 with the
+    SD card. The firmware supports it (BBSPI_assert_cs1); the kernel leaves
+    OP7 alone.
+
+Not committed yet.
