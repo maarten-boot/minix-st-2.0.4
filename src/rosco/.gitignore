@@ -41,3 +41,5 @@ ack/lib/obj/
 ack/lib/inc/
 ack/lib/*.a
 ack/lib/build.log
+ack/pass/
+ack/ccproto

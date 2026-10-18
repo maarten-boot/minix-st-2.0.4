@@ -12,7 +12,13 @@
 #			(rootfs/proto + rootfs/sdproto: all commands and the
 #			test suite in /usr/test, SDROOTBLOCKS blocks).  The kernel takes
 #			the first Minix partition as root when no root image
-#			came with ROSCODE1.BIN.
+#			came with ROSCODE1.BIN.  With the C compiler built
+#			(make cc) the card also gets cc, /usr/ack and
+#			/usr/include (ack/ccproto).
+#	make cc		build the C compiler: ACK for minix68k on the host,
+#			the Minix libc compiled with it and the ACK passes
+#			as Minix programs (ack/Makefile; needs lua5.4,
+#			lua-posix, flex, bison, ninja on the host)
 #	make runsd	boot boot/sd/ROSCODE1.BIN in r68k, root on rosco_sd.bin
 #	make runmame	boot rosco_sd.bin in the rosco-emulator (MAME, full
 #			hardware and the real firmware, MAMEDIR), console on
@@ -76,9 +82,16 @@ boot/sd/ROSCODE1.BIN:	boot/image.bin
 boot/sdfat.img:	boot/sd/ROSCODE1.BIN tools/mkfat.py
 	python3 tools/mkfat.py -s $(SDFATSECTORS) -o 2048 $@ boot/sd/ROSCODE1.BIN
 
-boot/sdroot.img:	parts test boot/stamp rootfs/proto rootfs/sdproto rootfs/etc/*
+# the C compiler, if built (make cc)
+CCPROTO	= $(wildcard ack/ccproto)
+
+boot/sdroot.img:	parts test boot/stamp rootfs/proto rootfs/sdproto rootfs/etc/* \
+			$(CCPROTO)
 	cd boot && python3 ../tools/mkfs.py -b $(SDROOTBLOCKS) -i $(SDROOTINODES) \
-		sdroot.img ../rootfs/proto ../rootfs/sdproto
+		sdroot.img ../rootfs/proto ../rootfs/sdproto $(CCPROTO:%=../%)
+
+cc:
+	$(MAKE) -C ack
 
 rosco_sd.bin:	boot/sdfat.img boot/sdroot.img tools/mksd.py
 	python3 tools/mksd.py $@ 06:boot/sdfat.img 81:boot/sdroot.img
@@ -100,4 +113,4 @@ clean:
 	rm -rf ROSCODE1.BIN boot/stamp boot/root.img boot/image.bin boot/sd boot/sdfat.img \
 		boot/sdroot.img
 
-.PHONY:	all parts test sdcard run runsd runmame clean FORCE
+.PHONY:	all parts test sdcard cc run runsd runmame clean FORCE

@@ -786,8 +786,8 @@ Known and not fixed:
   "program too big" (exec ENOMEM): compress needs 470K contiguous (450K
   stack/heap for 16-bit codes) out of 733K free, and memory is then
   fragmented. Seen before and after the global `sizeof` change, so not a
-  regression. `sh2` fails only where it needs a C compiler (`cc`, its
-  `a.out`, `strings a.out`); `make` itself works.
+  regression. With the 4MB expansion (5MB) it passes in the full run
+  too. `sh2` passes since 2026-10-18 with the native C compiler (below).
 * **The 32-bit `sizeof` hazard:**
   * gcc's `sizeof` is 32 bits even with `-mshort` (ACK: 16 bits). In a call
     without a prototype (K&R `char *malloc();`) a `sizeof` argument is
@@ -847,3 +847,26 @@ as seen); that the firmware leaves the rest of the ROM alone; and the
 even/odd split for the image tools. MAME can try it first: its ROM region
 is the whole 1MB, so a ROM file with the image appended can be loaded with
 `-bios` once the driver gets an entry for it.
+
+### 11.2 C compiler on the target (done 2026-10-18)
+
+The Amsterdam Compiler Kit for minix68k (m68k2, 16-bit int), the original
+Minix-ST compiler, in `src/rosco/ack/`:
+
+* `build-ack.sh` + `ack-minix68k.patch`: ACK at a pinned commit on the
+  host (fixes: ncg `con_mult()` for 4-byte constants on m68k2, the cv
+  header on 64-bit hosts, `maketempfile.c` for Minix); `acc` is the cross
+  compiler.
+* `lib/`: the Minix C library (src/lib) compiled with ACK, plus `emrts.s`
+  (EM symbols ACK's libem.a expects); `acc-minix` compiles and links
+  Minix programs on the host. The ACK-built test suite passes 40/40.
+* `mkpass.py`: the ACK passes rebuilt with m68k-elf-gcc -mshort as Minix
+  programs from the host build's compile commands, with `passinc/` and
+  `passlib/` (stdint.h, strdup, the 64-bit gcc routines).
+* On the SD root: `/usr/bin/cc` (`cc.sh`), `/usr/ack`, `/usr/include`
+  (`mkccproto.py`), added by `make sdcard` after `make cc`.
+* sh2 passes (make, cc, the program, strings).
+
+The c68/Sozobon chain in `src/rosco/cc/` (host tools only) is kept as a
+fallback.
+

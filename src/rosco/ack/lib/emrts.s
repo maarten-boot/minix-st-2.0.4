@@ -27,14 +27,16 @@ WRITE:
 	jmp	__write
 
 	.sect	.data
+.reghp:
+	.data4	__end		! EM heap pointer
+.limhp:
+	.data4	__end
+! the zeros last: the program's own data follows, and strings(1) (sh2)
+! must not see the low byte of __end as part of its first string
 hol0:
 .lino:
 	.data2	0,0		! line number
 .filn:
 	.data4	0		! file name
-.reghp:
-	.data4	__end		! EM heap pointer
-.limhp:
-	.data4	__end
 	.sect	.bss
 	.comm	.ignmask, 4
