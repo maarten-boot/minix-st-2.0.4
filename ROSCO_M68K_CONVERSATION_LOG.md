@@ -1171,3 +1171,105 @@ User (among others):
   in this repo stay the source for build-r68k.sh and build-ack.sh.
 
 Not committed yet.
+
+Committed `cdcf745`.
+
+## Follow-up 29: the create/stat anomaly (in progress); tty00; editors
+
+User:
+> look at the create/stat anomaly
+> can we remove the yellow color from the rosco bootup screen
+> is the second serial by default on 9600 and it expects a password on
+> login as it is not the console it seems ...
+> we have no editor other than ed in minix i expect, ... minix 1 had mine
+
+* **create/stat anomaly:**
+  * A stress program (creat f0..f16 with modes n*0100, stat each, also
+    with a child calling sync() nonstop): 5100 create/stat pairs, no
+    failure. test17/test18 alone 30 times each, the full suite followed by
+    cstress and test17/18 x5, and 10 more full rounds with instrumented
+    test17/18 (stat wrapper printing errno): no failure. `ps` after the
+    suite: no leftover processes (and no `update` daemon runs).
+  * MAME runs are deterministic (each round took exactly 47 emulated
+    minutes). Replaying the exact card of the ACK test run where it last
+    happened (its unmodified root image was still in the scratchpad)
+    reproduced it exactly: test18, "cannot stat f4". With only test18
+    replaced by the instrumented one (changing the file layout) it was
+    gone. So it depends on the disk/FS state, not on input timing.
+  * `stat()` passes short names inside the message, so FS does not fetch
+    the name from user memory.
+  * Debugging: MAME `-debugscript` is ignored with `-debugger none`; the
+    gdbstub had no `m68010` entry ("cpuname m68010 not found"): added in
+    ../rosco-emulator (`src/osd/modules/debugger/debuggdbstub.cpp`, the
+    m68000 register map; not committed there yet). A small gdb remote
+    client (scratchpad, host gdb has no m68k) works (target.xml handshake,
+    Z0 accepted), but the breakpoint on FS `reply()` (0x18498, checked in
+    the image) does not fire yet. Open.
+* **Yellow banner:** firmware, `SZ_BANNER0` = ESC[1;33m in
+  `code/firmware/rosco_m68k_firmware/bootstrap.asm`; needs a firmware
+  rebuild and flash (or a terminal that maps the colours).
+* **tty00:** 9600 is the tty default (TSPEED_DEF); `/etc/ttytab` can run
+  `stty` on the line (4th field, e.g. "stty 38400"). login treats only the
+  console as secure (`securetty()`: minor 0-7) and refuses empty passwords
+  elsewhere, so set passwords with `passwd` to log in on tty00.
+* **Editors:** `mined` (commands/mined, 64k) and `elvis` (commands/elvis,
+  18kw, the Minix-ST settings) added to `cmds/Makefile`; `/usr/bin/mined`,
+  `/usr/bin/elvis` with links vi, ex, view (sdproto).
+  * The gcc-built elvis quit at once (status 1) while the ACK-built one
+    worked: `tio.c` calls `ttyread(..., sizeof keybuf - cend, ...)`;
+    `sizeof keybuf` without parentheses is not caught by rosco_sizeof.h,
+    so a 32-bit value went to the K&R ttyread(), which read a length of 0;
+    read() returned 0 and elvis took it as the end of an ex script.
+    `cmds/elvisproto.h` (forced into the elvis compile) gives prototypes
+    for ttyread() and vgets(), so gcc converts the argument.
+  * MAME: vi (insert, :wq) and mined (^W, ^X) write their files.
+  * Other unparenthesised `sizeof` uses in the gcc-built commands go to
+    prototyped functions or comparisons; a latent risk for unprototyped
+    calls.
+* **Default card rebuilt** (38400) with mined and elvis.
+
+Not committed yet.
+
+## Follow-up 30: four 150MB partitions; FAT tools; partition limits; ROM use
+
+User:
+> ok we currently have on partition of 73M but the disk has 4 partitions
+> in /dev/ could we build a image with 4 partitions all 150M
+> minix currently cannot read or write fat filesystems right ?
+> what is the max partition size minix can handle
+> how are you currently reading from the sd drive in minix ...
+> any other rom routines you are using
+
+* **Card layout** (Makefile): p0 FAT16 150MB (boot, file exchange), p1 the
+  Minix root 150MB (153600 blocks, 16384 i-nodes), p2 and p3 empty Minix
+  file systems 150MB (`SDEXTRA`, `rootfs/emptyproto`; leave SDEXTRA empty
+  for two partitions). p0 must stay FAT: the firmware boots from it.
+* **Tools:**
+  * `mkfat.py`: picks the smallest cluster size (1..64 sectors) that
+    keeps FAT16 within 65524 clusters (150MB: 8 sectors = 4kB, 38358
+    clusters); total sectors above 65535 in the 32-bit BPB field; up to
+    2GB.
+  * `mkfat.py`, `mkfs.py`, `mksd.py` write sparse images; mksd.py streams
+    the partitions instead of building the card in memory. rosco_sd.bin is
+    601MB but takes about 4MB on disk; built in about 2 s.
+  * Test in MAME (firmware 2.42 booting from 4kB clusters, root on 150MB,
+    mounting p2/p3, blocks above 65535 with a pattern file, fsck): running
+    at the time of this commit.
+  * Found: the pattern file (71680000 bytes) is larger than a Minix V2
+    file can be with 1k blocks (7 + 256 + 256^2 zones = 67383296 bytes);
+    mkfs.py did not refuse it. To fix.
+* **FAT on Minix (answer):** FS cannot mount FAT; user level tools are in
+  the tree: `commands/m68000/tos.c` (Atari TOS disks, big endian),
+  `commands/ibm/dosread.c` (dosread/doswrite/dosdir), mtools 3.9.7
+  (`commands/i386`). Not built yet; large partitions need checking.
+* **Limits (answer):** a file system up to about 2GB (device positions as
+  block * 1024 in a signed 32-bit off_t), at most 65535 i-nodes, a file up
+  to about 64MB (V2 inode, 1k blocks).
+* **ROM use (answer):** only the firmware's SD routines are called (EFP
+  0x44C/0x450/0x454, via `roscklib.S`); data read from the SDB (memory
+  size 0x414, CPU info, which firmware 2.42 makes unusable, so the kernel
+  probes the CPU); the firmware loads ROSCODE1.BIN; reboot jumps through
+  the ROM reset vectors. Console, tty00, clock and interrupts drive the
+  DUART directly; no TRAP calls.
+
+Not committed yet.

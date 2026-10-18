@@ -1,0 +1,3 @@
+# An empty Minix file system (only "/"), for the extra SD card partitions
+# c0d0p2 and c0d0p3 (Makefile SDEXTRA); mount them with, e.g.,
+#	mount /dev/c0d0p2 /mnt

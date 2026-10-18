@@ -27,7 +27,8 @@ The spec has one line per object, '#' starts a comment:
 
 MODE is octal.  Parents must come before their entries; "/" exists.  All
 files belong to uid 0, gid 0.  Without -b the image is the used size plus
-a quarter, at least 128 blocks.  This is a host program.
+a quarter, at least 128 blocks.  The image is written sparse.  This is a
+host program.
 """
 
 import struct
@@ -215,7 +216,15 @@ def main():
                      min(blocks, 0xFFFF), imap_blocks, zmap_blocks,
                      min(first, 0xFFFF), 0, min(max_size, 0x7FFFFFFF),
                      SUPER_V2, 0, blocks)
-    open(args[0], "wb").write(img)
+    zero = bytes(65536)			# written sparse: skip zero chunks
+    with open(args[0], "wb") as f:
+        for o in range(0, len(img), 65536):
+            c = img[o:o + 65536]
+            if c == zero[:len(c)]:
+                f.seek(len(c), 1)
+            else:
+                f.write(c)
+        f.truncate(len(img))
     print("%s: %d blocks, %d inodes (%d used), %d data blocks used, "
           "first data zone %d" % (args[0], blocks, ninodes, len(nodes) - 1,
                                   nextzone - first, first))

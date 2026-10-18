@@ -4,12 +4,13 @@
 	mkfat.py [-s sectors] [-o lba] image file...
 
 For the SD card image: the rosco firmware boots ROSCODE1.BIN from a FAT
-partition.  The image has 512 byte sectors, one sector per cluster, two
-FATs and a 512 entry root directory; each file is stored contiguously
-under its upper case 8.3 name.  -s is the size in sectors (default 16384,
-8 MB; at least 4200 so that it is FAT16), -o the partition's start sector
-(written into the boot sector as "hidden sectors", default 2048).
-This is a host program.
+partition.  The image has 512 byte sectors, two FATs and a 512 entry root
+directory; each file is stored contiguously under its upper case 8.3 name.
+The cluster size is the smallest power of two (1..64 sectors) that keeps
+the cluster count within FAT16 (<= 65524).  -s is the size in sectors
+(default 16384, 8 MB; 4200 up to 2 GB), -o the partition's start sector
+(written into the boot sector as "hidden sectors", default 2048).  The
+image is written sparse.  This is a host program.
 """
 import os
 import struct
@@ -45,20 +46,30 @@ def main():
             die("unknown option " + a)
     if len(args) < 2:
         die("usage: mkfat.py [-s sectors] [-o lba] image file...")
-    if sectors < 4200 or sectors > 65535:
-        die("size must be 4200..65535 sectors")
+    if sectors < 4200 or sectors > 4194304:
+        die("size must be 4200..4194304 sectors (2 GB)")
 
     root_secs = ROOT_ENTRIES * 32 // SECTOR
-    fat_secs = ((sectors - 1 - root_secs) * 2 + SECTOR - 1) // SECTOR + 1
-    data_start = 1 + 2 * fat_secs + root_secs
-    clusters = sectors - data_start
-    if clusters < 4085:
-        die("too small for FAT16")
+    spc = 1
+    while True:
+        # FAT size for the clusters there would be without the FATs
+        fat_secs = (((sectors - 1 - root_secs) // spc + 2) * 2
+                    + SECTOR - 1) // SECTOR
+        data_start = 1 + 2 * fat_secs + root_secs
+        clusters = (sectors - data_start) // spc
+        if clusters <= 65524 or spc == 64:
+            break
+        spc *= 2
+    if not 4085 <= clusters <= 65524:
+        die("cluster count %d is not FAT16" % clusters)
+    csize = spc * SECTOR
 
     img = bytearray(sectors * SECTOR)
     bpb = struct.pack("<3s8sHBHBHHBHHHII", b"\xEB\x3C\x90", b"MINIXRSC",
-                      SECTOR, 1, 1, 2, ROOT_ENTRIES, sectors, 0xF8,
-                      fat_secs, 32, 64, lba, 0)
+                      SECTOR, spc, 1, 2, ROOT_ENTRIES,
+                      sectors if sectors < 65536 else 0, 0xF8,
+                      fat_secs, 32, 64, lba,
+                      sectors if sectors >= 65536 else 0)
     ebpb = struct.pack("<BBBI11s8s", 0x80, 0, 0x29, int(time.time()) & 0xFFFFFFFF,
                        b"ROSCO MINIX", b"FAT16   ")
     img[0:len(bpb)] = bpb
@@ -72,13 +83,13 @@ def main():
     root = bytearray()
     for path in args[1:]:
         data = open(path, "rb").read()
-        n = (len(data) + SECTOR - 1) // SECTOR
+        n = (len(data) + csize - 1) // csize
         first = len(fat) if n else 0
         if first + n > clusters + 2:
             die("%s does not fit" % path)
         for i in range(n):
             fat.append(first + i + 1 if i < n - 1 else 0xFFFF)
-        o = (data_start + first - 2) * SECTOR
+        o = data_start * SECTOR + (first - 2) * csize
         img[o:o + len(data)] = data
         root += struct.pack("<11sBBBHHHHHHHI", name83(path), 0x20, 0, 0,
                             ftime, fdate, fdate, 0, ftime, fdate, first,
@@ -92,7 +103,22 @@ def main():
         img[o:o + len(fatbytes)] = fatbytes
     o = (1 + 2 * fat_secs) * SECTOR
     img[o:o + len(root)] = root
-    open(args[0], "wb").write(img)
+    write_sparse(args[0], img)
+    print("%s: %d sectors, %d sectors per cluster, %d clusters"
+          % (args[0], sectors, spc, clusters))
+
+
+def write_sparse(path, data, chunk=65536):
+    """Write data, skipping all-zero chunks (they read back as zeros)."""
+    zero = bytes(chunk)
+    with open(path, "wb") as f:
+        for o in range(0, len(data), chunk):
+            c = data[o:o + chunk]
+            if c == zero[:len(c)]:
+                f.seek(len(c), 1)
+            else:
+                f.write(c)
+        f.truncate(len(data))
 
 
 main()

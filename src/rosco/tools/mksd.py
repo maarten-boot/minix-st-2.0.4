@@ -9,13 +9,16 @@ one.  The type is hex, default 81 (Minix, from mkfs.py); 06 is FAT16 (from
 mkfat.py, which must be told the start sector with -o).  The MBR entries
 are little endian with the CHS fields set to "beyond 1024 cylinders".
 r68k uses rosco_sd.bin in its working directory as the SD card; on the
-board, write the image to a card with dd.  This is a host program.
+board, write the image to a card with dd.  The image is written sparse,
+one partition at a time.  This is a host program.
 """
+import os
 import struct
 import sys
 
 SECTOR = 512
 FIRST = 2048
+CHUNK = 65536
 
 
 def main():
@@ -26,24 +29,37 @@ def main():
         t, sep, f = a.partition(":")
         if not sep or len(t) > 2:
             t, f = "81", a
-        parts.append(open(f, "rb").read())
+        parts.append(os.path.getsize(f))
         types.append(int(t, 16))
         names.append(f)
     mbr = bytearray(SECTOR)
-    body = bytearray()
     lba = FIRST
-    for i, fs in enumerate(parts):
-        n = (len(fs) + SECTOR - 1) // SECTOR
+    starts = []
+    for i, size in enumerate(parts):
+        n = (size + SECTOR - 1) // SECTOR
         entry = struct.pack("<B3sB3sII", 0, b"\xFE\xFF\xFF", types[i],
                             b"\xFE\xFF\xFF", lba, n)
         mbr[446 + 16 * i:446 + 16 * (i + 1)] = entry
-        body += fs + bytes(n * SECTOR - len(fs))
         print("p%d: type %02x, %d sectors at %d (%s)" % (i, types[i], n, lba,
                                                      names[i]))
+        starts.append(lba)
         lba += n
     mbr[510:512] = b"\x55\xAA"
-    with open(sys.argv[1], "wb") as f:
-        f.write(mbr + bytes((FIRST - 1) * SECTOR) + body)
+    zero = bytes(CHUNK)
+    with open(sys.argv[1], "wb") as out:
+        out.write(mbr)
+        for i, name in enumerate(names):
+            out.seek(starts[i] * SECTOR)
+            with open(name, "rb") as f:
+                while True:
+                    c = f.read(CHUNK)
+                    if not c:
+                        break
+                    if c == zero[:len(c)]:
+                        out.seek(len(c), 1)	# leave a hole
+                    else:
+                        out.write(c)
+        out.truncate(lba * SECTOR)
 
 
 main()

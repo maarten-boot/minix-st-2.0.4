@@ -40,7 +40,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  sed sleep sort stat stty su sum sync tail tee test touch tr tty umount \
 	  uname uniq update wc which who whoami write yes \
 	  cdiff comm compress crc dd diff fgrep paste prep shar strings tsort uud uue
-CMDS	= sh ps aal make patch $(SIMPLE)
+CMDS	= sh ps aal make patch mined elvis $(SIMPLE)
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -109,6 +109,32 @@ obj/patch/%.o:	$c/patch/%.c
 	@mkdir -p obj/patch
 	$(CC) $(CFLAGS) -I$c/patch -DVOIDSIG -DSMALL \
 		-c -o $@ $<
+
+# mined: commands/mined, the Minix screen editor (64k in the ACK build)
+MINEDOBJ = $(addprefix obj/mined/,mined1.o mined2.o)
+bin/mined:	$(MINEDOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/mined.elf $L/crtso.o $(MINEDOBJ) $(LIBS)
+	$(MKMINIX) -S 64k obj/mined.elf $@
+
+obj/mined/%.o:	$c/mined/%.c
+	@mkdir -p obj/mined
+	$(CC) $(CFLAGS) -I$c/mined -c -o $@ $<
+
+# elvis: commands/elvis, a vi clone (18kw in the ACK build); the Minix-ST
+# settings of its Makefile: the libc termcap, no feature reductions
+ELVISOBJ = $(addprefix obj/elvis/,blk.o cmd1.o cmd2.o ctype.o curses.o \
+	   cut.o ex.o input.o main.o misc.o modify.o move1.o move2.o move3.o \
+	   move4.o move5.o opts.o recycle.o redraw.o regexp.o regsub.o \
+	   system.o tio.o tmp.o unix.o vars.o vcmd.o vi.o)
+bin/elvis:	$(ELVISOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/elvis.elf $L/crtso.o $(ELVISOBJ) $(LIBS)
+	$(MKMINIX) -S 18kw obj/elvis.elf $@
+
+obj/elvis/%.o:	$c/elvis/%.c elvisproto.h
+	@mkdir -p obj/elvis
+	$(CC) $(CFLAGS) -include elvisproto.h -I$c/elvis -c -o $@ $<
 
 bin/%:	obj/%.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py stacks.mk
 	@mkdir -p bin

@@ -64,6 +64,12 @@ f /usr/bin/aal	755 ../cmds/bin/aal
 l /usr/bin/ar	/usr/bin/aal
 f /usr/bin/make	755 ../cmds/bin/make
 f /usr/bin/patch	755 ../cmds/bin/patch
+# editors: mined (the Minix editor) and elvis (vi, ex, view)
+f /usr/bin/mined	755 ../cmds/bin/mined
+f /usr/bin/elvis	755 ../cmds/bin/elvis
+l /usr/bin/vi	/usr/bin/elvis
+l /usr/bin/ex	/usr/bin/elvis
+l /usr/bin/view	/usr/bin/elvis
 # the shell tests (sh1) archive /usr/bin/cp and /usr/bin/cat
 l /usr/bin/cp	/bin/cp
 l /usr/bin/cat	/bin/cat
