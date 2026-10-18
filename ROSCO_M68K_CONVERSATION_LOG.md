@@ -1424,3 +1424,27 @@ User:
 * **Default card rebuilt** (38400).
 
 Not committed yet.
+
+Committed `f94ab6c`.
+
+* **Board (user):** "it starts right at 9600 ... nothing happens after the
+  first login prompt on tty00; the kill does not make a new prompt nor
+  garbage appear". So it is not the rate: after the first getty closes the
+  line, tty00 sends nothing at any speed.
+* **Cause (likely):** `rs_close()` drops RTS (HUPCL, "hang up") on tty00,
+  and nothing raised it again for the next open (the PC driver raises DTR
+  in its rs_config()). tty00 sends only while CTS is active (MR2_TXCTS, no
+  CLOCAL), CTS has no pull resistor on the board, and depending on the
+  adapter it may follow RTS or float: the transmitter waits for good. MAME's
+  null modem keeps CTS active, so it never showed there.
+* **Fix:** `rs_config()` drops RTS for B0 and asserts it again (istart)
+  otherwise, on every reconfigure, including the termios reset at close
+  and the next open.
+* **MAME (tty00 on a socket):** `kill 11` (the getty): init starts a new
+  getty (pid 16) and a new "rosco login:" appears on tty00.
+* **picocom (user's question):** C-a C-v shows the modem lines (the
+  adapter's CTS = the board's RTS); C-a C-g toggles RTS = the board's CTS
+  input; toggling should release output stuck waiting for CTS.
+* **Default card rebuilt** (38400).
+
+Not committed yet.

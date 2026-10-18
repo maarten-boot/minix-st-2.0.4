@@ -323,7 +323,15 @@ rs232_t *rs;			/* which line */
   for (s2cp = s2c; s2cp < S2C_END; s2cp++) {
 	if (s2cp->speed == tp->tty_termios.c_ospeed) sp = s2cp;
   }
-  if (sp == NULL) return;	/* B0? */
+  if (sp == NULL) {
+	/* B0: hang up, drop RTS (there is no DTR). */
+	if (!rs->console) {
+		lock();
+		istop(rs);
+		unlock();
+	}
+	return;
+  }
 
   /* Compute the mode registers. */
   mr1 = MR1_NOPAR;
@@ -377,6 +385,12 @@ rs232_t *rs;			/* which line */
 	}
 	du_cr(rs) = CR_RXEN | CR_TXEN;
   }
+
+  /* Not hung up: assert RTS again.  rs_close() drops it with HUPCL, and
+   * nothing else raised it for the next open of the line, so tty00 sent
+   * nothing after the first getty (the PC driver raises DTR here too).
+   */
+  if (!rs->console) istart(rs);
 
   /* CTS is checked by the DUART, so it is always "ready" here. */
   rs->ostate |= ODEVREADY | ORAW;
