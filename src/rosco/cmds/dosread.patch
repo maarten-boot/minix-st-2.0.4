@@ -1,0 +1,115 @@
+--- a/dosread.c
++++ b/dosread.c
+@@ -134,6 +134,7 @@
+ _PROTOTYPE(void show, (DIRECTORY *dir_ptr, char *name) );
+ _PROTOTYPE(void free_blocks, (void));
+ _PROTOTYPE(DIRECTORY *read_cluster, (unsigned int cluster) );
++_PROTOTYPE(void dir_conv, (DIRECTORY *dir, int entries) );
+ _PROTOTYPE(unsigned short free_cluster, (BOOL leave_fl) );
+ _PROTOTYPE(void link_fat, (unsigned int cl_1, unsigned int cl_2) );
+ _PROTOTYPE(unsigned short next_cluster, (unsigned int cl_no) );
+@@ -221,6 +222,9 @@
+   hiddensec = c2u2(boot.chiddensec);
+   if (hiddensec == 0) hiddensec = c2u2 (boot.dos4hidd2);
+ 
++  /* rosco: the magic is the little endian short 0xAA55 */
++  if (big_endian) boot_magic = (boot_magic >> 8) | (boot_magic << 8);
++
+   /* Safety checking */
+   if (boot_magic != 0xAA55) {
+ 	fprintf (stderr, "%s: magic != 0xAA55\n", cmnd);
+@@ -358,6 +362,7 @@
+   }
+   determine();
+   disk_io(READ, ROOTADDR, root, DIR_SIZE * root_entries);
++  dir_conv(root, root_entries);		/* rosco */
+ 
+   if (dos_dir && Lflag) {
+ 	entry = label();
+@@ -678,7 +683,13 @@
+   if (entry->d_cluster != 0) link_fat(cl_no, LAST_CLUSTER);
+   entry->d_size = size;
+   fill_date(entry);
+-  disk_io(WRITE, mark, entry, DIR_SIZE);
++  {				/* rosco: the entry as stored on disk */
++	DIRECTORY disk_entry;
++
++	disk_entry = *entry;
++	dir_conv(&disk_entry, 1);
++	disk_io(WRITE, mark, &disk_entry, DIR_SIZE);
++  }
+ 
+   if (fat_dirty) flush_fat ();
+ 
+@@ -866,10 +877,31 @@
+ 	exit(1);
+   }
+   disk_io(READ, clus_add(cluster), sub_dir, cluster_size);
++  dir_conv(sub_dir, sub_entries);	/* rosco */
+ 
+   return sub_dir;
+ }
+ 
++/* rosco: directory entries hold little endian shorts and longs; on a big
++ * endian machine swap them after reading and before writing (the same
++ * operation both ways).
++ */
++void dir_conv(dir, entries)
++DIRECTORY *dir;
++int entries;
++{
++  if (!big_endian) return;
++  for (; entries > 0; entries--, dir++) {
++	dir->d_time = (dir->d_time >> 8) | (dir->d_time << 8);
++	dir->d_date = (dir->d_date >> 8) | (dir->d_date << 8);
++	dir->d_cluster = (dir->d_cluster >> 8) | (dir->d_cluster << 8);
++	dir->d_size = ((dir->d_size >> 24) & 0xFFL)
++		| ((dir->d_size >> 8) & 0xFF00L)
++		| ((dir->d_size << 8) & 0xFF0000L)
++		| ((dir->d_size << 24) & 0xFF000000L);
++  }
++}
++
+ static unsigned short cl_index = 2;
+ 
+ /* find a range of consecutive free clusters. Return TRUE if found
+@@ -929,7 +961,11 @@
+   	if (fat_16) {
+ 		/* FAT consists of little endian shorts. Easy to convert
+ 		 */
+-		if ((cooked_fat = malloc (fat_size)) == NULL) {
++		/* rosco: malloc() takes a 16 bit size_t here; a FAT of
++		 * more than 64k would be truncated, use the cache then
++		 */
++		if (fat_size > 0xFFFFL ||
++		    (cooked_fat = malloc ((size_t) fat_size)) == NULL) {
+ 			/* Oops, FAT doesn't fit into memory, just read
+ 			 * a chunk
+ 			 */
+@@ -1010,12 +1046,24 @@
+ 		for (i = 0, rp = (unsigned char *)cooked_fat /* sic */, cp = cooked_fat;
+ 		     i < cache_size;
+ 		     rp += 2, cp ++, i ++) {
+-		     	*rp = *cp;
+-		     	*(rp + 1) = *cp >> 8;
++			/* rosco: rp and cp are the same word; take the value
++			 * first (writing *rp changed *cp before it was read)
++			 */
++			unsigned short v = *cp;
++
++		     	*rp = v;
++		     	*(rp + 1) = v >> 8;
+ 		}
+ 	}
+ 	disk_io (WRITE, FAT_START + fat_low * 2, (void *)cooked_fat, cache_size * 2);
+ 	disk_io (WRITE, FAT_START + fat_size + fat_low * 2, (void *)cooked_fat, cache_size * 2);
++	if (big_endian) {	/* rosco: the cache back in native order */
++		unsigned short	*cp;
++		unsigned short	i;
++
++		for (i = 0, cp = cooked_fat; i < cache_size; cp ++, i ++)
++			*cp = c2u2 ((unsigned char *) cp);
++	}
+   } else {
+   	unsigned short	*cp;
+   	unsigned char	*rp;

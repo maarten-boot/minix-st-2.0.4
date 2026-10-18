@@ -1321,3 +1321,45 @@ User:
 * **Default card rebuilt** (38400, four 150MB partitions).
 
 Not committed yet.
+
+Committed `3d5a8fd`.
+
+## Follow-up 32: FAT access from Minix (dosdir, dosread, doswrite)
+
+User:
+> as i cannot mount the partition 0 but i can p1, p2, p3 so all is fine
+> 4 is done and 1 is currently the most helpfull for importing data in
+> and out of minix
+
+(4 = the gdbstub change in ../rosco-emulator, committed by the user; 1 =
+a FAT tool for p0.)
+
+* **Choice:** `commands/m68000/tos.c` (the ST tool) knows only 16-bit
+  sector counts and computes the FAT size as unsigned short * unsigned
+  short (overflows at 150 sectors per FAT). `commands/ibm/dosread.c`
+  handles the 32-bit sector count, FAT16 with a partial FAT cache,
+  clusters up to 4kB and 512 root entries (as mkfat.py makes them), and
+  checks the byte order at run time for the FAT16 entries. Taken.
+* **Built** as /usr/bin/dosread with links dosdir, doswrite (cmds/Makefile
+  copies the source into obj/ibm and applies `cmds/dosread.patch`).
+* **dosread.patch** (big endian fixes; it never ran on a big endian Minix):
+  * the boot sector magic was compared as a native short (0x55AA here);
+  * directory entries (d_time, d_date, d_cluster, d_size) were used as
+    read from disk: `dir_conv()` after reading the root and subdirectory
+    clusters and on a copy before writing an entry;
+  * `malloc(fat_size)` with a 76800 byte FAT: malloc takes a 16-bit
+    size_t, so 11264 bytes were allocated and the cache overran the heap
+    (bus error at a wild PC); FATs over 64k now use the cache window;
+  * `flush_fat()` converted the cache in place with two pointers to the
+    same word, so each entry was written as its low byte twice (e.g.
+    0x4747 for 0x0047), which also broke ROSCODE1.BIN's chain (the card
+    would not have booted); the value is now taken first, and the cache
+    converted back to native order after writing.
+* **Tests in MAME (2.42, 5MB):** dosdir lists ROSCODE1.BIN and the free
+  space; dosread ROSCODE1.BIN gives 298976 bytes; doswrite RC.TXT (346)
+  and ELVIS.BIN (122750, 30 clusters) read back identical. Checked on the
+  host with an independent reader: both FAT copies equal, ROSCODE1.BIN,
+  RC.TXT and ELVIS.BIN match their sources.
+* **Default card rebuilt** (38400).
+
+Not committed yet.

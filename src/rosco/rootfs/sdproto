@@ -91,6 +91,12 @@ f /bin/gomoku	755 ../cmds/bin/gomoku
 f /bin/life	755 ../cmds/bin/life
 f /bin/ttt	755 ../cmds/bin/ttt
 f /bin/factor	755 ../cmds/bin/factor
+# dosread, dosdir, doswrite (the same program): FAT file access, e.g.
+#	dosdir /dev/c0d0p0; dosread /dev/c0d0p0 FILE > file
+#	doswrite /dev/c0d0p0 FILE < file
+f /usr/bin/dosread	755 ../cmds/bin/dosread
+l /usr/bin/dosdir	/usr/bin/dosread
+l /usr/bin/doswrite	/usr/bin/dosread
 # halt, reboot (the same program) and shutdown: commands/reboot
 f /usr/bin/halt	744 ../cmds/bin/halt
 l /usr/bin/reboot	/usr/bin/halt

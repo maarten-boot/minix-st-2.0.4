@@ -43,7 +43,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  tar xargs printf pr split join rev fold expand unexpand file cksum \
 	  time chmem strip size nm install mkproto inodes ncheck \
 	  dhrystone gomoku life ttt factor
-CMDS	= sh ps aal make patch mined elvis halt shutdown $(SIMPLE)
+CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE)
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -155,6 +155,24 @@ bin/elvis:	$(ELVISOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 obj/elvis/%.o:	$c/elvis/%.c elvisproto.h
 	@mkdir -p obj/elvis
 	$(CC) $(CFLAGS) -include elvisproto.h -I$c/elvis -c -o $@ $<
+
+# dosread (also dosdir, doswrite by its name): commands/ibm, FAT12/16 file
+# access through the raw device, e.g. dosdir /dev/c0d0p0 (the boot partition).
+# Written for the PC: dosread.patch adds the big endian conversion of the
+# boot sector magic and the directory entries (the FAT16 entries already
+# had it).  The patched copy is made in obj/ibm.
+bin/dosread:	obj/ibm/dosread.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/dosread.elf $L/crtso.o obj/ibm/dosread.o $(LIBS)
+	$(MKMINIX) -S 16kw obj/dosread.elf $@
+
+obj/ibm/dosread.c:	$c/ibm/dosread.c dosread.patch
+	@mkdir -p obj/ibm
+	cp $c/ibm/dosread.c $@
+	cd obj/ibm && patch -s -p1 < ../../dosread.patch
+
+obj/ibm/dosread.o:	obj/ibm/dosread.c
+	$(CC) $(CFLAGS) -c -o $@ obj/ibm/dosread.c
 
 # printf.c passes strtoul() results to printf("%d"), see printfint.h
 obj/printf.o:	CFLAGS += -include printfint.h
