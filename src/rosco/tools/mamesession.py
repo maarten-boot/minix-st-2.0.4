@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Run a scripted console session in the rosco-emulator (MAME).
 
-	mamesession.py [-m machine] mamedir sdimage logfile script
+	mamesession.py [-m machine] [-a 'mame options'] mamedir sdimage logfile script
 
 Starts mamedir/rosco with sdimage on -hard1 and the console (DUART A) on a
 TCP socket, connects to it and works through the script, one command per
-line ('#' starts a comment):
+line ('#' starts a comment).  -a adds MAME options, e.g. -a '-bios v242
+-ram 5m' (firmware 2.42, 5MB RAM).
 
 	expect TEXT[<tab>TIMEOUT]	wait for TEXT in the output (default 60 s)
 	send TEXT			type TEXT and Return
@@ -25,17 +26,21 @@ import os
 
 args = sys.argv[1:]
 machine = "rosco_m68k_010"
-if args[:1] == ["-m"]:
-    machine = args[1]
+extra = []
+while args[:1] in (["-m"], ["-a"]):
+    if args[0] == "-m":
+        machine = args[1]
+    else:
+        extra += args[1].split()
     args = args[2:]
 if len(args) != 4:
-    sys.exit("usage: mamesession.py [-m machine] mamedir sdimage logfile script")
+    sys.exit("usage: mamesession.py [-m machine] [-a 'mame options'] mamedir sdimage logfile script")
 mamedir, sd, logf, script = args
 sd = os.path.abspath(sd)
 port = 23000 + os.getpid() % 1000
 p = subprocess.Popen(['./rosco', machine, '-hard1', sd,
                       '-terminal', 'null_modem', '-bitb', 'socket.localhost:%d' % port,
-                      '-video', 'none', '-sound', 'none', '-seconds_to_run', '100000', '-nothrottle'],
+                      '-video', 'none', '-sound', 'none', '-seconds_to_run', '100000', '-nothrottle'] + extra,
                      cwd=mamedir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 s = None
 for i in range(100):

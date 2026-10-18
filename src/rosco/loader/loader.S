@@ -36,6 +36,7 @@
 #define	SDB_MEMSIZE	0x414
 #define	SDB_MAGIC_VAL	0xB105D47A
 #define	DEFAULT_MEM	0x100000	/* on-board RAM if the SDB is not valid */
+#define	MAX_MEM		0xE00000	/* RAM ends at the ROM */
 
 #define	COPIER_STACK	0x400		/* stack bytes above the copier */
 
@@ -63,17 +64,35 @@ entry:
 	lea	banner(%pc),%a0
 	bsr	puts
 
-	/* Memory size from the firmware, if its SDB looks valid. */
-	move.l	#DEFAULT_MEM,%d6
-	lea	ramdef(%pc),%a0		/* "RAM? xxxxxxxx": SDB not valid */
-	cmp.l	#SDB_MAGIC_VAL,SDB_MAGIC
-	bne.s	1f
+	/* Memory size from the firmware's SDB.  Firmware 2.42 overwrites the
+	 * SDB magic with its kernel API pointer (api_init(), KERNEL_API_ADDRESS
+	 * 0x400) but keeps the size, so without the magic the size is still
+	 * taken if it looks like the result of the firmware's RAM count: a
+	 * multiple of 512K from 1MB to 14MB.
+	 */
 	move.l	SDB_MEMSIZE,%d6
 	lea	ramis(%pc),%a0		/* "RAM xxxxxxxx" (hex, bytes) */
+	cmp.l	#SDB_MAGIC_VAL,SDB_MAGIC
+	beq.s	1f
+	move.l	%d6,%d0
+	and.l	#0x7FFFF,%d0
+	bne.s	2f
+	cmp.l	#DEFAULT_MEM,%d6
+	bcs.s	2f
+	cmp.l	#MAX_MEM,%d6
+	bls.s	1f
+2:	move.l	#DEFAULT_MEM,%d6	/* implausible: on-board RAM only */
+	lea	ramdef(%pc),%a0		/* "RAM? xxxxxxxx" */
 1:	bsr	puts
 	move.l	%d6,%d1
 	bsr	puthex
-	lea	crlf(%pc),%a0
+	cmp.l	#SDB_MAGIC_VAL,SDB_MAGIC
+	beq.s	1f
+	lea	sdbis(%pc),%a0		/* show what is there instead */
+	bsr	puts
+	move.l	SDB_MAGIC,%d1
+	bsr	puthex
+1:	lea	crlf(%pc),%a0
 	bsr	puts
 	lea	_start(%pc),%a5		/* where the firmware loaded us */
 
@@ -183,6 +202,7 @@ halt:
 banner:	.asciz	"\r\nMinix rosco loader\r\n"
 ramis:	.asciz	"RAM "
 ramdef:	.asciz	"RAM? "
+sdbis:	.asciz	", SDB magic "
 crlf:	.asciz	"\r\n"
 nomem:	.asciz	"loader: image too large for RAM\r\n"
 	.even

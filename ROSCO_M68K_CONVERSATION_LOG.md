@@ -723,3 +723,56 @@ Committed `8de1d42`.
 * **Default card rebuilt** (38400).
 
 Not committed yet.
+
+## Follow-up 19: MAME with firmware 2.42 and RAM expansion; the 2.42 SDB
+
+Committed `22c8bde` (logout, termcap, setuid, loader RAM print, r68k RAM).
+
+User:
+> whet about mame does that run the 2.42 firmware ?
+> yes do both, commit this first
+
+* **MAME (../rosco-emulator), not yet committed there:**
+  * Its ROM was 2.50.DEV; RAM was a fixed 1MB.
+  * `src/rosco/drivers/rosco_m68k.cpp`:
+    * a RAM slot (`-ram 2m` ... `-ram 14m`, default 1m); `machine_start()`
+      maps the part above 1MB at 0x100000 over the bus error area (the
+      on-board 1MB share is renamed `sysram`);
+    * BIOS choice: `v250` (default, 2.50.DEV) and `v242`.
+  * Firmware 2.42 built unmodified from `release/version-2.42` (scratch
+    copy, roscopeco/rosco_m68k image): 43792 bytes, CRC32 86950afb, added
+    as `rosco_m68k_242.rom` to the four rosco_m68k ROM zips. Documented in
+    `README.md` and `roms/README.md`. `-verifyroms`: 4 of 4 good.
+  * `tools/mamesession.py` takes `-a 'mame options'`.
+* **Cause of the 1MB on the board:** firmware 2.42 has a small kernel whose
+  `api_init()` (called from `main1()` after the banner) stores its API
+  pointer at `KERNEL_API_ADDRESS` = 0x400, over the SDB magic. The loader
+  then saw no valid SDB (MAME with `-bios v242 -ram 5m`:
+  `RAM? 00100000, SDB magic 00001DF8`, 0x1DF8 being the firmware's `api`)
+  and fell back to 1MB. The memory size at 0x414 is intact.
+* **Fix in `loader/loader.S`:** without the magic, the SDB memory size is
+  still used if it is plausible for the firmware's RAM count (a multiple of
+  512K, 1MB to 14MB); otherwise 1MB as before. The loader prints
+  `RAM xxxxxxxx` and, without the magic, `, SDB magic xxxxxxxx`.
+* **MAME results:**
+
+  | firmware | RAM | loader | Minix |
+  |---|---|---|---|
+  | 2.42 | 5m | `RAM 00500000, SDB magic 00001DF8` | 5120K, Available 4829K |
+  | 2.42 | 1m | `RAM 00100000, SDB magic 00001DF8` | 1024K |
+  | 2.50 | 5m | `RAM 00500000` | 5120K |
+  | 2.50 | 1m | `RAM 00100000` | 1024K |
+
+* **Full suite in MAME, firmware 2.42, 5MB, as ast:** troscorun and texecl
+  ok; Score 39 passed, 1 failed (test14, the pid artifact); sh1 ok, now
+  also within the full run (compress has room with 4.8MB free); sh2 only
+  the cc parts; `exit` brings back the login prompt.
+* **Default card rebuilt** (38400); r68k with `R68K_RAM=1M`/`5M` shows
+  1024K/5120K.
+* **Board, full suite as ast (card from before the termcap, setuid and
+  loader fixes):** "All 40 tests completed without error." Shell tests:
+  sh1 "compress: program too big" (1MB seen, see above), sh2 the cc parts
+  and `df: Permission denied`; plus `clr: Unknown terminal`. All three
+  are fixed on the new card.
+
+Not committed yet.
