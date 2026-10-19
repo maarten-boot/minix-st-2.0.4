@@ -1,0 +1,46 @@
+--- a/tailor.h
++++ b/tailor.h
+@@ -129,6 +129,28 @@
+ #  define OS_CODE  0x0b
+ #endif
+ 
++#ifdef ROSCO
++   /* Minix on the rosco_m68k, gcc -mshort: int and size_t are 16 bits,
++    * so the 64K window and hash tables can't come from malloc/calloc;
++    * fcalloc() takes them from sbrk().  FS refuses read() and write()
++    * counts of 32K or more, rosco_read() and rosco_write() do at most
++    * 16K per call.  All in src/rosco/cmds/gzrosco.c.
++    */
++#  define MAXSEG_64K
++#  define DYN_ALLOC
++#  define near
++#  define NO_SYMLINK
++#  define STDC_HEADERS
++#  define HAVE_UNISTD_H
++#  define DIRENT
++     void * fcalloc (unsigned items, unsigned size);
++     void fcfree (void *ptr);
++#  define read(fd, buf, n)	rosco_read(fd, buf, n)
++#  define write(fd, buf, n)	rosco_write(fd, buf, n)
++     int rosco_read (int fd, void *buf, unsigned n);
++     int rosco_write (int fd, const void *buf, unsigned n);
++#endif
++
+ #ifdef MSDOS
+ #  ifdef __TURBOC__
+ #    include <alloc.h>
+@@ -142,12 +164,14 @@
+ #    define fcfree(ptr) hfree(ptr)
+ #  endif
+ #else
++#ifndef ROSCO
+ #  ifdef MAXSEG_64K
+ #    define fcalloc(items,size) calloc((items),(size))
+ #  else
+ #    define fcalloc(items,size) malloc((size_t)(items)*(size_t)(size))
+ #  endif
+ #  define fcfree(ptr) free(ptr)
++#endif /* !ROSCO */
+ #endif
+ 
+ #if defined(VAXC) || defined(VMS)

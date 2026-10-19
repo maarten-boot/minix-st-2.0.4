@@ -45,7 +45,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  dhrystone gomoku life ttt factor \
 	  at mail man tget
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
-	  awk bc yap m4 cron crontab kermit rz sz cawf asktime
+	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -303,6 +303,35 @@ bin/cawf:	$(CAWFOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 obj/cawf/%.o:	$c/cawf/%.c
 	@mkdir -p obj/cawf
 	$(CC) $(CFLAGS) -I$c/cawf -DUNIX -DUSG -DSTDLIB -c -o $@ $<
+
+# gzip (also gunzip and zcat, by their names): GNU gzip 1.2.4 in
+# ../gzip-1.2.4, as distributed.  gzip.patch adds a ROSCO section to
+# tailor.h: the 16-bit (MAXSEG_64K, DYN_ALLOC) setup of its MS-DOS port,
+# with fcalloc() and 16K read/write from gzrosco.c.  The patched copy is
+# made in obj/gzip.  304K of buffers: window, hash tables, distances,
+# input and output.
+GZ	= ../gzip-1.2.4
+GZSRC	= bits crypt deflate getopt gzip inflate lzw trees unlzh unlzw \
+	  unpack unzip util zip
+GZOBJ	= $(GZSRC:%=obj/gzip/%.o) obj/gzrosco.o
+bin/gzip:	$(GZOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/gzip.elf $L/crtso.o $(GZOBJ) $(LIBS)
+	$(MKMINIX) -S 400k obj/gzip.elf $@
+
+obj/gzip/stamp:	$(wildcard $(GZ)/*.[ch]) gzip.patch
+	rm -rf obj/gzip
+	mkdir -p obj/gzip
+	cp $(GZ)/*.[ch] obj/gzip
+	cd obj/gzip && patch -s -p1 < ../../gzip.patch
+	touch $@
+
+obj/gzip/%.o:	obj/gzip/stamp
+	$(CC) $(CFLAGS) -DROSCO -c -o $@ obj/gzip/$*.c
+
+obj/gzrosco.o:	gzrosco.c
+	@mkdir -p obj
+	$(CC) $(CFLAGS) -c -o $@ gzrosco.c
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
