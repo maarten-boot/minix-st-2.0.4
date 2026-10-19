@@ -6,6 +6,7 @@
 #	libsys.a	syslib: the system library for MM, FS and INET
 #	libcurses.a	curses (lib/curses), for life and gomoku
 #	libm.a		lib/math, with frexp/modf in C (fpmisc.c)
+#	libedit.a	lib/editline (line editing and history, for ash)
 #	fpprintf.o	printf %e/%f/%g and strtod with floating point
 #			(lib/fphook); link it before libc.a, and the soft
 #			float runtime (m68000 libgcc) after it, see cmds/
@@ -76,7 +77,16 @@ SYSOBJ	= $(patsubst $l/%.c,obj/%.o,$(SYSSRC))
 CURSRC	= $(wildcard $l/curses/*.c)
 CUROBJ	= $(patsubst $l/%.c,obj/%.o,$(CURSRC))
 
-all:	crtso.o libc.a libsys.a libcurses.a libm.a fpprintf.o
+all:	crtso.o libc.a libsys.a libcurses.a libm.a fpprintf.o libedit.a
+
+# editline, with the DEFS of its Makefile
+EDITOBJ	= obj/editline/editline.o obj/editline/complete.o obj/editline/sysunix.o
+$(EDITOBJ):	CFLAGS += -DANSI_ARROWS -DHAVE_STDLIB -DHAVE_TCGETATTR -DHIDE \
+		  -DUSE_DIRENT -DHIST_SIZE=100 -DUSE_TERMCAP -DSYS_UNIX -DNEED_STRDUP
+
+libedit.a:	$(EDITOBJ)
+	rm -f $@
+	$(AR) rcs $@ $(EDITOBJ)
 
 # Floating point.  libc.a has the ACK no-float printf and strtod
 # (fphook/fltpr.c, strtod.c); fpprintf.o is the real fphook.c and ecvt.c,
@@ -156,7 +166,7 @@ obj/syscall/%.o:	obj/syscall/%.S
 	$(CC) $(ASFLAGS) -c -o $@ $<
 
 clean:
-	rm -rf obj crtso.o libc.a libsys.a libcurses.a libm.a fpprintf.o
+	rm -rf obj crtso.o libc.a libsys.a libcurses.a libm.a fpprintf.o libedit.a
 
 .PRECIOUS:	obj/syscall/%.S
 

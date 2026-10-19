@@ -45,7 +45,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  dhrystone gomoku life ttt factor \
 	  at mail man tget
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
-	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip
+	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -332,6 +332,48 @@ obj/gzip/%.o:	obj/gzip/stamp
 obj/gzrosco.o:	gzrosco.c
 	@mkdir -p obj
 	$(CC) $(CFLAGS) -c -o $@ gzrosco.c
+
+# ash: commands/ash, the Minix 2.0.4 /bin/sh (12kw in the ACK build), with
+# line editing (libedit.a).  The sources are copied to obj/ash, where the
+# generators run on the build host: mkbuiltins, mktokens, bltin/mkexpr
+# (scripts), mknodes, mksyntax, mkinit (host gcc; char is signed on both
+# sides, which mksyntax depends on) and mksignames, which gets the Minix
+# signal numbers in host/signal.h (the SIG macros of include/signal.h,
+# through the host cpp with the target's defines).  mknodes initializes a
+# global with stdin, which is not a constant in glibc; host/mknodes.c
+# does without (infp is always set by fopen).  -Dconst= for main.c's
+# getenv(char *), -D__CC68__ for bltin/regexp.c's malloc declaration.
+HOSTCC	= gcc -std=gnu89 -w
+ASHSRC	= builtins cd dirent error eval exec expand input jobs mail main \
+	  memalloc miscbltin mystring nodes options parser redir show \
+	  signames syntax trap output var
+ASHOBJ	= $(ASHSRC:%=obj/ash/%.o) obj/ash/init.o \
+	  $(addprefix obj/ash/bltin/,echo.o expr.o operators.o regexp.o)
+bin/ash:	$(ASHOBJ) $L/crtso.o $L/libedit.a $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/ash.elf $L/crtso.o $(ASHOBJ) $L/libedit.a $(LIBS)
+	$(MKMINIX) -S 12kw obj/ash.elf $@
+
+obj/ash/stamp:	$(wildcard $c/ash/* $c/ash/bltin/* $c/ash/sys/*) $i/signal.h
+	rm -rf obj/ash
+	mkdir -p obj/ash/host
+	cp -r $c/ash/. obj/ash
+	gcc -E -dM -undef -nostdinc $(DEFS) -D__STDC__=1 -I$i $i/signal.h | \
+		grep -E '^#define (SIG[A-Z0-9]+|_?NSIG) ' > obj/ash/host/signal.h
+	cd obj/ash && $(HOSTCC) -Ihost -o host/mksignames mksignames.c && \
+		host/mksignames
+	sed 's/^FILE \*infp = stdin;/FILE *infp;/' obj/ash/mknodes.c > obj/ash/host/mknodes.c
+	cd obj/ash && $(HOSTCC) -o host/mknodes host/mknodes.c && \
+		host/mknodes nodetypes nodes.c.pat
+	cd obj/ash && $(HOSTCC) -o host/mksyntax mksyntax.c && host/mksyntax
+	cd obj/ash && sh mktokens && sh mkbuiltins shell.h builtins.table
+	cd obj/ash/bltin && sh mkexpr
+	cd obj/ash && $(HOSTCC) -o host/mkinit mkinit.c && \
+		host/mkinit true $(ASHSRC:%=%.c)
+	touch $@
+
+obj/ash/%.o obj/ash/bltin/%.o:	obj/ash/stamp
+	$(CC) $(CFLAGS) -DSHELL -Dconst= -D__CC68__ -Iobj/ash -c -o $@ $(@:.o=.c)
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

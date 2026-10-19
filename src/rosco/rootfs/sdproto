@@ -223,3 +223,6 @@ f /usr/bin/adduser	755 ../../commands/scripts/adduser.sh
 f /usr/bin/gzip	755 ../cmds/bin/gzip
 l /usr/bin/gunzip	/usr/bin/gzip
 l /usr/bin/zcat	/usr/bin/gzip
+# ash, the Minix 2.0.4 /bin/sh (commands/ash), with line editing; /bin/sh
+# is still the old Minix shell
+f /usr/bin/ash	755 ../cmds/bin/ash
