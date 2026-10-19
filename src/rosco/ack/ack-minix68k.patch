@@ -30,6 +30,65 @@ index 484f6c0..abc72c1 100644
  }
  
  #define IEEEFLOAT
+diff --git a/mach/m68k2/as/mach1.c b/mach/m68k2/as/mach1.c
+index 8c57730..bfd6a45 100644
+--- a/mach/m68k2/as/mach1.c
++++ b/mach/m68k2/as/mach1.c
+@@ -54,26 +54,30 @@ extern int	curr_instr;
+ #define	PUTW		0x40
+ #define	PUTL		0x80
+ 
++/* long: (RELPC)<<8 needs more than 16 bits (an assembler built with 16-bit
++ * int lost RELPC, and relocated pc relative references, e.g. "jsr d16(pc)"
++ * to a function in the same section).
++ */
+ #ifndef extern
+-extern int	eamode[];
++extern long	eamode[];
+ #else
+-int	eamode[] = {
++long	eamode[] = {
+ /* 00A */	DTA        |ALT,
+ /* 01A */	            ALT,
+ /* 02A */	DTA|MEM|CTR|ALT,
+ /* 03A */	DTA|MEM    |ALT,
+ /* 04A */	DTA|MEM    |ALT,
+-/* 05A */	DTA|MEM|CTR|ALT|FITW|PUTW | (RELO2      )<<8,
+-/* 06A */	DTA|MEM|CTR|ALT     |PUTW | (RELO1      )<<8,
++/* 05A */	DTA|MEM|CTR|ALT|FITW|PUTW | (long)(RELO2      )<<8,
++/* 06A */	DTA|MEM|CTR|ALT     |PUTW | (long)(RELO1      )<<8,
+ /* 07x */	0,
+-/* 070 */	DTA|MEM|CTR|ALT|FITW|PUTW | (RELO2      )<<8,
+-/* 071 */	DTA|MEM|CTR|ALT     |PUTL | (RELO4      )<<8,
+-/* 072 */	DTA|MEM|CTR    |FITW|PUTW | (RELO2|RELPC)<<8,
+-/* 073 */	DTA|MEM|CTR         |PUTW | (RELO1|RELPC)<<8,
++/* 070 */	DTA|MEM|CTR|ALT|FITW|PUTW | (long)(RELO2      )<<8,
++/* 071 */	DTA|MEM|CTR|ALT     |PUTL | (long)(RELO4      )<<8,
++/* 072 */	DTA|MEM|CTR    |FITW|PUTW | (long)(RELO2|RELPC)<<8,
++/* 073 */	DTA|MEM|CTR         |PUTW | (long)(RELO1|RELPC)<<8,
+ /* 074x */	0,
+-/* 074B */	DTA|MEM        |FITB|PUTW | (RELO1      )<<8,
+-/* 074W */	DTA|MEM        |FITW|PUTW | (RELO2      )<<8,
+-/* 074L */	DTA|MEM             |PUTL | (RELO4      )<<8,
++/* 074B */	DTA|MEM        |FITB|PUTW | (long)(RELO1      )<<8,
++/* 074W */	DTA|MEM        |FITW|PUTW | (long)(RELO2      )<<8,
++/* 074L */	DTA|MEM             |PUTL | (long)(RELO4      )<<8,
+ };
+ #endif
+ 
+diff --git a/mach/m68k2/as/mach5.c b/mach/m68k2/as/mach5.c
+index b8ea838..956598d 100644
+--- a/mach/m68k2/as/mach5.c
++++ b/mach/m68k2/as/mach5.c
+@@ -26,7 +26,7 @@ static int extension_offset(void)
+ 
+ void ea_1(int sz, int bits)
+ {
+-	int flag;
++	long flag;		/* see eamode[] in mach1.c */
+ 
+ 	if (mrg_1 > 074)
+ 		serror("no specials");
 diff --git a/modules/src/system/maketempfile.c b/modules/src/system/maketempfile.c
 index 8878a5a..a9313a7 100644
 --- a/modules/src/system/maketempfile.c

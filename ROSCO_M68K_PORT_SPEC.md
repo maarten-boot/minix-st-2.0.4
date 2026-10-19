@@ -929,5 +929,5 @@ fallback.
 | create/stat anomaly (test17/test18) | Solved: `umap()` fix (M6) |
 | Manual pages for man/whatis | Done: the 2.0.4 pages in `src/rosco/man` (from davidgiven/minix2), `/usr/man` via `boot/manproto` (Follow-up 37) |
 | Clock without RTC: ask the date at boot or login (cron, at) | Done: `asktime -t 30` in `/etc/rc` (Follow-up 35); `/etc/stamp` saved at boot, every 15 minutes by cron and by `/etc/rc down` at halt (Follow-up 40) |
-| ACK cc on the target: yacc/flex output compiled with cc dies with signal 10 (Follow-up 41) | Open |
+| ACK cc on the target: yacc/flex output compiled with cc dies with signal 10 (Follow-up 41) | Fixed: the m68k2 assembler lost RELPC in a 16-bit `eamode[]` (Follow-up 42, ack-minix68k.patch) |
 | zip/unzip-style compression for serial transfers | Done: GNU gzip 1.2.4 (gzip, gunzip, zcat), `src/rosco/gzip-1.2.4` with `cmds/gzip.patch` and `gzrosco.c` (Follow-up 36) |

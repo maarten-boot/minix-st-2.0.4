@@ -15,6 +15,11 @@
 #    initialized long took 8 bytes.  Now .data4/.data8 by size;
 #  - plat/minix68k/cv/cv.c: the Minix header was written from long mh[8],
 #    64 bytes on a 64 bit host.  Now 32 big endian bytes.
+#  - mach/m68k2/as/mach1.c, mach5.c: eamode[] and its flags are long.
+#    (RELO2|RELPC)<<8 does not fit a 16-bit int: the assembler on the target
+#    (the passes are built with -mshort) lost RELPC and relocated pc
+#    relative references to its own section ("jsr d16(pc)"), so calls to
+#    a function in the same file jumped to wild addresses.
 #
 # Needs on the host: an ANSI C compiler, GNU make, flex, bison, yacc,
 # ninja, python3, lua (lua5.4) with lua-posix.  This is a host program.
