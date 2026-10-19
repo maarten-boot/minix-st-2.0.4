@@ -5,6 +5,10 @@
 #	libc.a		ansi, posix, other, stdio, syscall stubs, runtime
 #	libsys.a	syslib: the system library for MM, FS and INET
 #	libcurses.a	curses (lib/curses), for life and gomoku
+#	libm.a		lib/math, with frexp/modf in C (fpmisc.c)
+#	fpprintf.o	printf %e/%f/%g and strtod with floating point
+#			(lib/fphook); link it before libc.a, and the soft
+#			float runtime (m68000 libgcc) after it, see cmds/
 # The ACK assembly parts are replaced by the GNU files in this directory;
 # the system call stubs (lib/syscall/*.s, "_x: jmp __x") are generated.
 #
@@ -52,10 +56,12 @@ EXCLUDE	= $l/other/regexp.c $l/posix/_exec.c $l/posix/_execn.c \
 CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
 # u64.c replaces lib/m68000/misc/u64.c (cmp64u() fixed).
 # fphook/fltpr.c and strtod.c: printf and strtod without floating point,
-# as the ACK libc without the float library
+# as the ACK libc without the float library.  strcasecmp() from lib/ip is
+# in the ACK libc too (cawf needs it).
 COBJ	= $(patsubst $l/%.c,obj/%.o,$(CSRC)) obj/u64.o \
 	  obj/m68000/rts/__intsize.o obj/regexp.o obj/system.o obj/_uname.o \
-	  obj/fphook/fltpr.o obj/fphook/strtod.o
+	  obj/fphook/fltpr.o obj/fphook/strtod.o \
+	  obj/ip/strcasecmp.o
 
 # GNU replacements of lib/m68000/rts
 ROBJ	= obj/sndrec.o obj/setjmp.o obj/sigret.o obj/brksz.o obj/m68kmul.o \
@@ -70,7 +76,40 @@ SYSOBJ	= $(patsubst $l/%.c,obj/%.o,$(SYSSRC))
 CURSRC	= $(wildcard $l/curses/*.c)
 CUROBJ	= $(patsubst $l/%.c,obj/%.o,$(CURSRC))
 
-all:	crtso.o libc.a libsys.a libcurses.a
+all:	crtso.o libc.a libsys.a libcurses.a libm.a fpprintf.o
+
+# Floating point.  libc.a has the ACK no-float printf and strtod
+# (fphook/fltpr.c, strtod.c); fpprintf.o is the real fphook.c and ecvt.c,
+# with "long double" made "double" (gcc's is the 96 bit extended format,
+# for which the soft float runtime has no support), also in the
+# prototypes of stdio/loc_incl.h: the copy in obj/stdio is found first by
+# fphook.c's #include "../stdio/loc_incl.h".  The other relative includes
+# are found through -I of the original directory.
+MATHSRC	= $(wildcard $l/math/*.c)
+MATHOBJ	= $(patsubst $l/%.c,obj/%.o,$(MATHSRC)) obj/fpmisc.o
+
+libm.a:	$(MATHOBJ)
+	rm -f $@
+	$(AR) rcs $@ $(MATHOBJ)
+
+fpprintf.o:	obj/fp/fphook.o obj/fp/ecvt.o
+	$(CC) -nostdlib -r -o $@ obj/fp/fphook.o obj/fp/ecvt.o
+
+obj/fp/fphook.c:	$l/fphook/fphook.c
+obj/fp/ecvt.c:		$l/stdio/ecvt.c
+obj/fp/%.c:
+	@mkdir -p $(@D)
+	sed 's/long double/double/g' $< > $@
+
+obj/stdio/loc_incl.h:	$l/stdio/loc_incl.h
+	@mkdir -p $(@D)
+	sed 's/long double/double/g' $< > $@
+
+obj/fp/fphook.o:	obj/fp/fphook.c obj/stdio/loc_incl.h
+	$(CC) $(CFLAGS) -I$l/fphook -c -o $@ $<
+
+obj/fp/ecvt.o:	obj/fp/ecvt.c
+	$(CC) $(CFLAGS) -I$l/stdio -c -o $@ $<
 
 crtso.o:	crtso.S
 	$(CC) $(ASFLAGS) -c -o $@ crtso.S
@@ -117,7 +156,7 @@ obj/syscall/%.o:	obj/syscall/%.S
 	$(CC) $(ASFLAGS) -c -o $@ $<
 
 clean:
-	rm -rf obj crtso.o libc.a libsys.a libcurses.a
+	rm -rf obj crtso.o libc.a libsys.a libcurses.a libm.a fpprintf.o
 
 .PRECIOUS:	obj/syscall/%.S
 

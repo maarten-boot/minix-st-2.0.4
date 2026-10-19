@@ -94,6 +94,7 @@ boot/sdfat.img:	boot/sd/ROSCODE1.BIN tools/mkfat.py
 CCPROTO	= $(wildcard ack/ccproto)
 
 boot/sdroot.img:	parts test boot/stamp rootfs/proto rootfs/sdproto rootfs/etc/* \
+			rootfs/crontab rootfs/scripts/* \
 			$(CCPROTO)
 	cd boot && python3 ../tools/mkfs.py -b $(SDROOTBLOCKS) -i $(SDROOTINODES) \
 		sdroot.img ../rootfs/proto ../rootfs/sdproto $(CCPROTO:%=../%)

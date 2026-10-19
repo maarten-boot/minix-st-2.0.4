@@ -1,0 +1,6 @@
+# /usr/lib/crontab - system crontab, run by cron as root.
+#
+#	min hour mday mon wday command
+#
+# Example: clean /tmp every night at 3:00.
+#0 3 * * * find /tmp -type f -mtime +7 -exec rm {} ;

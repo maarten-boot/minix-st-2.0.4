@@ -42,8 +42,10 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  cdiff comm compress crc dd diff fgrep paste prep shar strings tsort uud uue \
 	  tar xargs printf pr split join rev fold expand unexpand file cksum \
 	  time chmem strip size nm install mkproto inodes ncheck \
-	  dhrystone gomoku life ttt factor
-CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE)
+	  dhrystone gomoku life ttt factor \
+	  at mail man tget
+CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
+	  awk bc yap m4 cron crontab kermit rz sz cawf
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -51,6 +53,9 @@ all:	$(addprefix bin/,$(CMDS))
 # cp (also mv, rm, ln) copies through a 31744 byte buffer on the stack; the
 # ACK build's 16kw only just held it, gcc's frames need more.
 STACK_cp = 24kw
+# at keeps three stdio buffers (stdin, stdout, the job file) on its heap; in
+# the ACK build's 4kw the stack ran into them ("Memory fault").
+STACK_at = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -174,6 +179,131 @@ obj/ibm/dosread.c:	$c/ibm/dosread.c dosread.patch
 obj/ibm/dosread.o:	obj/ibm/dosread.c
 	$(CC) $(CFLAGS) -c -o $@ obj/ibm/dosread.c
 
+# Floating point programs: printf %e/%f/%g and strtod (fpprintf.o, before
+# libc.a), libm, and the soft float runtime of the 68000 libgcc.  Its
+# routines take and return long and double (and the int of a compare in
+# d0, as a long), so the missing -mshort multilib does not matter.
+LIBGCC	= $(shell $(CC) -mcpu=68000 -print-libgcc-file-name)
+# (libc's ext_comp.c needs frexp and ldexp from libm, hence the group).
+FPLIBS	= $L/fpprintf.o -Wl,--start-group $L/libm.a $L/libc.a $(LIBGCC) \
+	  -Wl,--end-group
+
+# awk: commands/awk (32kw in the ACK build).  The sources declare functions
+# extern ("CELL *Arith();") and define them static, which gcc rejects; the
+# copies in obj/awk have the "static" of the definitions removed.
+AWKOBJ	= $(addprefix obj/awk/,m.o e.o n.o l.o r.o v.o y.o regexp.o k.o)
+bin/awk:	$(AWKOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/awk.elf $L/crtso.o $(AWKOBJ) $(FPLIBS)
+	$(MKMINIX) -S 32kw obj/awk.elf $@
+
+obj/awk/%.c:	$c/awk/%.c
+	@mkdir -p obj/awk
+	sed -e 's/^static\([^;=(]*\)$$/\1/' \
+	    -e 's/^static \([A-Za-z_0-9]*(\)/\1/' $< > $@
+
+obj/awk/%.o:	obj/awk/%.c $c/awk/awk.h $c/awk/regexp.h
+	$(CC) $(CFLAGS) -I$c/awk -c -o $@ $<
+
+# bc: commands/bc (32k in the ACK build).  It loads the math library for
+# -l from /usr/lib/libmath.b (BC_MATH_FILE in its config.h).
+BCOBJ	= $(addprefix obj/bc/,bc.o scan.o util.o main.o number.o storage.o \
+	  load.o execute.o global.o)
+bin/bc:	$(BCOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/bc.elf $L/crtso.o $(BCOBJ) $(LIBS)
+	$(MKMINIX) -S 32k obj/bc.elf $@
+
+# bc.c and scan.c are the distributed yacc and flex output
+$c/bc/bc.c $c/bc/scan.c: ;
+
+# proto.h declares getopt() with const, <stdlib.h> without
+obj/bc/%.o:	$c/bc/%.c
+	@mkdir -p obj/bc
+	$(CC) $(CFLAGS) -Dconst= -I$c/bc -c -o $@ $<
+
+# yap (also more, by its name): commands/yap, a pager (16kw in the ACK build)
+YAPOBJ	= $(addprefix obj/yap/,assert.o commands.o display.o getcomm.o \
+	  getline.o help.o keys.o machine.o main.o options.o output.o \
+	  pattern.o process.o prompt.o term.o)
+bin/yap:	$(YAPOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/yap.elf $L/crtso.o $(YAPOBJ) $(LIBS)
+	$(MKMINIX) -S 16kw obj/yap.elf $@
+
+# __CC68__: no K&R malloc() and lseek() declarations in getline.c;
+# pattern.c defines regerror(char *) against const in <regexp.h>
+obj/yap/%.o:	$c/yap/%.c
+	@mkdir -p obj/yap
+	$(CC) $(CFLAGS) -D__CC68__ -Dconst= -I$c/yap -c -o $@ $<
+
+# m4: commands/m4 (4kw in the ACK build)
+M4OBJ	= $(addprefix obj/m4/,main.o eval.o serv.o look.o misc.o expr.o)
+bin/m4:	$(M4OBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/m4.elf $L/crtso.o $(M4OBJ) $(LIBS)
+	$(MKMINIX) -S 4kw obj/m4.elf $@
+
+obj/m4/%.o:	$c/m4/%.c $c/m4/mdef.h $c/m4/extr.h
+	@mkdir -p obj/m4
+	$(CC) $(CFLAGS) -I$c/m4 -DEXTENDED -c -o $@ $<
+
+# cron and crontab: commands/cron (8kw and 4kw in the ACK build)
+bin/cron:	obj/cron/cron.o obj/cron/tab.o obj/cron/misc.o $L/crtso.o $(LIBS) \
+		$(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/cron.elf $L/crtso.o $(filter obj/%,$^) $(LIBS)
+	$(MKMINIX) -S 8kw obj/cron.elf $@
+
+bin/crontab:	obj/cron/crontab.o obj/cron/tab.o obj/cron/misc.o $L/crtso.o \
+		$(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/crontab.elf $L/crtso.o $(filter obj/%,$^) $(LIBS)
+	$(MKMINIX) -S 4kw obj/crontab.elf $@
+
+# tab.h defines crontabs in every file that includes it (a common symbol)
+obj/cron/%.o:	$c/cron/%.c $c/cron/misc.h $c/cron/tab.h
+	@mkdir -p obj/cron
+	$(CC) $(CFLAGS) -fcommon -I$c/cron -c -o $@ $<
+
+# kermit: commands/kermit, C-Kermit 4E (40k in the ACK build)
+KERMITOBJ = $(addprefix obj/kermit/,ckcmai.o ckutio.o ckufio.o ckcfns.o \
+	    ckcfn2.o ckcpro.o ckucmd.o ckuus2.o ckuus3.o ckuusr.o ckucon.o \
+	    ckudia.o ckuscr.o)
+bin/kermit:	$(KERMITOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/kermit.elf $L/crtso.o $(KERMITOBJ) $(LIBS)
+	$(MKMINIX) -S 40k obj/kermit.elf $@
+
+obj/kermit/%.o:	$c/kermit/%.c
+	@mkdir -p obj/kermit
+	$(CC) $(CFLAGS) -I$c/kermit -DV7 -DMINIX -c -o $@ $<
+
+# rz and sz: commands/zmodem, one source file each that includes the rest
+# (5kw in the ACK build)
+bin/rz bin/sz:	bin/%:	obj/zmodem/%.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/$*.elf $L/crtso.o $< $(LIBS)
+	$(MKMINIX) -S 5kw obj/$*.elf $@
+
+obj/zmodem/%.o:	$c/zmodem/%.c $c/zmodem/rbsb.c $c/zmodem/zm.c $c/zmodem/zmodem.h
+	@mkdir -p obj/zmodem
+	$(CC) $(CFLAGS) -I$c/zmodem -DPOSIX -c -o $@ $<
+
+# cawf (also nroff, by its install link): commands/cawf, for man (56k in
+# the ACK build); its macro files go to /usr/lib/cawf
+CAWFOBJ	= $(addprefix obj/cawf/,cawf.o device.o error.o expand.o expr.o \
+	  getopt.o macsup.o nreq.o output.o pass2.o pass3.o regerror.o \
+	  regexp.o store.o string.o)
+bin/cawf:	$(CAWFOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/cawf.elf $L/crtso.o $(CAWFOBJ) $(FPLIBS)
+	$(MKMINIX) -S 56k obj/cawf.elf $@
+
+obj/cawf/%.o:	$c/cawf/%.c
+	@mkdir -p obj/cawf
+	$(CC) $(CFLAGS) -I$c/cawf -DUNIX -DUSG -DSTDLIB -c -o $@ $<
+
 # printf.c passes strtoul() results to printf("%d"), see printfint.h
 obj/printf.o:	CFLAGS += -include printfint.h
 obj/printf.o:	printfint.h
@@ -196,6 +326,6 @@ obj/%.o:	$c/simple/%.c
 clean:
 	rm -rf obj bin stacks.mk
 
-.PRECIOUS:	obj/%.o
+.PRECIOUS:	obj/%.o obj/awk/%.c
 
 endif

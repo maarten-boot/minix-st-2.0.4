@@ -24,6 +24,7 @@ f /bin/fgrep	755 ../cmds/bin/fgrep
 f /bin/find	755 ../cmds/bin/find
 f /bin/fsck	755 ../cmds/bin/fsck
 f /bin/grep	755 ../cmds/bin/grep
+l /bin/egrep	/bin/grep
 f /bin/head	755 ../cmds/bin/head
 f /bin/id	755 ../cmds/bin/id
 f /bin/mesg	755 ../cmds/bin/mesg
@@ -171,3 +172,50 @@ f /usr/test/sh2	755 ../../test/sh2
 f /usr/test/test1.c	644 ../../test/test1.c
 f /usr/test/texecl	755 ../test/bin/texecl
 f /usr/test/tshadow	755 ../test/bin/tshadow
+
+# awk, bc (and its math library for bc -l), m4
+f /usr/bin/awk	755 ../cmds/bin/awk
+f /usr/bin/bc	755 ../cmds/bin/bc
+f /usr/lib/libmath.b	644 ../../commands/bc/libmath.b
+f /usr/bin/m4	755 ../cmds/bin/m4
+# yap, the pager, is also more
+f /usr/bin/yap	755 ../cmds/bin/yap
+l /usr/bin/more	/usr/bin/yap
+# serial file transfer: kermit, zmodem
+f /usr/bin/kermit	755 ../cmds/bin/kermit
+f /usr/bin/rz	755 ../cmds/bin/rz
+f /usr/bin/sz	755 ../cmds/bin/sz
+# cron (started by /etc/rc) runs /usr/lib/crontab, the users' crontabs
+# and the at jobs; output of a job is sent with mail
+f /usr/bin/cron	755 ../cmds/bin/cron
+f /usr/bin/crontab	4755 ../cmds/bin/crontab
+f /usr/bin/at	4755 ../cmds/bin/at
+f /usr/bin/mail	4755 ../cmds/bin/mail
+f /usr/lib/crontab	644 ../rootfs/crontab
+d /usr/run 755
+d /usr/spool 755
+d /usr/spool/at 755
+d /usr/spool/at/past 755
+d /usr/spool/crontabs 700
+d /usr/spool/mail 755
+# man with cawf as nroff and its macros; whatis, apropos and makewhatis.
+# There are no manual pages yet: /usr/man/man1/x.1 (or cat1/x.1 formatted)
+f /usr/bin/man	755 ../cmds/bin/man
+f /usr/bin/cawf	755 ../cmds/bin/cawf
+l /usr/bin/nroff	/usr/bin/cawf
+d /usr/lib/cawf 755
+f /usr/lib/cawf/common	644 ../../commands/cawf/common
+f /usr/lib/cawf/device.cf	644 ../../commands/cawf/device.cf
+f /usr/lib/cawf/dumb.dev	644 ../../commands/cawf/dumb.dev
+f /usr/lib/cawf/man.mac	644 ../../commands/cawf/man.mac
+f /usr/lib/cawf/me.mac	644 ../../commands/cawf/me.mac
+f /usr/lib/cawf/ms.mac	644 ../../commands/cawf/ms.mac
+f /usr/lib/cawf/mnx.mac	644 ../../commands/cawf/mnx.mac
+f /usr/bin/whatis	755 ../rootfs/scripts/whatis.sh
+l /usr/bin/apropos	/usr/bin/whatis
+f /usr/bin/makewhatis	755 ../../commands/scripts/makewhatis.sh
+d /usr/man 755
+# clear (tget -str cl) and adduser (copies /usr/ast)
+f /usr/bin/tget	755 ../cmds/bin/tget
+f /usr/bin/clear	755 ../rootfs/scripts/clear.sh
+f /usr/bin/adduser	755 ../../commands/scripts/adduser.sh
