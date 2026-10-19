@@ -43,9 +43,13 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  tar xargs printf pr split join rev fold expand unexpand file cksum \
 	  time chmem strip size nm install mkproto inodes ncheck \
 	  dhrystone gomoku life ttt factor \
-	  at mail man tget
+	  at mail man tget \
+	  banner calendar cgrep ci co cleantmp decomp16 fix fortune ifdef \
+	  intr last leave look proto readall readfs remsync synctree sysenv \
+	  term termcap backup
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
-	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash
+	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash \
+	  advent elle ellec de indent ic yacc flex
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -375,6 +379,103 @@ obj/ash/stamp:	$(wildcard $c/ash/* $c/ash/bltin/* $c/ash/sys/*) $i/signal.h
 obj/ash/%.o obj/ash/bltin/%.o:	obj/ash/stamp
 	$(CC) $(CFLAGS) -DSHELL -Dconst= -D__CC68__ -Iobj/ash -c -o $@ $(@:.o=.c)
 
+# The larger packages from commands/: one rule per program, with the stack
+# of the ACK build.  pkgbin links obj/<pkg>/*.o of the listed sources.
+define pkgbin
+bin/$(1):	$(addprefix obj/$(2)/,$(3:=.o)) $$L/crtso.o $$(LIBS) $$(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$$(CC) $$(LDFLAGS) -o obj/$(1).elf $$L/crtso.o $(addprefix obj/$(2)/,$(3:=.o)) $$(LIBS)
+	$$(MKMINIX) -S $(4) obj/$(1).elf $$@
+endef
+
+# advent: the text files are indexed by setup (a host program, in obj/advent),
+# which writes advtext.h and advent1-4.dat (/usr/lib/advent).
+ADVSRC	= advent database english initial itverb score travel turn utility \
+	  verb vocab
+$(eval $(call pkgbin,advent,advent,$(ADVSRC),8kw))
+obj/advent/stamp:	$(wildcard $c/advent/*)
+	rm -rf obj/advent
+	mkdir -p obj/advent
+	cp $c/advent/*.txt obj/advent
+	$(HOSTCC) -o obj/advent/setup $c/advent/setup.c
+	cd obj/advent && ./setup
+	touch $@
+obj/advent/%.o:	$c/advent/%.c obj/advent/stamp
+	$(CC) $(CFLAGS) -Iobj/advent -I$c/advent -DTEXTDIR='"/usr/lib/advent/"' \
+		-c -o $@ $<
+
+# elle, an Emacs-like editor, and ellec, its profile compiler (defprf.c,
+# eefdef.h and eefidx.h are distributed already made by ellec)
+ELLESRC	= eemain eecmds eesite eevini eedisp eeterm eeerr eeques eebuff \
+	  eefile eefed eeedit eebit eef1 eef2 eefd eehelp eekmac eef3 eesrch \
+	  eequer eefill eediag sbstr sbm sberr sbbcpy
+$(eval $(call pkgbin,elle,elle,$(ELLESRC),64k))
+$(eval $(call pkgbin,ellec,elle,ellec,16kw))
+# Built without _MINIX, as its Makefile does: <string.h> would declare
+# bcopy(), which elle has its own of (sbbcpy.c).  eefd.c declares
+# moveborder() extern in a block and defines it static, which gcc rejects:
+# the copy in obj/elle has the static removed.
+ELLECF	= $(filter-out -D_MINIX,$(CFLAGS)) -DIGN_JOB_CONTROL -I$c/elle
+obj/elle/%.o:	$c/elle/%.c
+	@mkdir -p obj/elle
+	$(CC) $(ELLECF) -c -o $@ $<
+obj/elle/eefd.c:	$c/elle/eefd.c
+	@mkdir -p obj/elle
+	sed '/^static$$/{N;s/^static\nmoveborder(/moveborder(/;}' $< > $@
+obj/elle/eefd.o:	obj/elle/eefd.c
+	$(CC) $(ELLECF) -c -o $@ obj/elle/eefd.c
+
+# de, the Minix disk (file system) editor.  de.patch: room for 32 zone map
+# blocks (a 256MB file system) instead of 128 (128K, over the 64K object
+# limit, and "128 * 1024" overflows a 16-bit int); de refuses a file system
+# with more.  The patched copy is made in obj/de.
+DESRC	= de de_stdin de_stdout de_diskio de_recover
+$(eval $(call pkgbin,de,de,$(DESRC),4kw))
+obj/de/stamp:	$(wildcard $c/de/*.[ch]) de.patch
+	rm -rf obj/de
+	mkdir -p obj/de
+	cp $c/de/*.[ch] obj/de
+	cd obj/de && patch -s -p1 < ../../de.patch
+	touch $@
+$(DESRC:%=obj/de/%.o):	obj/de/stamp
+	$(CC) $(CFLAGS) -D_POSIX_1_SOURCE=2 -c -o $@ $(@:.o=.c)
+
+# indent, the C program formatter
+$(eval $(call pkgbin,indent,indent,args comment lexi indent parse io,32kw))
+obj/indent/%.o:	$c/indent/%.c
+	@mkdir -p obj/indent
+	$(CC) $(CFLAGS) -I$c/indent -c -o $@ $<
+
+# ic, the integer calculator
+$(eval $(call pkgbin,ic,ic,ic ic_input ic_output,4kw))
+obj/ic/%.o:	$c/ic/%.c
+	@mkdir -p obj/ic
+	$(CC) $(CFLAGS) -I$c/ic -c -o $@ $<
+
+# yacc: Berkeley yacc (commands/byacc)
+YACCSRC	= closure error lalr lr0 main mkpar output reader skeleton symtab \
+	  verbose warshall
+$(eval $(call pkgbin,yacc,byacc,$(YACCSRC),384k))
+obj/byacc/%.o:	$c/byacc/%.c
+	@mkdir -p obj/byacc
+	$(CC) $(CFLAGS) -DNDEBUG -I$c/byacc -c -o $@ $<
+
+# flex 2.3.7; flex.skel goes to /usr/lib/flex.  parse.y is turned into
+# parse.c by a host build of byacc (obj/flex/host).
+FLEXSRC	= ccl dfa ecs gen main misc nfa parse scan sym tblcmp yylex
+$(eval $(call pkgbin,flex,flex,$(FLEXSRC),512k))
+obj/flex/host/yacc:	$(YACCSRC:%=$c/byacc/%.c)
+	@mkdir -p obj/flex/host
+	$(HOSTCC) -DNDEBUG -o $@ $(YACCSRC:%=$c/byacc/%.c)
+obj/flex/parse.c obj/flex/parse.h:	$c/flex-2.3.7/parse.y obj/flex/host/yacc
+	cd obj/flex && host/yacc -d ../../$c/flex-2.3.7/parse.y && \
+		mv y.tab.c parse.c && mv y.tab.h parse.h
+obj/flex/%.o:	$c/flex-2.3.7/%.c obj/flex/parse.h
+	$(CC) $(CFLAGS) -DUSG -DDEFAULT_SKELETON_FILE='"/usr/lib/flex/flex.skel"' \
+		-Iobj/flex -I$c/flex-2.3.7 -c -o $@ $<
+obj/flex/parse.o:	obj/flex/parse.c
+	$(CC) $(CFLAGS) -DUSG -Iobj/flex -I$c/flex-2.3.7 -c -o $@ $<
+
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
@@ -397,8 +498,9 @@ bin/%:	obj/%.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py stacks.mk
 	$(CC) $(LDFLAGS) -o obj/$*.elf $L/crtso.o $< $(LIBS)
 	$(MKMINIX) -S $(or $(STACK_$*),4kw) obj/$*.elf $@
 
-# grep.c defines regerror(char *s) against "const char *" in <regexp.h>
-obj/grep.o:	CFLAGS += -Dconst=
+# grep.c, calendar.c and cgrep.c define regerror(char *s) against
+# "const char *" in <regexp.h>
+obj/grep.o obj/calendar.o obj/cgrep.o:	CFLAGS += -Dconst=
 
 obj/%.o:	$c/simple/%.c
 	@mkdir -p obj

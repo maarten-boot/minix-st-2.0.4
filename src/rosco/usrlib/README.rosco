@@ -1,0 +1,13 @@
+Data files for /usr/lib on the SD root (rootfs/sdproto).
+
+From the Minix 2.0.4 distribution, i86/USR.TAZ (ftp.cs.vu.nl/minix/2.0.4,
+mirrored at rsync.nic.funet.fi; md5 92f29f03cec004e847a0b32b7ff04a7e as in
+its md5list), unchanged:
+
+	dict/words	look(1), spell(1)
+	dict/people	spell -d people
+	dict/tech	spell -d tech
+	fortune.dat	fortune(6)
+
+The advent data (/usr/lib/advent) is made from commands/advent by the
+build (cmds/Makefile), flex.skel comes from commands/flex-2.3.7.

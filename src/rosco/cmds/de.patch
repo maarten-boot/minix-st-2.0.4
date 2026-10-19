@@ -1,0 +1,23 @@
+--- a/de.h
++++ b/de.h
+@@ -199,7 +199,7 @@
+ #ifndef I_MAP_SLOTS
+ /* Max number of inode and zone map blocks we can handle. */
+ #define I_MAP_SLOTS	8
+-#define Z_MAP_SLOTS	(sizeof(char *) == 2 ? 16 : 128)
++#define Z_MAP_SLOTS	(sizeof(char *) == 2 ? 16 : 32)
+ #endif
+ 
+ typedef  struct  de_state		/*  State of disk ed.	*/
+@@ -234,9 +234,9 @@
+ 
+   bitchunk_t inode_map[ I_MAP_SLOTS * K / sizeof (bitchunk_t) ];
+ #if (CHIP != M68000)
+-  bitchunk_t zone_map[ Z_MAP_SLOTS * K / sizeof (bitchunk_t) ];
++  bitchunk_t zone_map[ Z_MAP_SLOTS * (long) K / sizeof (bitchunk_t) ];
+ #else
+-  bitchunk_t zone_map[(Z_MAP_SLOTS * K / sizeof (bitchunk_t)) - 1 ];
++  bitchunk_t zone_map[(Z_MAP_SLOTS * (long) K / sizeof (bitchunk_t)) - 1 ];
+   bitchunk_t __filler_for_compiler_restriction;
+ #endif /* CHIP != M68000 */
+ 

@@ -230,3 +230,62 @@ f /usr/bin/adduser	755 ../../commands/scripts/adduser.sh
 f /usr/bin/gzip	755 ../cmds/bin/gzip
 l /usr/bin/gunzip	/usr/bin/gzip
 l /usr/bin/zcat	/usr/bin/gzip
+
+# more of commands/simple (in /usr/bin, as the Minix Makefile installs them)
+f /usr/bin/banner	755 ../cmds/bin/banner
+f /usr/bin/calendar	755 ../cmds/bin/calendar
+f /usr/bin/cgrep	755 ../cmds/bin/cgrep
+f /usr/bin/ci	755 ../cmds/bin/ci
+f /usr/bin/co	755 ../cmds/bin/co
+f /usr/bin/cleantmp	755 ../cmds/bin/cleantmp
+f /usr/bin/decomp16	755 ../cmds/bin/decomp16
+f /usr/bin/fix	755 ../cmds/bin/fix
+f /usr/bin/fortune	755 ../cmds/bin/fortune
+f /usr/bin/ifdef	755 ../cmds/bin/ifdef
+f /usr/bin/intr	755 ../cmds/bin/intr
+l /bin/intr	/usr/bin/intr
+f /usr/bin/last	755 ../cmds/bin/last
+l /usr/bin/uptime	/usr/bin/last
+f /usr/bin/leave	755 ../cmds/bin/leave
+f /usr/bin/look	755 ../cmds/bin/look
+f /usr/bin/proto	755 ../cmds/bin/proto
+f /usr/bin/readall	755 ../cmds/bin/readall
+f /usr/bin/readfs	755 ../cmds/bin/readfs
+f /usr/bin/remsync	755 ../cmds/bin/remsync
+f /usr/bin/synctree	755 ../cmds/bin/synctree
+f /usr/bin/sysenv	755 ../cmds/bin/sysenv
+f /usr/bin/term	755 ../cmds/bin/term
+f /usr/bin/termcap	755 ../cmds/bin/termcap
+f /usr/bin/backup	755 ../cmds/bin/backup
+l /usr/bin/restore	/usr/bin/backup
+# login appends to /usr/adm/wtmp if it exists, for last and uptime
+f /usr/adm/wtmp	644 ../rootfs/wtmp
+
+# the larger packages: advent, elle (and ellec), de, indent, ic, yacc
+# (Berkeley yacc), flex
+f /usr/bin/advent	755 ../cmds/bin/advent
+d /usr/lib/advent 755
+f /usr/lib/advent/advent1.dat	644 ../cmds/obj/advent/advent1.dat
+f /usr/lib/advent/advent2.dat	644 ../cmds/obj/advent/advent2.dat
+f /usr/lib/advent/advent3.dat	644 ../cmds/obj/advent/advent3.dat
+f /usr/lib/advent/advent4.dat	644 ../cmds/obj/advent/advent4.dat
+f /usr/bin/elle	755 ../cmds/bin/elle
+f /usr/bin/ellec	755 ../cmds/bin/ellec
+f /usr/bin/de	755 ../cmds/bin/de
+f /usr/bin/indent	755 ../cmds/bin/indent
+f /usr/bin/ic	755 ../cmds/bin/ic
+f /usr/bin/yacc	755 ../cmds/bin/yacc
+f /usr/bin/flex	755 ../cmds/bin/flex
+d /usr/lib/flex 755
+f /usr/lib/flex/flex.skel	644 ../../commands/flex-2.3.7/flex.skel
+
+# data files from the Minix 2.0.4 USR.TAZ (../usrlib, see README.rosco)
+d /usr/lib/dict 755
+f /usr/lib/dict/words	644 ../usrlib/dict/words
+f /usr/lib/dict/people	644 ../usrlib/dict/people
+f /usr/lib/dict/tech	644 ../usrlib/dict/tech
+f /usr/lib/fortune.dat	644 ../usrlib/fortune.dat
+
+# scripts: whereis, spell
+f /usr/bin/whereis	755 ../../commands/scripts/whereis.sh
+f /usr/bin/spell	755 ../../commands/scripts/spell.sh
