@@ -2,6 +2,13 @@
 # see make sdcard): the rest of the commands and the test suite.
 # Host paths are relative to src/rosco/boot, where mkfs.py runs.
 
+# /bin/sh is ash (commands/ash, with line editing), also as /usr/bin/ash;
+# the old Minix shell (commands/sh, /bin/sh of the boot image root) is
+# /usr/bin/osh
+f /bin/sh	755 ../cmds/bin/ash
+l /usr/bin/ash	/bin/sh
+f /usr/bin/osh	755 ../cmds/bin/sh
+
 f /bin/basename	755 ../cmds/bin/basename
 f /bin/cal	755 ../cmds/bin/cal
 f /bin/cdiff	755 ../cmds/bin/cdiff
@@ -223,6 +230,3 @@ f /usr/bin/adduser	755 ../../commands/scripts/adduser.sh
 f /usr/bin/gzip	755 ../cmds/bin/gzip
 l /usr/bin/gunzip	/usr/bin/gzip
 l /usr/bin/zcat	/usr/bin/gzip
-# ash, the Minix 2.0.4 /bin/sh (commands/ash), with line editing; /bin/sh
-# is still the old Minix shell
-f /usr/bin/ash	755 ../cmds/bin/ash

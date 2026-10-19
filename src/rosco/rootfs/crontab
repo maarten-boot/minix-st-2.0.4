@@ -2,5 +2,12 @@
 #
 #	min hour mday mon wday command
 #
+# There is no real-time clock: save the time for the next boot (/etc/rc
+# starts the clock from /etc/stamp; it saves it at shutdown too).  The
+# command is on its own line, indented by a tab, where cron leaves the %'s
+# alone (on the time line it would turn them into newlines).
+0,15,30,45 * * * *
+	date -u '+%m%d%y%H%M%S' >/etc/stamp
+#
 # Example: clean /tmp every night at 3:00.
 #0 3 * * * find /tmp -type f -mtime +7 -exec rm {} ;

@@ -74,8 +74,9 @@ parts:
 boot/stamp:	FORCE
 	date -u +%m%d%y%H%M%S > $@
 
-boot/root.img:	parts boot/stamp rootfs/proto rootfs/etc/*
-	cd boot && python3 ../tools/mkfs.py -b $(ROOTBLOCKS) root.img ../rootfs/proto
+boot/root.img:	parts boot/stamp rootfs/proto rootfs/ramproto rootfs/etc/*
+	cd boot && python3 ../tools/mkfs.py -b $(ROOTBLOCKS) root.img ../rootfs/proto \
+		../rootfs/ramproto
 
 boot/image.bin:	parts tools/mkimage.py
 	cd boot && python3 ../tools/mkimage.py ../kernel/kernel.bin mm fs init image.bin

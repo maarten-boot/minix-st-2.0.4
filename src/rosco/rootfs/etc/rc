@@ -1,12 +1,24 @@
 # /etc/rc - system startup script, rosco_m68k bring-up version.
-# INIT runs it as "sh /etc/rc start" before it starts the ttytab lines.
+# INIT runs it as "sh /etc/rc [bootopts] start" before it starts the
+# ttytab lines; halt and reboot run it as "sh /etc/rc down".
+
+# There is no real-time clock.  /etc/stamp holds the last known time as
+# MMDDYYhhmmss (GMT): the time the image was made, then the time saved at
+# boot, every 15 minutes by cron (/usr/lib/crontab) and here at shutdown.
+case "$*" in
+*down*)
+	date -u '+%m%d%y%H%M%S' >/etc/stamp
+	sync
+	exit 0
+esac
 
 echo "rosco_m68k: running /etc/rc"
 
-# There is no real-time clock: start from the time the image was made, then
-# ask on the console (RETURN or 30 seconds without an answer keeps it).
+# Start from the saved time, then ask on the console (RETURN or 30 seconds
+# without an answer keeps it), and save the result.
 date `cat /etc/stamp` >/dev/null
 asktime -t 30 </dev/console >/dev/console 2>&1
+date -u '+%m%d%y%H%M%S' >/etc/stamp
 
 # The root file system, for df and mount.
 printroot >/etc/mtab

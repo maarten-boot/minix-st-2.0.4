@@ -1,0 +1,5 @@
+# The rest of the boot image root (rootfs/proto plus this file, see
+# root.img in the Makefile).  It is kept small: the old Minix shell
+# (commands/sh, 42K) is /bin/sh here; on the SD root it is ash (sdproto).
+
+f /bin/sh	755 ../cmds/bin/sh
