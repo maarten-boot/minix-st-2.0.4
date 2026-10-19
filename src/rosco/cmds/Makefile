@@ -46,7 +46,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  at mail man tget \
 	  banner calendar cgrep ci co cleantmp decomp16 fix fortune ifdef \
 	  intr last leave look proto readall readfs remsync synctree sysenv \
-	  term termcap backup
+	  term termcap backup finger badblocks isoread
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
 	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash \
 	  advent elle ellec de indent ic yacc flex
@@ -485,6 +485,14 @@ bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 obj/asktime.o:	asktime.c
 	@mkdir -p obj
 	$(CC) $(CFLAGS) -c -o $@ asktime.c
+
+# finger without the network part (NONET 1: netfinger() is a stub); the
+# rosco libc has no lib/ip (gethostbyname, inet_addr)
+obj/finger.c:	$c/simple/finger.c
+	@mkdir -p obj
+	sed 's/^#define NONET	0$$/#define NONET	1/' $< > $@
+obj/finger.o:	obj/finger.c
+	$(CC) $(CFLAGS) -c -o $@ obj/finger.c
 
 # printf.c passes strtoul() results to printf("%d"), see printfint.h
 obj/printf.o:	CFLAGS += -include printfint.h

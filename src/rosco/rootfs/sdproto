@@ -289,3 +289,10 @@ f /usr/lib/fortune.dat	644 ../usrlib/fortune.dat
 # scripts: whereis, spell
 f /usr/bin/whereis	755 ../../commands/scripts/whereis.sh
 f /usr/bin/spell	755 ../../commands/scripts/spell.sh
+
+# finger (local only), badblocks, isoread (also isodir, isoinfo)
+f /usr/bin/finger	755 ../cmds/bin/finger
+f /usr/bin/badblocks	755 ../cmds/bin/badblocks
+f /usr/bin/isoread	755 ../cmds/bin/isoread
+l /usr/bin/isodir	/usr/bin/isoread
+l /usr/bin/isoinfo	/usr/bin/isoread

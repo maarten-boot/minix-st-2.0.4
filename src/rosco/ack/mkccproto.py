@@ -39,8 +39,12 @@ def main():
                       ("em_led", "lib/ack/em_led"),
                       ("ncg", "lib/ack/minix68k/ncg"),
                       ("as", "lib/ack/minix68k/as"),
-                      ("cv", "lib/ack/minix68k/cv")):
+                      ("cv", "lib/ack/minix68k/cv"),
+                      ("anm", "bin/anm"), ("asize", "bin/asize")):
         print("f /usr/ack/%s 755 %s" % (dst, rel(os.path.join(passes, name))))
+    # nm and size for the objects cc makes
+    print("l /usr/bin/anm /usr/ack/bin/anm")
+    print("l /usr/bin/asize /usr/ack/bin/asize")
     for n in ("fe", "minix68k"):
         print("f /usr/ack/share/ack/descr/%s 644 %s"
               % (n, rel(os.path.join(staging, "share", "ack", "descr", n))))

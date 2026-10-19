@@ -15,7 +15,8 @@
 
 STAGING	= ack/.obj/staging
 
-# name=target: the programs of a C compile, in the host build of ACK
+# name=target: the programs of a C compile, and anm and asize (nm and size
+# for ACK objects), in the host build of ACK
 PASSES	= cpp.ansi=.obj/lang/cem/cpp.ansi/+cpp.ansi/cpp.ansi \
 	  ack=.obj/util/ack/+ack/ack \
 	  aal=.obj/util/arch/+aal/aal \
@@ -24,7 +25,9 @@ PASSES	= cpp.ansi=.obj/lang/cem/cpp.ansi/+cpp.ansi/cpp.ansi \
 	  ncg=.obj/plat/minix68k/+ncg/ncg \
 	  as=.obj/plat/minix68k/+as/as \
 	  em_led=.obj/util/led/+led/led \
-	  cv=.obj/plat/minix68k/cv/+cv/cv
+	  cv=.obj/plat/minix68k/cv/+cv/cv \
+	  anm=.obj/util/amisc/+anm/anm \
+	  asize=.obj/util/amisc/+asize/asize
 
 all:	ccproto
 
@@ -36,7 +39,7 @@ $(STAGING)/bin/ack:	ack-minix68k.patch build-ack.sh
 lib:	host
 	$(MAKE) -C lib
 
-pass/bin/ack:	$(STAGING)/bin/ack mkpass.py $(wildcard passlib/*.c passinc/*.h)
+pass/bin/ack:	$(STAGING)/bin/ack mkpass.py Makefile $(wildcard passlib/*.c passinc/*.h)
 	python3 mkpass.py $(PASSES)
 
 pass:	pass/bin/ack
