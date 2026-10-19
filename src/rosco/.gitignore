@@ -33,6 +33,7 @@ test/obj/
 test/bin/
 test/build.log
 boot/stamp
+boot/manproto
 kernel/consbaud.stamp
 __pycache__/
 cc/host/

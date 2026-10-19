@@ -927,6 +927,6 @@ fallback.
 | Swap on SD (`ENABLE_SWAP` 0), card size (CSD), subpartitions, native SPI driver | Open |
 | ttytab in the repo: tty00 without a "stty 38400" field (9600) | The user's board setting works; repo default unchanged |
 | create/stat anomaly (test17/test18) | Solved: `umap()` fix (M6) |
-| Manual pages for man/whatis | Open; none in the tree (`/usr/man` is empty) |
+| Manual pages for man/whatis | Done: the 2.0.4 pages in `src/rosco/man` (from davidgiven/minix2), `/usr/man` via `boot/manproto` (Follow-up 37) |
 | Clock without RTC: ask the date at boot or login (cron, at) | Done: `asktime -t 30` in `/etc/rc` (Follow-up 35); the clock still starts from `/etc/stamp` |
 | zip/unzip-style compression for serial transfers | Done: GNU gzip 1.2.4 (gzip, gunzip, zcat), `src/rosco/gzip-1.2.4` with `cmds/gzip.patch` and `gzrosco.c` (Follow-up 36) |

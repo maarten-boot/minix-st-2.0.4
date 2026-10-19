@@ -1,0 +1,17 @@
+The Minix 2.0.4 manual pages, /usr/man of the SD root (Makefile:
+boot/manproto).
+
+Source: https://github.com/davidgiven/minix2, minix-2.0/fs/usr/man, commit
+826a75d9e62686af19cb67e0261e5a63206146d8 (the 2.0.4 release, extracted).
+The page names match psman/ of the official 2.0.4 tree
+(ftp.cs.vu.nl/minix/2.0.4, mirrored at rsync.nic.funet.fi).  The files are
+unchanged, except for these rosco additions:
+
+	man1/asktime.1	rosco's boot-time clock prompt (cmds/asktime.c)
+	man1/gzip.1	from gzip 1.2.4 (../gzip-1.2.4), without .PU and with
+			[\fB\-S\fP \fIsuffix\fP] for .RB [ \-S\ suffix ],
+			which cawf can't handle
+	whatis		the lines for asktime and gzip, in makewhatis order
+
+The pages cover all of Minix 2.0.4, also commands that the rosco image
+does not have.  macros.9 and template.1 are not installed.

@@ -93,11 +93,24 @@ boot/sdfat.img:	boot/sd/ROSCODE1.BIN tools/mkfat.py
 # the C compiler, if built (make cc)
 CCPROTO	= $(wildcard ack/ccproto)
 
+# the manual pages (man/, see man/README.rosco): /usr/man/whatis and
+# /usr/man/manN/*
+MANPAGES = $(wildcard man/man[1-9]/*)
+boot/manproto:	$(MANPAGES) man/whatis
+	@mkdir -p boot
+	{ echo "d /usr/man 755"; \
+	  echo "f /usr/man/whatis 644 ../man/whatis"; \
+	  for d in man/man[1-9]; do \
+		echo "d /usr/$$d 755"; \
+		for f in $$d/*; do echo "f /usr/$$f 644 ../$$f"; done; \
+	  done; } > $@
+
 boot/sdroot.img:	parts test boot/stamp rootfs/proto rootfs/sdproto rootfs/etc/* \
-			rootfs/crontab rootfs/scripts/* \
+			rootfs/crontab rootfs/scripts/* boot/manproto \
 			$(CCPROTO)
 	cd boot && python3 ../tools/mkfs.py -b $(SDROOTBLOCKS) -i $(SDROOTINODES) \
-		sdroot.img ../rootfs/proto ../rootfs/sdproto $(CCPROTO:%=../%)
+		sdroot.img ../rootfs/proto ../rootfs/sdproto manproto \
+		$(CCPROTO:%=../%)
 
 cc:
 	$(MAKE) -C ack
@@ -125,6 +138,6 @@ run:	ROSCODE1.BIN
 clean:
 	for d in $(PARTS); do $(MAKE) -C $$d clean; done
 	rm -rf ROSCODE1.BIN boot/stamp boot/root.img boot/image.bin boot/sd boot/sdfat.img \
-		boot/sdroot.img boot/sdp*.img
+		boot/sdroot.img boot/sdp*.img boot/manproto
 
 .PHONY:	all parts test sdcard cc run runsd runmame clean FORCE

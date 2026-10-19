@@ -1,0 +1,41 @@
+.TH ASKTIME 1
+.SH NAME
+asktime \- ask for the date and time at boot
+.SH SYNOPSIS
+.B asktime
+.RB [ \-t
+.IR seconds ]
+.SH DESCRIPTION
+The rosco_m68k has no real-time clock.
+.B /etc/rc
+sets the clock to the time the boot image was made
+.RB ( /etc/stamp ),
+then runs
+.B asktime
+on the console to ask for the real time.
+.B Asktime
+shows the time the clock is at and reads the date and time as
+.RI [[ MMDDYY ] hhmm [ ss ]]
+in GMT, the format
+.BR date (1)
+takes.  A valid answer is set with
+.BR /bin/date .
+RETURN, an answer that is not in this format, or no answer within the
+timeout keeps the clock as it is.  On a timeout the line typed so far is
+thrown away.
+.SH OPTIONS
+.TP
+.BI \-t " seconds"
+The timeout, 30 seconds if not given.
+.SH FILES
+.TP 15n
+.B /etc/rc
+Runs
+.B "asktime \-t 30"
+on /dev/console.
+.TP
+.B /etc/stamp
+The time the boot image was made.
+.SH "SEE ALSO"
+.BR date (1),
+.BR cron (8).
