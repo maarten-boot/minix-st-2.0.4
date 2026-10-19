@@ -45,7 +45,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  dhrystone gomoku life ttt factor \
 	  at mail man tget
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
-	  awk bc yap m4 cron crontab kermit rz sz cawf
+	  awk bc yap m4 cron crontab kermit rz sz cawf asktime
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -303,6 +303,16 @@ bin/cawf:	$(CAWFOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 obj/cawf/%.o:	$c/cawf/%.c
 	@mkdir -p obj/cawf
 	$(CC) $(CFLAGS) -I$c/cawf -DUNIX -DUSG -DSTDLIB -c -o $@ $<
+
+# asktime: rosco's own, asks for the time at boot (/etc/rc)
+bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/asktime.elf $L/crtso.o obj/asktime.o $(LIBS)
+	$(MKMINIX) -S 4kw obj/asktime.elf $@
+
+obj/asktime.o:	asktime.c
+	@mkdir -p obj
+	$(CC) $(CFLAGS) -c -o $@ asktime.c
 
 # printf.c passes strtoul() results to printf("%d"), see printfint.h
 obj/printf.o:	CFLAGS += -include printfint.h

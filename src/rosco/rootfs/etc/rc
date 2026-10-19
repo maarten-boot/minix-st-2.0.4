@@ -3,8 +3,10 @@
 
 echo "rosco_m68k: running /etc/rc"
 
-# There is no real-time clock: start from the time the image was made.
+# There is no real-time clock: start from the time the image was made, then
+# ask on the console (RETURN or 30 seconds without an answer keeps it).
 date `cat /etc/stamp` >/dev/null
+asktime -t 30 </dev/console >/dev/console 2>&1
 
 # The root file system, for df and mount.
 printroot >/etc/mtab

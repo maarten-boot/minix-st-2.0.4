@@ -928,5 +928,5 @@ fallback.
 | ttytab in the repo: tty00 without a "stty 38400" field (9600) | The user's board setting works; repo default unchanged |
 | create/stat anomaly (test17/test18) | Solved: `umap()` fix (M6) |
 | Manual pages for man/whatis | Open; none in the tree (`/usr/man` is empty) |
-| Clock without RTC: ask the date at boot or login (cron, at) | Open (user, Follow-up 34) |
+| Clock without RTC: ask the date at boot or login (cron, at) | Done: `asktime -t 30` in `/etc/rc` (Follow-up 35); the clock still starts from `/etc/stamp` |
 | zip/unzip-style compression for serial transfers | Open (user, Follow-up 34); `compress` and `tar` are on the image |
