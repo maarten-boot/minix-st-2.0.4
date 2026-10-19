@@ -47,7 +47,9 @@
 #error				/* the DUART has one channel for rs232 */
 #endif
 
-#define RS_IBUFSIZE	256	/* input buffer size */
+#define RS_IBUFSIZE	1024	/* input buffer size: a SLIP frame (MTU 296,
+				 * up to twice that escaped) arrives faster
+				 * than TTY drains 256 bytes at 115200 */
 #define RS_OBUFSIZE	256	/* output buffer size */
 
 /* Input buffer watermarks.

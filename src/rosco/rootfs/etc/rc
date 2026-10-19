@@ -27,3 +27,9 @@ sync
 # The clock daemon: /usr/lib/crontab, crontab(1) and at(1) jobs.  It is on
 # the SD root only (where it is not, the error goes to /dev/null).
 /usr/bin/cron </dev/null >/dev/null 2>&1 &
+
+# Networking, when configured: /etc/rc.net (see /etc/rc.net.slip).
+if [ -f /etc/rc.net ] 2>/dev/null
+then
+	. /etc/rc.net
+fi

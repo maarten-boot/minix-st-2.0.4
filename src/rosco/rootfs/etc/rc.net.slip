@@ -1,0 +1,36 @@
+# /etc/rc.net - networking: SLIP on tty00 (DUART channel B).
+#
+# /etc/rc runs /etc/rc.net when it exists; this file (/etc/rc.net.slip) is
+# an example to copy there.  tty00 must not have a getty then: remove
+# "getty" from its line in /etc/ttytab.
+#
+# This end is 10.0.0.2 (rosco in /etc/hosts), the other end of the line
+# 10.0.0.1 (host), which is the gateway too.  At the other end, Linux:
+#	slattach -p slip -s 38400 /dev/ttyUSB0 &
+#	ifconfig sl0 10.0.0.1 pointopoint 10.0.0.2 mtu 296 up
+# MTU 296, the classic SLIP size: INET announces TCP segments of 256 bytes
+# and cannot set an MTU itself, so the other end must not send larger IP
+# packets (bigger ones get lost in the serial input buffer).
+
+speed=38400
+
+# INET, the TCP/IP server, with the SLIP interface psip0 (/etc/inet.conf);
+# it makes /dev/ip0, /dev/tcp, /dev/udp, /dev/psip and so on.  Wait until it
+# is up (at most 10 seconds).
+/usr/bin/inet </dev/null >/dev/console 2>&1 &
+n=0
+until ifconfig -h 10.0.0.2 -n 255.255.255.0 2>/dev/null
+do
+	n=`expr $n + 1`
+	if [ $n -ge 10 ]; then echo "rc.net: no INET" >&2; break; fi
+	sleep 1
+done
+add_route -g 10.0.0.1
+
+# The name daemon: names from /etc/hosts (the resolver asks it, as the
+# default name server "localhost"; there is no /etc/resolv.conf).
+nonamed </dev/null >/dev/null 2>&1 &
+
+# slip moves the packets between /dev/psip0 and the line.  stty and slip
+# share one open of tty00: the tty resets its settings on the last close.
+(stty raw -echo $speed; exec slip /dev/psip0) </dev/tty00 >/dev/tty00 2>/dev/console &

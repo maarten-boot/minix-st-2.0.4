@@ -296,3 +296,25 @@ f /usr/bin/badblocks	755 ../cmds/bin/badblocks
 f /usr/bin/isoread	755 ../cmds/bin/isoread
 l /usr/bin/isodir	/usr/bin/isoread
 l /usr/bin/isoinfo	/usr/bin/isoread
+
+# Networking: INET (boot/inet, psip only) and SLIP on tty00, started by
+# /etc/rc when /etc/rc.net exists (/etc/rc.net.slip is the example)
+f /usr/bin/inet	755 ../boot/inet
+# INET reads its major device number from /dev/ip and makes the rest
+c /dev/ip	600 7 0
+f /usr/bin/slip	755 ../cmds/bin/slip
+f /usr/bin/ifconfig	755 ../cmds/bin/ifconfig
+f /usr/bin/add_route	755 ../cmds/bin/add_route
+f /usr/bin/pr_routes	755 ../cmds/bin/pr_routes
+f /usr/bin/hostaddr	755 ../cmds/bin/hostaddr
+f /usr/bin/ping	4755 ../cmds/bin/ping
+f /usr/bin/rdate	755 ../cmds/bin/rdate
+f /usr/bin/nonamed	755 ../cmds/bin/nonamed
+f /usr/bin/urlget	755 ../cmds/bin/urlget
+l /usr/bin/httpget	/usr/bin/urlget
+l /usr/bin/ftpget	/usr/bin/urlget
+f /etc/inet.conf	644 ../../etc/inet.conf
+f /etc/services	644 ../../etc/services
+f /etc/protocols	644 ../../etc/protocols
+f /etc/hosts	644 ../rootfs/etc/hosts
+f /etc/rc.net.slip	644 ../rootfs/etc/rc.net.slip

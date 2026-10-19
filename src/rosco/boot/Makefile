@@ -1,4 +1,5 @@
-# Makefile for the rosco Minix boot programs: MM, FS and INIT.
+# Makefile for the rosco Minix boot programs: MM, FS and INIT, and INET
+# (the network server, started by /etc/rc; not in the boot image).
 #
 # GNU build (m68k-elf-gcc -mshort) of src/mm, src/fs and sttools/init.c
 # with the rosco config, linked with src/rosco/lib and converted to Minix
@@ -8,7 +9,7 @@
 # Run on the host: the cross part re-runs itself in the rosco toolchain
 # container (../xrun) unless m68k-elf-gcc is on the PATH.
 #
-#	make		build mm, fs, init
+#	make		build mm, fs, init, inet
 #	make clean
 
 ifeq ($(shell command -v m68k-elf-gcc 2>/dev/null),)
@@ -43,7 +44,13 @@ FSOBJ	= $(addprefix fsobj/,main.o open.o read.o write.o pipe.o device.o \
 	  path.o mount.o link.o super.o inode.o cache.o cache2.o filedes.o \
 	  stadir.o protect.o time.o misc.o utility.o table.o lock.o)
 
-all:	mm fs init
+INETOBJ	= $(addprefix inetobj/,buf.o clock.o inet.o inet_config.o mnx_eth.o \
+	  mq.o sr.o stacktrace.o version.o) inetobj/inetrosco.o \
+	  $(addprefix inetobj/generic/,udp.o arp.o eth.o event.o icmp.o io.o \
+	  ip.o ip_ioctl.o ip_lib.o ip_read.o ip_write.o ipr.o tcp.o tcp_lib.o \
+	  tcp_recv.o tcp_send.o ip_eth.o ip_ps.o psip.o)
+
+all:	mm fs init inet
 
 # stack sizes: the ST build used 6k (MM), 2k (FS), 1k (INIT)
 mm:	$(MMOBJ) $L/crtso.o $(LIBSYS) $(LIBC) $(TOOLS)/mkminix.py
@@ -61,6 +68,24 @@ init:	init.o $L/crtso.o $(LIBSYS) $(LIBC) $(TOOLS)/mkminix.py
 		$(LIBSYS) $(LIBC) $(LIBSYS)
 	$(MKMINIX) -S 2k init.elf $@
 
+# INET, psip only (inet/inet_config.h: no ethernet, no ARP): SLIP through
+# /dev/psip0 and the slip command.  2kw in the ACK build.
+inet:	$(INETOBJ) $L/crtso.o $(LIBSYS) $(LIBC) $(TOOLS)/mkminix.py
+	$(CC) $(LDFLAGS) -Wl,-Map,inet.map -o inet.elf $L/crtso.o $(INETOBJ) \
+		$(LIBSYS) $(LIBC) $(LIBSYS)
+	$(MKMINIX) -S 8k inet.elf $@
+
+inetobj/inetrosco.o:	inetrosco.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+# TCP_DEF_MSS 256: the TCP segment size INET announces, for the classic
+# SLIP MTU of 296 (this INET cannot set an MTU; set 296 at the other end)
+inetobj/%.o:	$s/inet/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-c -o $@ $<
+
 mmobj/%.o:	$s/mm/%.c
 	@mkdir -p mmobj
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -73,6 +98,6 @@ init.o:	$s/sttools/init.c
 	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -c -o $@ $<
 
 clean:
-	rm -rf mmobj fsobj mm fs *.o *.elf *.map init
+	rm -rf mmobj fsobj inetobj mm fs inet *.o *.elf *.map init
 
 endif

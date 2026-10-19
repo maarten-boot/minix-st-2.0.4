@@ -46,10 +46,11 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  at mail man tget \
 	  banner calendar cgrep ci co cleantmp decomp16 fix fortune ifdef \
 	  intr last leave look proto readall readfs remsync synctree sysenv \
-	  term termcap backup finger badblocks isoread
+	  term termcap backup finger badblocks isoread \
+	  slip ifconfig add_route pr_routes hostaddr ping rdate nonamed
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
 	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash \
-	  advent elle ellec de indent ic yacc flex
+	  advent elle ellec de indent ic yacc flex urlget
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -475,6 +476,12 @@ obj/flex/%.o:	$c/flex-2.3.7/%.c obj/flex/parse.h
 		-Iobj/flex -I$c/flex-2.3.7 -c -o $@ $<
 obj/flex/parse.o:	obj/flex/parse.c
 	$(CC) $(CFLAGS) -DUSG -Iobj/flex -I$c/flex-2.3.7 -c -o $@ $<
+
+# urlget (also httpget, ftpget by its name): commands/urlget, 4kw
+$(eval $(call pkgbin,urlget,urlget,urlget net,4kw))
+obj/urlget/%.o:	$c/urlget/%.c
+	@mkdir -p obj/urlget
+	$(CC) $(CFLAGS) -I$c/urlget -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

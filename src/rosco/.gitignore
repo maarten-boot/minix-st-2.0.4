@@ -13,11 +13,13 @@ lib/*.a
 lib/crtso.o
 boot/mm
 boot/fs
+boot/inet
 boot/init
 boot/*.elf
 boot/*.map
 boot/mmobj/
 boot/fsobj/
+boot/inetobj/
 cmds/obj/
 cmds/bin/
 cmds/stacks.mk
