@@ -1,0 +1,114 @@
+--- orig/cron/crontab.c
++++ new/cron/crontab.c
+@@ -46,6 +46,30 @@
+ 	r= open(file, flags, 0666);
+ 	err= errno;
+ 	seteuid(safe_uid);
++#if __minix && !__minix_vmd
++	/* rosco: access() and open() each look the name up, a symlink may be
++	 * swapped in between.  Check that the open file is one the user may
++	 * read.
++	 */
++	if (r >= 0 && uid != 0 && getuid() != 0) {
++		struct stat st;
++		mode_t bit;
++
++		if (fstat(r, &st) < 0) {
++			err= errno;
++			close(r);
++			r= -1;
++		} else {
++			bit= st.st_uid == getuid() ? S_IRUSR
++				: st.st_gid == getgid() ? S_IRGRP : S_IROTH;
++			if (how == 'r' && !(st.st_mode & bit)) {
++				close(r);
++				r= -1;
++				err= EACCES;
++			}
++		}
++	}
++#endif
+ 	errno= err;
+ 	return r;
+ }
+@@ -59,16 +83,21 @@
+ 	while ((r= read(fd_in, buf, sizeof(buf))) > 0) {
+ 		w= 0;
+ 		while (w < r) {
+-			if ((r= write(fd_out, buf+w, r-w)) <= 0) {
++			/* rosco: the count written went into r, so the rest
++			 * of a partial write was lost.
++			 */
++			ssize_t n;
++
++			if ((n= write(fd_out, buf+w, r-w)) <= 0) {
+ 				fprintf(stderr,
+ 				"%s: Write error on %s: %s\n",
+ 					prog_name,
+ 					file_out,
+-					r == 0 ? "End of file"
++					n == 0 ? "End of file"
+ 							: strerror(errno));
+ 				exit(1);
+ 			}
+-			w+= r;
++			w+= n;
+ 		}
+ 	}
+ 	if (r < 0) {
+@@ -191,6 +220,12 @@
+ 
+ 	if (cflag) {
+ 		int fd1, fd2;
++		/* rosco: the file was parsed by name (as root, a second open)
++		 * and then copied from the first open: what was checked was
++		 * not what got installed, and the parse errors showed parts
++		 * of a file swapped in.  Copy to .user, parse that, rename.
++		 */
++		char newfile[sizeof(SPOOLDIR) + 2 + NAME_MAX];
+ 
+ 		if ((fd1= opentab(uid, file, 'r')) < 0) {
+ 			fprintf(stderr, "%s: Can't open %s: %s\n",
+@@ -198,21 +233,34 @@
+ 			exit(1);
+ 		}
+ 
++		sprintf(newfile, "%s/.%s", SPOOLDIR, user);
++		if ((fd2= opentab(0, newfile, 'w')) < 0) {
++			fprintf(stderr, "%s: Can't open %s: %s\n",
++				prog_name, newfile, strerror(errno));
++			exit(1);
++		}
++		copytab(fd1, file, fd2, newfile);
++		close(fd1);
++		close(fd2);
++
+ 		/* Try to parse the new crontab file.  If the parsing
+ 		 * succeeds then 'crontabs' will be non-null.
+ 		 */
+-		tab_parse(file, user);
++		tab_parse(newfile, user);
+ 		tab_purge();
+-		if (crontabs == nil) exit(1);
++		if (crontabs == nil) {
++			unlink(newfile);
++			fprintf(stderr, "%s: %s not installed\n",
++				prog_name, file);
++			exit(1);
++		}
+ 
+-		if ((fd2= opentab(0, tabfile, 'w')) < 0) {
+-			fprintf(stderr, "%s: Can't open %s: %s\n",
+-				prog_name, tabfile, strerror(errno));
++		if (rename(newfile, tabfile) < 0) {
++			fprintf(stderr, "%s: Can't rename %s to %s: %s\n",
++				prog_name, newfile, tabfile, strerror(errno));
++			unlink(newfile);
+ 			exit(1);
+ 		}
+-		copytab(fd1, file, fd2, tabfile);
+-		close(fd1);
+-		close(fd2);
+ 		printf("New crontab for %s installed\n", user);
+ 		pflag= 1;
+ 	}

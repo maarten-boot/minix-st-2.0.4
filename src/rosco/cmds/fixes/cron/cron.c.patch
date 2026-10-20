@@ -1,0 +1,71 @@
+--- orig/cron/cron.c
++++ new/cron/cron.c
+@@ -42,8 +42,9 @@
+ 	strcpy(env, var);
+ 	strcat(env, "=");
+ 	strcat(env, val);
+-	if (putenv(env) < 0) return -1;
+-	free(env);
++	/* rosco: putenv() keeps the string itself in the environment, so it
++	 * must not be freed (the jobs got USER, HOME, etc. empty). */
++	if (putenv(env) != 0) return -1;
+ 	return 0;
+ }
+ 
+@@ -67,7 +68,10 @@
+ 
+ 		need_mailer= 1;
+ 		if (rename(tab->file, tab->data) < 0) {
+-			if (errno == ENOENT) {
++			/* rosco: ENOENT is also a missing /usr/spool/at/past,
++			 * then the job was found again at once: a busy loop.
++			 */
++			if (errno == ENOENT && access(tab->file, F_OK) < 0) {
+ 				/* Normal error, job deleted. */
+ 				need_reload= 1;
+ 			} else {
+@@ -310,6 +314,26 @@
+ 	}
+ }
+ 
++static void clock_set_back(void)
++/* rosco: the clock was set back (date(1), there is no real-time clock).  The
++ * jobs were scheduled for the old time and would not run until the clock got
++ * there again, possibly hours or years later.  Schedule them from now.
++ */
++{
++	crontab_t *tab;
++	cronjob_t *job;
++
++	for (tab= crontabs; tab != nil; tab= tab->next) {
++		for (job= tab->jobs; job != nil; job= job->next) {
++			if (job->atjob) continue;
++			job->rtime= now;
++			job->late= 0;
++			if (job->pid == IDLE_PID) tab_reschedule(job);
++		}
++	}
++	tab_reap_job(NO_PID);	/* Recompute 'next'. */
++}
++
+ static void handler(int sig)
+ {
+ 	switch (sig) {
+@@ -343,6 +367,7 @@
+ 	struct sigaction sa, osa;
+ 	FILE *pf;
+ 	int r;
++	time_t then;
+ 
+ 	prog_name= strrchr(argv[0], '/');
+ 	if (prog_name == nil) prog_name= argv[0]; else prog_name++;
+@@ -456,7 +481,9 @@
+ 			r= waitpid(-1, nil, 0);
+ 			if (r == -1 && errno == ECHILD) pause();
+ 			alarm(0);
++			then= now;
+ 			time(&now);
++			if (now < then) clock_set_back();
+ 		}
+ 
+ 		if (r > 0) {

@@ -1,0 +1,10 @@
+--- orig/cron/tab.c
++++ new/cron/tab.c
+@@ -411,6 +411,7 @@
+ 			file,
+ 			(unsigned long) st.st_size,
+ 			(unsigned long) TAB_MAX);
++		close(fd);	/* rosco: the descriptor leaked on each reload */
+ 		return;
+ 	}
+ 

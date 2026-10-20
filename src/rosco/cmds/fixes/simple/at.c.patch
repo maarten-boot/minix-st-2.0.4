@@ -1,0 +1,20 @@
+--- orig/simple/at.c
++++ new/simple/at.c
+@@ -146,13 +146,15 @@
+ 	unlink(pastjob);
+ 	exit(1);
+   }
+-  /* "Arm" the job. */
+-  if (rename(pastjob, job) == -1) {
++  /* "Arm" the job.  rosco: link(), not rename(), which silently replaced
++   * the job of another user with the same name (same time, pid % 100). */
++  if (link(pastjob, job) == -1) {
+ 	fprintf(stderr, "%s: cannot move %s to %s: %s\n",
+ 		argv[0], pastjob, job, strerror(errno));
+ 	unlink(pastjob);
+ 	exit(1);
+   }
++  unlink(pastjob);
+   printf("%s: %s created\n", argv[0], job);
+ 
+   /* Alert cron to the new situation. */

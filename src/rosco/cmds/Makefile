@@ -571,7 +571,8 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  kermit/ckufio.c kermit/ckuscr.c kermit/ckutio.c kermit/ckuus2.c \
 	  kermit/ckuus3.c kermit/ckuusr.c simple/diff.c simple/cdiff.c \
 	  simple/login.c simple/getty.c simple/su.c \
-	  simple/passwd.c
+	  simple/passwd.c \
+	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -607,6 +608,12 @@ obj/getty.o:	obj/fix/simple/getty.c
 obj/su.o:	obj/fix/simple/su.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/passwd.o:	obj/fix/simple/passwd.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/cron/cron.o obj/cron/tab.o obj/cron/crontab.o: \
+		obj/cron/%.o:	obj/fix/cron/%.c $c/cron/misc.h $c/cron/tab.h
+	@mkdir -p obj/cron
+	$(CC) $(CFLAGS) -fcommon -I$c/cron -c -o $@ $<
+obj/at.o:	obj/fix/simple/at.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h
