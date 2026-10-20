@@ -50,7 +50,8 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  slip ifconfig add_route pr_routes hostaddr ping rdate nonamed
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
 	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash \
-	  advent elle ellec de indent ic yacc flex urlget
+	  advent elle ellec de indent ic yacc flex urlget ftp in.ftpd \
+	  tcpd tcpdp
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -207,8 +208,10 @@ obj/awk/%.c:	$c/awk/%.c
 	sed -e 's/^static\([^;=(]*\)$$/\1/' \
 	    -e 's/^static \([A-Za-z_0-9]*(\)/\1/' $< > $@
 
+# -I$c/awk first: the copies are in obj/awk, and "regexp.h" must be awk's,
+# not the one in the system include directories
 obj/awk/%.o:	obj/awk/%.c $c/awk/awk.h $c/awk/regexp.h
-	$(CC) $(CFLAGS) -I$c/awk -c -o $@ $<
+	$(CC) -I$c/awk $(CFLAGS) -c -o $@ $<
 
 # bc: commands/bc (32k in the ACK build).  It loads the math library for
 # -l from /usr/lib/libmath.b (BC_MATH_FILE in its config.h).
@@ -483,6 +486,29 @@ $(eval $(call pkgbin,urlget,urlget,urlget net,4kw))
 obj/urlget/%.o:	$c/urlget/%.c
 	@mkdir -p obj/urlget
 	$(CC) $(CFLAGS) -I$c/urlget -c -o $@ $<
+
+# ftp, the client, and in.ftpd, the server (started per connection by
+# tcpd): commands/ftp and commands/ftpd, 8kw each
+$(eval $(call pkgbin,ftp,ftp,ftp local file other net,8kw))
+obj/ftp/%.o:	$c/ftp/%.c
+	@mkdir -p obj/ftp
+	$(CC) $(CFLAGS) -I$c/ftp -c -o $@ $<
+$(eval $(call pkgbin,in.ftpd,ftpd,ftpd access file net,8kw))
+obj/ftpd/%.o:	$c/ftpd/%.c
+	@mkdir -p obj/ftpd
+	$(CC) $(CFLAGS) -I$c/ftpd -c -o $@ $<
+
+# tcpd listens on a TCP port and runs a server for each connection; with
+# flags, or when /etc/serv.access exists, it runs tcpdp, the same source
+# built with PARANOID=1 (access checks, -d, -m)
+$(eval $(call pkgbin,tcpd,tcpd,tcpd,4kw))
+$(eval $(call pkgbin,tcpdp,tcpd,tcpdp,8kw))
+obj/tcpd/tcpd.o:	$c/simple/tcpd.c
+	@mkdir -p obj/tcpd
+	$(CC) $(CFLAGS) -DPARANOID=0 -c -o $@ $<
+obj/tcpd/tcpdp.o:	$c/simple/tcpd.c
+	@mkdir -p obj/tcpd
+	$(CC) $(CFLAGS) -DPARANOID=1 -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

@@ -313,6 +313,11 @@ f /usr/bin/nonamed	755 ../cmds/bin/nonamed
 f /usr/bin/urlget	755 ../cmds/bin/urlget
 l /usr/bin/httpget	/usr/bin/urlget
 l /usr/bin/ftpget	/usr/bin/urlget
+f /usr/bin/ftp	755 ../cmds/bin/ftp
+f /usr/bin/in.ftpd	755 ../cmds/bin/in.ftpd
+f /usr/bin/setup.anonftp	755 ../../commands/ftpd/setup.anonftp
+f /usr/bin/tcpd	755 ../cmds/bin/tcpd
+f /usr/bin/tcpdp	755 ../cmds/bin/tcpdp
 f /etc/inet.conf	644 ../../etc/inet.conf
 f /etc/services	644 ../../etc/services
 f /etc/protocols	644 ../../etc/protocols

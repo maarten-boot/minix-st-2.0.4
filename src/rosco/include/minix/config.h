@@ -40,7 +40,9 @@
 #endif
 
 /* Number of slots in the process table for user processes. */
-#define NR_PROCS          16	/* rosco: 1MB RAM, keep the tables small */
+#define NR_PROCS          32	/* rosco: 16 was too few with networking
+				 * (inet, slip, nonamed, tcpd, in.ftpd and its
+				 * ls); about 6K of tables more */
 
 /* The buffer cache should be made as large as you can afford. */
 #if (MACHINE == IBM_PC && _WORD_SIZE == 2)

@@ -931,6 +931,6 @@ fallback.
 | Clock without RTC: ask the date at boot or login (cron, at) | Done: `asktime -t 30` in `/etc/rc` (Follow-up 35); `/etc/stamp` saved at boot, every 15 minutes by cron and by `/etc/rc down` at halt (Follow-up 40) |
 | ACK cc on the target: yacc/flex output compiled with cc dies with signal 10 (Follow-up 41) | Fixed: the m68k2 assembler lost RELPC in a 16-bit `eamode[]` (Follow-up 42, ack-minix68k.patch) |
 | Review the code of all tools for obvious errors and improvements (user, Follow-up 45) | Open |
-| elvis on the board: after ESC, ":" only works after an arrow key (user) | Open; not reproduced in MAME |
-| Network tools: telnet, ftp, ftpd, rcp, netcat (user, Follow-up 45) | Open |
+| elvis on the board: after ESC, ":" only works after an arrow key (user, picocom) | Open; not reproduced in MAME |
+| Network tools: telnet, ftp, ftpd, rcp, netcat (user, Follow-up 45) | ftp, ftpd (tcpd) done (Follow-up 46); telnet, telnetd (ptys), rcp, netcat open |
 | zip/unzip-style compression for serial transfers | Done: GNU gzip 1.2.4 (gzip, gunzip, zcat), `src/rosco/gzip-1.2.4` with `cmds/gzip.patch` and `gzrosco.c` (Follow-up 36) |

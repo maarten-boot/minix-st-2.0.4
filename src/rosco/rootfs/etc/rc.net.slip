@@ -31,6 +31,11 @@ add_route -g 10.0.0.1
 # default name server "localhost"; there is no /etc/resolv.conf).
 nonamed </dev/null >/dev/null 2>&1 &
 
+# The FTP server: tcpd listens on the ftp port (21) and runs in.ftpd for
+# each connection.  Logging in needs an account with a password (passwd);
+# anonymous FTP needs an "ftp" account, see setup.anonftp.
+tcpd ftp /usr/bin/in.ftpd </dev/null >/dev/null 2>&1 &
+
 # slip moves the packets between /dev/psip0 and the line.  stty and slip
 # share one open of tty00: the tty resets its settings on the last close.
 (stty raw -echo $speed; exec slip /dev/psip0) </dev/tty00 >/dev/tty00 2>/dev/console &
