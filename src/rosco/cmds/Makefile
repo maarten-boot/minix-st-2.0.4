@@ -51,7 +51,7 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
 	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash \
 	  advent elle ellec de indent ic yacc flex urlget ftp in.ftpd \
-	  tcpd tcpdp
+	  tcpd tcpdp telnet in.telnetd
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -497,6 +497,25 @@ $(eval $(call pkgbin,in.ftpd,ftpd,ftpd access file net,8kw))
 obj/ftpd/%.o:	$c/ftpd/%.c
 	@mkdir -p obj/ftpd
 	$(CC) $(CFLAGS) -I$c/ftpd -c -o $@ $<
+
+# telnet (commands/telnet, "ttn"), 4kw, and in.telnetd (commands/telnetd,
+# needs the ptys), 8kw
+$(eval $(call pkgbin,telnet,telnet,ttn ttn_conf,4kw))
+obj/telnet/%.o:	$c/telnet/%.c
+	@mkdir -p obj/telnet
+	$(CC) $(CFLAGS) -I$c/telnet -c -o $@ $<
+# telnetd.patch: when a pty is not in /etc/ttytab, it printed its message
+# without the name and looped forever.  The patched copy is in obj/telnetd.
+TDSRC	= main telnet term pty wtmp
+$(eval $(call pkgbin,in.telnetd,telnetd,$(TDSRC),8kw))
+obj/telnetd/stamp:	$(wildcard $c/telnetd/*.[ch]) telnetd.patch
+	rm -rf obj/telnetd
+	mkdir -p obj/telnetd
+	cp $c/telnetd/*.[ch] obj/telnetd
+	cd obj/telnetd && patch -s -p1 < ../../telnetd.patch
+	touch $@
+$(TDSRC:%=obj/telnetd/%.o):	obj/telnetd/stamp
+	$(CC) $(CFLAGS) -c -o $@ $(@:.o=.c)
 
 # tcpd listens on a TCP port and runs a server for each connection; with
 # flags, or when /etc/serv.access exists, it runs tcpdp, the same source

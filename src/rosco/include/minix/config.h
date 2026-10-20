@@ -205,11 +205,9 @@
  */
 #define NR_CONS            1	/* rosco: serial console on DUART A */
 #define	NR_RS_LINES	   1	/* # rs232 terminals (0 to 4) */
-#if ENABLE_NETWORKING
-#define	NR_PTYS		   8	/* # pseudo terminals (0 to 64) */
-#else
-#define	NR_PTYS		   0	/* # pseudo terminals (0 to 64) */
-#endif /* ENABLE_NETWORKING */
+#define	NR_PTYS		   4	/* # pseudo terminals (0 to 64); rosco: for
+				 * in.telnetd (INET is a program here, so
+				 * not tied to ENABLE_NETWORKING) */
 
 
 /*===========================================================================*

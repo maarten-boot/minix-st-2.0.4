@@ -6,3 +6,8 @@
 # The console is a serial terminal (emulator), hence vt100, not minix.
 console		vt100	getty
 tty00		vt100	getty
+# The pseudo terminals of in.telnetd (no getty here: telnetd starts one).
+ttyp0		vt100
+ttyp1		vt100
+ttyp2		vt100
+ttyp3		vt100

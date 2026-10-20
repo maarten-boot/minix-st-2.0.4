@@ -107,7 +107,8 @@ boot/manproto:	$(MANPAGES) man/whatis
 	  done; } > $@
 
 boot/sdroot.img:	parts test boot/stamp rootfs/proto rootfs/sdproto rootfs/etc/* \
-			rootfs/crontab rootfs/scripts/* rootfs/wtmp boot/manproto \
+			rootfs/crontab rootfs/scripts/* rootfs/wtmp rootfs/ftp/* \
+			boot/manproto \
 			$(CCPROTO)
 	cd boot && python3 ../tools/mkfs.py -b $(SDROOTBLOCKS) -i $(SDROOTINODES) \
 		sdroot.img ../rootfs/proto ../rootfs/sdproto manproto \

@@ -1,0 +1,15 @@
+--- a/main.c
++++ b/main.c
+@@ -106,8 +106,11 @@
+    lineno = 0;
+    for (;;) {
+ 	if ((ttyp = getttyent()) == NULL) {
+-		sprintf(buff, "Can't find %s in the tty table\r\n");
++		/* rosco: the name was missing, and this looped forever. */
++		sprintf(buff, "Can't find %s in the tty table\r\n",
++			tty_name+5);
+ 		(void) write(1, buff, strlen(buff));
++		return(-1);
+ 	}
+ 	if (strcmp(ttyp->ty_name, tty_name+5) == 0) break;
+ 	lineno++;

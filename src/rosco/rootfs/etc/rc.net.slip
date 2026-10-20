@@ -36,6 +36,10 @@ nonamed </dev/null >/dev/null 2>&1 &
 # anonymous FTP needs an "ftp" account, see setup.anonftp.
 tcpd ftp /usr/bin/in.ftpd </dev/null >/dev/null 2>&1 &
 
+# The telnet server, on the pseudo terminals ttyp0-3; logins as on the
+# console (getty, login).
+tcpd telnet /usr/bin/in.telnetd </dev/null >/dev/null 2>&1 &
+
 # slip moves the packets between /dev/psip0 and the line.  stty and slip
 # share one open of tty00: the tty resets its settings on the last close.
 (stty raw -echo $speed; exec slip /dev/psip0) </dev/tty00 >/dev/tty00 2>/dev/console &

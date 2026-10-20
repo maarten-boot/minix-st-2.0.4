@@ -932,5 +932,8 @@ fallback.
 | ACK cc on the target: yacc/flex output compiled with cc dies with signal 10 (Follow-up 41) | Fixed: the m68k2 assembler lost RELPC in a 16-bit `eamode[]` (Follow-up 42, ack-minix68k.patch) |
 | Review the code of all tools for obvious errors and improvements (user, Follow-up 45) | Open |
 | elvis on the board: after ESC, ":" only works after an arrow key (user, picocom) | Open; not reproduced in MAME |
-| Network tools: telnet, ftp, ftpd, rcp, netcat (user, Follow-up 45) | ftp, ftpd (tcpd) done (Follow-up 46); telnet, telnetd (ptys), rcp, netcat open |
+| Network tools: telnet, ftp, ftpd, rcp, netcat (user, Follow-up 45) | ftp, ftpd (tcpd) (Follow-up 46), telnet, telnetd (4 ptys), anonymous FTP (Follow-up 47) done; rcp, netcat open |
+| Custom builds: a documented way to build Minix with own parameters (NR_PROCS, e.g. 64 with 5MB; NR_PTYS; NR_BUFS; console speed; which commands and data) (user, Follow-up 47) | Future plan; today CONSBAUD is the only make parameter |
+| Default passwords: root has none (Minix 1.5 used "Geheim"); network logins (telnet, ftp) need one | Open, the user's choice |
+| MicroPython (user question, Follow-up 47) | Not ported; assessed only |
 | zip/unzip-style compression for serial transfers | Done: GNU gzip 1.2.4 (gzip, gunzip, zcat), `src/rosco/gzip-1.2.4` with `cmds/gzip.patch` and `gzrosco.c` (Follow-up 36) |

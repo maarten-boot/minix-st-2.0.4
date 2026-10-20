@@ -318,8 +318,37 @@ f /usr/bin/in.ftpd	755 ../cmds/bin/in.ftpd
 f /usr/bin/setup.anonftp	755 ../../commands/ftpd/setup.anonftp
 f /usr/bin/tcpd	755 ../cmds/bin/tcpd
 f /usr/bin/tcpdp	755 ../cmds/bin/tcpdp
+f /usr/bin/telnet	755 ../cmds/bin/telnet
+f /usr/bin/in.telnetd	755 ../cmds/bin/in.telnetd
+# in.telnetd runs /usr/bin/getty on a pty (NR_PTYS 4: ttyp0-3, ptyp0-3)
+l /usr/bin/getty	/bin/getty
+c /dev/ttyp0	666 4 128
+c /dev/ttyp1	666 4 129
+c /dev/ttyp2	666 4 130
+c /dev/ttyp3	666 4 131
+c /dev/ptyp0	666 4 192
+c /dev/ptyp1	666 4 193
+c /dev/ptyp2	666 4 194
+c /dev/ptyp3	666 4 195
 f /etc/inet.conf	644 ../../etc/inet.conf
 f /etc/services	644 ../../etc/services
 f /etc/protocols	644 ../../etc/protocols
 f /etc/hosts	644 ../rootfs/etc/hosts
 f /etc/rc.net.slip	644 ../rootfs/etc/rc.net.slip
+
+# Anonymous FTP ("ftp" or "anonymous", /etc/passwd), as setup.anonftp
+# makes it: in.ftpd chroots to /usr/ftp, and runs bin/sh and bin/ls there
+# for listings, and opens dev/tcp for the data connection.  Read only: no
+# pub/incoming (setup.anonftp can add one).
+d /usr/ftp 755
+d /usr/ftp/bin 751
+l /usr/ftp/bin/sh	/bin/sh
+l /usr/ftp/bin/ls	/bin/ls
+l /usr/ftp/bin/crc	/bin/crc
+l /usr/ftp/bin/tar	/bin/tar
+l /usr/ftp/bin/compress	/bin/compress
+l /usr/ftp/bin/gzip	/usr/bin/gzip
+d /usr/ftp/dev 751
+c /usr/ftp/dev/tcp	666 7 2
+d /usr/ftp/pub 755
+f /usr/ftp/pub/README	644 ../rootfs/ftp/README
