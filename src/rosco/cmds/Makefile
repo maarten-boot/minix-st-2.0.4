@@ -549,13 +549,17 @@ obj/nc.o:	nc.c
 	@mkdir -p obj
 	$(CC) $(CFLAGS) -c -o $@ nc.c
 
-# execl() calls ended with a bare 0 (a 2-byte int with -mshort, so the
-# argument list was not terminated): these files are compiled from copies
-# in obj/fix, made with execl0.sed.
+# Source fixes (the code review, ROSCO_M68K_REVIEW.md).  The files in FIX0
+# (paths below src/commands) are compiled from copies in obj/fix: through
+# execl0.sed (execl() lists that ended with a bare 0, a 2-byte int with
+# -mshort), then fixes/<path>.patch if there is one.  Each file also needs
+# a rule that compiles its object from obj/fix/<path>.
 FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c
-$(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed
+.SECONDEXPANSION:
+$(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
 	sed -f execl0.sed $< > $@
+	if [ -f fixes/$*.patch ]; then patch -s $@ fixes/$*.patch; fi
 obj/in.rshd.o:	obj/fix/simple/in.rshd.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/make/make.o:	obj/fix/make/make.c $c/make/h.h
