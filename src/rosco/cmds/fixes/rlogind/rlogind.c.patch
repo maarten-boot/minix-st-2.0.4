@@ -1,0 +1,148 @@
+--- orig/rlogind/rlogind.c
++++ new/rlogind/rlogind.c
+@@ -41,8 +41,8 @@
+ static void wtmp(char *user, char *id, char *line, int pid, int type, int slot);
+ static void setup_term(int fd);
+ static speed_t num2speed(int num);
+-static int do_control(char *buf, int cnt);
+-static void readall(char *buf, int cnt);
++static int do_control(char *buf, int *cntp);
++static int readall(char *buf, int cnt);
+ 
+ int main(int argc, char *argv[])
+ {
+@@ -121,7 +121,8 @@
+ 	if (login_pid == 0)
+ 	{
+ 		close(pty_fd);
+-		wtmp("", "", tty_str, login_pid, LOGIN_PROCESS, slot);
++		/* rosco: login_pid is 0 here, use our own pid. */
++		wtmp("", "", tty_str, getpid(), LOGIN_PROCESS, slot);
+ 		do_child(tty_fd, tty_str);
+ 	}
+ 	close(tty_fd);
+@@ -175,13 +176,25 @@
+ 			tmp_count= cp-lp;
+ 			if (tmp_count == 0)
+ 			{
+-				tmp_count= do_control(lp, count);
++				/* rosco: do_control() reads the rest of a
++				 * split escape after lp, so move it to the
++				 * start of line[].  A 0377 that is no window
++				 * size escape is data: write(1, lp, 0)
++				 * returned 0 and ended the session.
++				 */
++				if (lp != line)
++				{
++					memmove(line, lp, count);
++					lp= line;
++				}
++				tmp_count= do_control(lp, &count);
+ 				if (tmp_count)
+ 				{
+ 					lp += tmp_count;
+ 					count -= tmp_count;
+ 					continue;
+ 				}
++				tmp_count= 1;
+ 			}
+ 		}
+ 		bytes= write(1, lp, tmp_count);
+@@ -231,6 +244,10 @@
+ 	*argp++= hostname;
+ 	if (authenticated)
+ 		*argp++= "-f";
++	/* rosco: "--", or a user name like "-f" or "-hhost" from the
++	 * network was taken as an option of login.
++	 */
++	*argp++= "--";
+ 	if (lusername[0] != '\0')
+ 		*argp++= lusername;
+ 
+@@ -267,8 +284,11 @@
+   wtmp("", "", tty_str, pid, DEAD_PROCESS, slot);
+ 
+   /* Finally we reset the owner and mode of the terminal. */
++  /* rosco: 0600 as getty leaves it, not 0666: anyone could open the
++   * free tty and read the next user's login and password from it.
++   */
+   chown(tty_str, 0, 0);
+-  chmod(tty_str, 0666);
++  chmod(tty_str, 0600);
+ }
+ 
+ static void wtmp(
+@@ -401,31 +421,36 @@
+ 	return B0;
+ }
+ 
+-static int do_control(char *cp, int cnt)
++/* rosco: the bytes of a split escape are read into line[] after the cnt
++ * bytes at buf (the caller moved them to the start), and *cntp counts
++ * them, so that they are not lost when they turn out to be data.  Before,
++ * they went into a local copy and were dropped.
++ */
++static int do_control(char *buf, int *cntp)
+ {
+-	char buf[20];
++	int cnt= *cntp;
+ 	struct winsize winsize;
+ 
+-	if (cnt > sizeof(buf))
+-		cnt= sizeof(buf);
+-
+-	memcpy(buf, cp, cnt);
+-
+ 	/* Let's fetch the first 2 bytes. */
+ 	if (cnt < 2)
+-		readall(buf+cnt, 2-cnt);
+-	if ((unsigned char)buf[1] != 255)
++		cnt += readall(buf+cnt, 2-cnt);
++	*cntp= cnt;
++	if (cnt < 2 || (unsigned char)buf[1] != 255)
+ 		return 0;
+ 
+ 	/* Let's fetch the first 4 bytes. */
+ 	if (cnt < 4)
+-		readall(buf+cnt, 4-cnt);
+-	if (buf[2] != 's' || buf[3] != 's')
++		cnt += readall(buf+cnt, 4-cnt);
++	*cntp= cnt;
++	if (cnt < 4 || buf[2] != 's' || buf[3] != 's')
+ 		return 0;
+ 
+ 	/* Let's fetch a winsize structure. */
+-	if (cnt < 4 + sizeof(winsize))
+-		readall(buf+cnt, 4 + sizeof(winsize) - cnt);
++	if (cnt < 4 + (int) sizeof(winsize))
++		cnt += readall(buf+cnt, 4 + sizeof(winsize) - cnt);
++	*cntp= cnt;
++	if (cnt < 4 + (int) sizeof(winsize))
++		return 0;
+ 
+ 	memcpy(&winsize, buf+4, sizeof(winsize));
+ 	winsize.ws_row= ntohs(winsize.ws_row);
+@@ -440,16 +465,19 @@
+ 	return 4 + sizeof(winsize);
+ }
+ 
+-static void readall(char *buf, int cnt)
++static int readall(char *buf, int cnt)
+ {
+-	int res;
++	int res, total= 0;
+ 
+ 	while(cnt)
+ 	{
+ 		res= read(0, buf, cnt);
+ 		if (res <= 0)
+-			return;
+-		buf += cnt;
++			break;
++		/* rosco: was buf += cnt; returns the count now. */
++		buf += res;
+ 		cnt -= res;
++		total += res;
+ 	}
++	return total;
+ }

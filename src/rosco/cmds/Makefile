@@ -535,8 +535,12 @@ $(eval $(call pkgbin,telnet,telnet,ttn ttn_conf,16kw))
 obj/telnet/%.o:	$c/telnet/%.c
 	@mkdir -p obj/telnet
 	$(CC) $(CFLAGS) -I$c/telnet -c -o $@ $<
+obj/telnet/ttn.o:	obj/fix/telnet/ttn.c $c/telnet/ttn.h
+	@mkdir -p obj/telnet
+	$(CC) $(CFLAGS) -I$c/telnet -c -o $@ $<
 # telnetd.patch: when a pty is not in /etc/ttytab, it printed its message
-# without the name and looped forever.  The patched copy is in obj/telnetd.
+# without the name and looped forever; telnet options (SB, NOP, ...), and
+# the tty mode after logout.  The patched copy is in obj/telnetd.
 TDSRC	= main telnet term pty wtmp
 $(eval $(call pkgbin,in.telnetd,telnetd,$(TDSRC),8kw))
 obj/telnetd/stamp:	$(wildcard $c/telnetd/*.[ch]) telnetd.patch
@@ -552,6 +556,10 @@ $(TDSRC:%=obj/telnetd/%.o):	obj/telnetd/stamp
 # like in.rshd too little here)
 $(eval $(call pkgbin,in.rlogind,rlogind,rlogind setup,8kw))
 obj/rlogind/%.o:	$c/rlogind/%.c
+	@mkdir -p obj/rlogind
+	$(CC) $(CFLAGS) -I$c/rlogind -c -o $@ $<
+obj/rlogind/rlogind.o obj/rlogind/setup.o: \
+		obj/rlogind/%.o:	obj/fix/rlogind/%.c $c/rlogind/rlogind.h
 	@mkdir -p obj/rlogind
 	$(CC) $(CFLAGS) -I$c/rlogind -c -o $@ $<
 
@@ -592,7 +600,8 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/passwd.c \
 	  simple/mail.c \
 	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c \
-	  simple/nonamed.c simple/ping.c simple/hostaddr.c
+	  simple/nonamed.c simple/ping.c simple/hostaddr.c \
+	  telnet/ttn.c rlogind/rlogind.c rlogind/setup.c simple/rlogin.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -642,6 +651,8 @@ obj/nonamed.o:	obj/fix/simple/nonamed.c
 obj/ping.o:	obj/fix/simple/ping.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/hostaddr.o:	obj/fix/simple/hostaddr.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/rlogin.o:	obj/fix/simple/rlogin.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h

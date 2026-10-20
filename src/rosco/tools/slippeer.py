@@ -153,7 +153,12 @@ def main():
                 elif b == ESC:
                     esc = True
                 elif b == END:
-                    if frame:
+                    if frame and frame[0] >> 4 != 4:
+                        # not IPv4 (e.g. a getty's output on the line
+                        # before SLIP starts): the TUN would refuse it
+                        log("from board: " + describe(bytes(frame)) +
+                            ", dropped")
+                    elif frame:
                         log("from board: " + describe(bytes(frame)))
                         os.write(tun, bytes(frame))
                     frame = bytearray()

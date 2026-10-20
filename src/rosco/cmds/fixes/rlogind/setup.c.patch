@@ -1,0 +1,32 @@
+--- orig/rlogind/setup.c
++++ new/rlogind/setup.c
+@@ -9,6 +9,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
++#include <net/hton.h>
+ #include <net/netlib.h>
+ #include <net/gen/in.h>
+ #include <net/gen/inet.h>
+@@ -26,6 +27,7 @@
+ 	struct nwio_tcpconf tcpconf;
+ 	struct hostent *hostent;
+ 	char c;
++	tcpport_t port;
+ 
+ 	/* Let's lookup the hostname for the connection. */
+ 	result= ioctl (0, NWIOGTCPCONF, &tcpconf);
+@@ -59,6 +61,13 @@
+ 	fprintf(stderr, "got lu= %s, ru= %s, te= %s\r\n", lusername, rusername,
+ 		term);
+ #endif
++	/* rosco: trust only a client on a privileged port, as in.rshd
++	 * does; otherwise any user on a trusted host could claim to be
++	 * anyone there.  The others get the password prompt of login.
++	 */
++	port= ntohs(tcpconf.nwtc_remport);
++	if (port >= TCPPORT_RESERVED || port < TCPPORT_RESERVED/2)
++		return;
+ 	if (iruserok(tcpconf.nwtc_remaddr, 0, rusername, lusername) == 0)
+ 		authenticated = 1;
+ }

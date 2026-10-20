@@ -1,0 +1,72 @@
+--- orig/telnet/ttn.c
++++ new/telnet/ttn.c
+@@ -157,6 +157,11 @@
+ 	if (r == -1)
+ 		fatal("Unable to connect: %s", strerror(errno));
+ 	printf("Connected\n");
++	/* rosco: get the terminal modes before the fork, so that the
++	 * keyboard child can restore them too: after "~." it killed the
++	 * parent, and the terminal stayed raw.
++	 */
++	tcgetattr(0, &termios);
+ 	ppid= getpid();
+ 	pid= fork();
+ 	switch(pid)
+@@ -167,6 +172,7 @@
+ fprintf(stderr, "killing %d with %d\r\n", ppid, SIGKILL);
+ #endif
+ 		kill(ppid, SIGKILL);
++		tcsetattr(0, TCSANOW, &termios);
+ 		break;
+ 	case -1:
+ 		fprintf(stderr, "%s: fork failed: %s\r\n", argv[0],
+@@ -174,7 +180,6 @@
+ 		exit(1);
+ 		break;
+ 	default:
+-		tcgetattr(0, &termios);
+ 		screen();
+ #if DEBUG
+ fprintf(stderr, "killing %d with %d\r\n", pid, SIGKILL);
+@@ -441,7 +446,8 @@
+ 		dont_option(optsrt);
+ 		break;
+ 	case IAC:
+-fprintf(stderr, "got a IAC\r\n");
++		/* rosco: IAC IAC is a data byte 255; it was dropped. */
++		write(1, &command, 1);
+ 		break;
+ 	default:
+ fprintf(stderr, "got unknown command (%d)\r\n", command);
+@@ -608,7 +614,7 @@
+ {
+ 	unsigned char command, iac, optsrt;
+ 	unsigned char buffer[4];
+-	int offset, result;
++	int offset, result, len;
+ 
+ 	offset= 0;
+ 	next_char(command);
+@@ -621,13 +627,16 @@
+ 		result= writeall(tcp_fd, (char *)buffer,4);
+ 		if (result<0)
+ 			return result;
+-		count= strlen(term_env);
+-		if (!count)
+-		{
++		/* rosco: in len, not count: next_char() below uses count,
++		 * the bytes left in the buffer, and the offset returned got
++		 * too large (screen() went on with a negative count).
++		 * term_env is NULL if the server did not send DO TERMTYPE
++		 * first.
++		 */
++		if (term_env == NULL || term_env[0] == '\0')
+ 			term_env= "unknown";
+-			count= strlen(term_env);
+-		}
+-		result= writeall(tcp_fd, term_env, count);
++		len= strlen(term_env);
++		result= writeall(tcp_fd, term_env, len);
+ 		if (result<0)
+ 			return result;
+ 		buffer[0]= IAC;

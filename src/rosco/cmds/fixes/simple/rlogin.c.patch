@@ -1,0 +1,14 @@
+--- orig/simple/rlogin.c
++++ new/simple/rlogin.c
+@@ -968,7 +968,10 @@
+ 	speed_t speed;
+ {
+ 	int i;
+-	for (i= 0; speeds[i].name != NULL && speeds[i].speed != speed; i++) {
++	/* rosco: the loop stopped at the match and returned "unknown", so
++	 * the server always got "TERM/unknown" instead of the speed.
++	 */
++	for (i= 0; speeds[i].name != NULL; i++) {
+ 		if (speeds[i].speed == speed) return speeds[i].name;
+ 	}
+ 	return "unknown";

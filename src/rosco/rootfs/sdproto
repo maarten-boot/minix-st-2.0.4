@@ -323,15 +323,17 @@ f /usr/bin/tcpdp	755 ../cmds/bin/tcpdp
 f /usr/bin/telnet	755 ../cmds/bin/telnet
 f /usr/bin/in.telnetd	755 ../cmds/bin/in.telnetd
 # in.telnetd runs /usr/bin/getty on a pty (NR_PTYS 4: ttyp0-3, ptyp0-3)
+# Mode 600, as getty and login leave a terminal: with 666 anyone could
+# open a free ttyp and read the next login's name and password.
 l /usr/bin/getty	/bin/getty
-c /dev/ttyp0	666 4 128
-c /dev/ttyp1	666 4 129
-c /dev/ttyp2	666 4 130
-c /dev/ttyp3	666 4 131
-c /dev/ptyp0	666 4 192
-c /dev/ptyp1	666 4 193
-c /dev/ptyp2	666 4 194
-c /dev/ptyp3	666 4 195
+c /dev/ttyp0	600 4 128
+c /dev/ttyp1	600 4 129
+c /dev/ttyp2	600 4 130
+c /dev/ttyp3	600 4 131
+c /dev/ptyp0	600 4 192
+c /dev/ptyp1	600 4 193
+c /dev/ptyp2	600 4 194
+c /dev/ptyp3	600 4 195
 # rsh, rcp, rlogin and their servers (access by /etc/hosts.equiv and
 # ~/.rhosts, not passwords; root only by /.rhosts), nc (netcat)
 f /usr/bin/rsh	755 ../cmds/bin/rsh

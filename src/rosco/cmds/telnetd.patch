@@ -22,6 +22,69 @@
     } else if (pid < 0) {
  	sprintf(buff, "I am sorry, but the fork(2) call failed!\r\n");
  	(void) write(1, buff, strlen(buff));
+@@ -151,8 +156,11 @@
+ 
+    wtmp(DEAD_PROCESS, lineno, tty_name+5, pid, hostname);
+ 
++   /* rosco: 0600 as getty leaves it, not 0666: anyone could open the
++    * free tty and read the next user's login and password from it.
++    */
+    chown(tty_name, 0, 0);
+-   chmod(tty_name, 0666);
++   chmod(tty_name, 0600);
+ 
+    return(0);
+ }
+--- a/telnet.c
++++ b/telnet.c
+@@ -21,6 +21,8 @@
+ #define	IN_CR	1
+ #define	IN_IAC	2
+ #define	IN_IAC2	3
++#define	IN_SB	4		/* rosco: inside IAC SB ... IAC SE */
++#define	IN_SB_IAC 5
+ 
+ _PROTOTYPE(static void dowill, (int c));
+ _PROTOTYPE(static void dowont, (int c));
+@@ -134,6 +136,13 @@
+    					InState = IN_IAC2;
+    					ThisOpt = c;
+    					break;
++   				case SB:
++   					/* rosco: skip the subnegotiation up
++   					 * to IAC SE; its bytes went to the
++   					 * login as typed input.
++   					 */
++   					InState = IN_SB;
++   					break;
+    				case EOR:
+    				case SE:
+    				case NOP:
+@@ -144,12 +153,22 @@
+    				case EC:
+    				case EL:
+    				case GA:
+-   				case SB:
+-   					break;
+    				default:
++   					/* rosco: back to data; it stayed in
++   					 * IN_IAC and ate the input after an
++   					 * IAC NOP, IP, AYT and so on.
++   					 */
++   					InState = IN_DATA;
+    					break;
+    			}
+    			break;
++   		case IN_SB:
++   			if(c == IAC) InState = IN_SB_IAC;
++   			break;
++   		case IN_SB_IAC:
++   			/* IAC IAC is data inside the subnegotiation. */
++   			InState = (c == SE) ? IN_DATA : IN_SB;
++   			break;
+    		case IN_IAC2:
+    			if(size > 0) {
+    				write(fdout, buffer, size);
 --- a/term.c
 +++ b/term.c
 @@ -65,7 +65,8 @@
