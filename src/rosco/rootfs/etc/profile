@@ -4,6 +4,11 @@
 
 TZ='GMT0'	export TZ
 
+# The command search path, exported: ash (/bin/sh) has a default PATH but
+# does not export it, so programs that run others with execvp() (man runs
+# nroff, for instance) found nothing.
+PATH=/usr/local/bin:/bin:/usr/bin	export PATH
+
 # Interrupt with Ctrl-C, as most terminals expect, instead of the Minix
 # default DEL, and erase with DEL, which is what the Backspace key of most
 # terminal programs sends (the Minix default is ^H).  The tty resets this

@@ -1,0 +1,15 @@
+--- a/parser.c
++++ b/parser.c
+@@ -130,7 +130,11 @@
+ 
+ 	doprompt = interact;
+ 	if (doprompt)
+-		putprompt(exitstatus == 0 ? ps1val() : pseval());
++		/* rosco: PSE, the prompt after a failed command, is unset by
++		 * default, which gave an empty prompt: then use PS1.
++		 */
++		putprompt(exitstatus == 0 || (vpse.flags & VUNSET)
++						? ps1val() : pseval());
+ 	needprompt = 0;
+ 	if ((t = readtoken()) == TEOF)
+ 		return NEOF;

@@ -12,6 +12,11 @@ case "$*" in
 	exit 0
 esac
 
+# The command search path, exported, for the daemons started here (cron,
+# inet) and what they run (as src/etc/rc).
+PATH=/usr/local/bin:/bin:/usr/bin
+export PATH
+
 echo "rosco_m68k: running /etc/rc"
 
 # Start from the saved time, then ask on the console (RETURN or 30 seconds

@@ -359,10 +359,11 @@ bin/ash:	$(ASHOBJ) $L/crtso.o $L/libedit.a $(LIBS) $(TOOLS)/mkminix.py
 	$(CC) $(LDFLAGS) -o obj/ash.elf $L/crtso.o $(ASHOBJ) $L/libedit.a $(LIBS)
 	$(MKMINIX) -S 12kw obj/ash.elf $@
 
-obj/ash/stamp:	$(wildcard $c/ash/* $c/ash/bltin/* $c/ash/sys/*) $i/signal.h
+obj/ash/stamp:	$(wildcard $c/ash/* $c/ash/bltin/* $c/ash/sys/*) $i/signal.h ash.patch
 	rm -rf obj/ash
 	mkdir -p obj/ash/host
 	cp -r $c/ash/. obj/ash
+	cd obj/ash && patch -s -p1 < ../../ash.patch
 	gcc -E -dM -undef -nostdinc $(DEFS) -D__STDC__=1 -I$i $i/signal.h | \
 		grep -E '^#define (SIG[A-Z0-9]+|_?NSIG) ' > obj/ash/host/signal.h
 	cd obj/ash && $(HOSTCC) -Ihost -o host/mksignames mksignames.c && \

@@ -10,6 +10,7 @@ line ('#' starts a comment).  -a adds MAME options, e.g. -a '-bios v242
 
 	expect TEXT[<tab>TIMEOUT]	wait for TEXT in the output (default 60 s)
 	send TEXT			type TEXT and Return
+	type TEXT			type TEXT only; Python escapes (\x1b, \r)
 	sleep SECONDS			just collect output
 
 Everything the console prints goes to logfile.  The emulator runs
@@ -83,6 +84,8 @@ try:
             if not expect(arg, t): break
         elif cmd == 'send':
             s.sendall(arg.encode() + b'\r')
+        elif cmd == 'type':
+            s.sendall(arg.encode().decode('unicode_escape').encode('latin-1'))
         elif cmd == 'sleep':
             pump(float(arg))
 finally:
