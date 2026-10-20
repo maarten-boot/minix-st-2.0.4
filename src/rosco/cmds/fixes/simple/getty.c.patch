@@ -1,0 +1,24 @@
+--- orig/simple/getty.c
++++ new/simple/getty.c
+@@ -137,7 +137,8 @@
+ 
+ 	np = name;
+ 	while ((ch = readch()) != '\n') {
+-		if (np < name + len) *np++ = ch;
++		/* rosco: len - 1, a long name wrote the null at name[len]. */
++		if (np < name + len - 1) *np++ = ch;
+ 	}
+ 	*np = '\0';
+ 	if (*name == '\0') ch = ' ';	/* blank line typed! */
+@@ -153,7 +154,10 @@
+ { 
+   struct stat st;
+ 
+-  execl(LOGIN, LOGIN, name, (char *) NULL);
++  /* rosco: "--", or a name typed as "-hhost" or "-p" was taken as an
++   * option of login (which runs as root: -h set the host in utmp).
++   */
++  execl(LOGIN, LOGIN, "--", name, (char *) NULL);
+   /* Failed to exec login.  Impossible, but true.  Try a shell, but only if
+    * the terminal is more or less secure, because it will be a root shell.
+    */

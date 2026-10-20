@@ -8,26 +8,31 @@ How the port was built is in `ROSCO_M68K_PORT_SPEC.md` and the
 ## Logging in
 
 * The console is DUART channel A, at 38400 baud by default (8N1, no flow
-  control). tty00 (channel B) has a login too, unless it is used for SLIP.
+  control). tty00 (channel B) has a login too (for accounts with a
+  password), unless it is used for SLIP.
 * At boot `/etc/rc` asks for the date and time (`[[MMDDYY]hhmm[ss]]`, GMT).
   RETURN or 30 seconds without an answer keeps the clock, which starts from
   the last saved time (`/etc/stamp`).
 * Accounts: `root` and `ast` (an ordinary user). Both have **no password**
-  after installation, which is easy for a first look at Minix.
+  after installation, which is easy for a first look at Minix; without
+  one they can only log in on the console. The system account `bin` is
+  locked (`*`).
 * The shell is ash (`/bin/sh`), with line editing (arrow keys, history).
   The old Minix shell is `/usr/bin/osh`.
 * `man <command>` shows the manual page; `apropos <word>` searches them.
 
 ## Passwords: what needs one
 
-Minix only lets an account without a password log in on a terminal
-directly connected to the board (the console, tty00). Everything that comes
-in over the network needs a password, or a trust file. Set a password with
+Minix only lets an account without a password log in on the console
+(login's "secure" terminals are the console's minor devices 0-7). tty00
+and everything that comes in over the network need a password, or a trust
+file. Set a password with
 `passwd` (as root: `passwd ast`, `passwd root`).
 
 | What | Without a password | With a password |
 |---|---|---|
-| Login on the console or tty00 | works | asks for it |
+| Login on the console | works | asks for it |
+| Login on tty00 | refused | asks for it |
 | `su` (ast to root) | works while root has none | asks for root's |
 | telnet to the board | `Password:` prompt, then refused | works |
 | ftp to the board as that user | refused (530) | works |

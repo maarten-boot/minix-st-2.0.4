@@ -1,0 +1,16 @@
+--- orig/simple/su.c
++++ new/simple/su.c
+@@ -113,6 +113,13 @@
+   } else {
+ 	if ((shell = getenv("SHELL")) == NULL) shell = from_shell;
+   }
++  /* rosco: $SHELL (or pw_shell) is copied to sh0[] and SHELL[] below;
++   * a long one overran them.
++   */
++  if (strlen(shell) >= sizeof(SHELL) - 6) {
++	fprintf(stderr, "su: shell name too long\n");
++	exit(3);
++  }
+   if ((p= strrchr(shell, '/')) == 0) p= shell; else p++;
+   sh0[0]= '-';
+   strcpy(loginshell ? sh0+1 : sh0, p);

@@ -68,6 +68,8 @@ STACK_in.rshd = 16kw
 # passwd forks and execs /usr/lib/pwdauth for crypt(): with 4kw the child's
 # execl had no room to build the new stack ("Arg list too long")
 STACK_passwd = 8kw
+# who: "Memory fault" on every run with the ACK build's 4kw
+STACK_who = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -567,7 +569,8 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/grep.c simple/readfs.c flex-2.3.7/misc.c flex-2.3.7/dfa.c \
 	  kermit/ckcmai.c kermit/ckcpro.c kermit/ckucon.c kermit/ckudia.c \
 	  kermit/ckufio.c kermit/ckuscr.c kermit/ckutio.c kermit/ckuus2.c \
-	  kermit/ckuus3.c kermit/ckuusr.c simple/diff.c simple/cdiff.c
+	  kermit/ckuus3.c kermit/ckuusr.c simple/diff.c simple/cdiff.c \
+	  simple/login.c simple/getty.c simple/su.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -595,6 +598,12 @@ obj/grep.o:	obj/fix/simple/grep.c
 obj/diff.o:	obj/fix/simple/diff.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/cdiff.o:	obj/fix/simple/cdiff.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/login.o:	obj/fix/simple/login.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/getty.o:	obj/fix/simple/getty.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/su.o:	obj/fix/simple/su.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h

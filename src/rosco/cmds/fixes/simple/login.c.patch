@@ -1,0 +1,42 @@
+--- orig/simple/login.c
++++ new/simple/login.c
+@@ -90,8 +90,8 @@
+ 
+ int time_out;
+ char *hostname;
+-char user[32];
+-char logname[35];
++char user[5+30];		/* rosco: room for "USER=" and a name of */
++char logname[8+30];		/* 29 (name[30]); were 32 and 35 */
+ char home[128];
+ char shell[128];
+ char term[128];
+@@ -294,9 +294,13 @@
+ 
+   /* Get login name and passwd. */
+   for (;;initialname= NULL) {
+-	if (initialname)
+-		strcpy(name, initialname);
+-	else {
++	if (initialname) {
++		/* rosco: the name comes from the command line (rlogind
++		 * sends up to 30 characters); it overran name[].
++		 */
++		strncpy(name, initialname, sizeof(name) - 1);
++		name[sizeof(name) - 1] = 0;
++	} else {
+ 		do {
+ 			write(1, "login: ", 7);
+ 			n = read(0, name, 30);
+@@ -382,7 +386,10 @@
+ 				argx[ap++] = bp;
+ 			}
+ 		}
+-	} else
++	}
++	/* rosco: was "} else argx[ap] = NULL;", so the argv of the shell
++	 * was not terminated when pw_shell was set (ast: /bin/sh).
++	 */
+ 	argx[ap] = NULL;
+ 	strcpy(argx0, "-");	/* most shells need it for their .profile */
+ 	if ((bp= strrchr(sh, '/')) == NULL) bp = sh; else bp++;
