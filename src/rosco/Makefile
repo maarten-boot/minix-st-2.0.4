@@ -108,6 +108,7 @@ boot/manproto:	$(MANPAGES) man/whatis
 
 boot/sdroot.img:	parts test boot/stamp rootfs/proto rootfs/sdproto rootfs/etc/* \
 			rootfs/crontab rootfs/scripts/* rootfs/wtmp rootfs/ftp/* \
+			../../ROSCO_M68K_USAGE.md \
 			boot/manproto \
 			$(CCPROTO)
 	cd boot && python3 ../tools/mkfs.py -b $(SDROOTBLOCKS) -i $(SDROOTINODES) \

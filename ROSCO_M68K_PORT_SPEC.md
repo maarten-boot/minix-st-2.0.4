@@ -930,10 +930,11 @@ fallback.
 | Manual pages for man/whatis | Done: the 2.0.4 pages in `src/rosco/man` (from davidgiven/minix2), `/usr/man` via `boot/manproto` (Follow-up 37) |
 | Clock without RTC: ask the date at boot or login (cron, at) | Done: `asktime -t 30` in `/etc/rc` (Follow-up 35); `/etc/stamp` saved at boot, every 15 minutes by cron and by `/etc/rc down` at halt (Follow-up 40) |
 | ACK cc on the target: yacc/flex output compiled with cc dies with signal 10 (Follow-up 41) | Fixed: the m68k2 assembler lost RELPC in a 16-bit `eamode[]` (Follow-up 42, ack-minix68k.patch) |
-| Review the code of all tools for obvious errors and improvements (user, Follow-up 45) | Open |
+| Review the code of all tools for obvious errors and improvements (user, Follow-up 45) | Open. Done so far: execl(…, 0) calls (Follow-up 48). Next candidates: other -mshort traps (varargs with int 0 as a pointer, int/pointer mixups), stack sizes (in.rshd needed 4x) |
 | elvis on the board: after ESC, ":" only works after an arrow key (user, picocom) | Open; not reproduced in MAME |
-| Network tools: telnet, ftp, ftpd, rcp, netcat (user, Follow-up 45) | ftp, ftpd (tcpd) (Follow-up 46), telnet, telnetd (4 ptys), anonymous FTP (Follow-up 47) done; rcp, netcat open |
+| Network tools: telnet, ftp, ftpd, rcp, netcat (user, Follow-up 45) | Done: ftp, ftpd (tcpd) (Follow-up 46), telnet, telnetd (4 ptys), anonymous FTP (Follow-up 47), rsh, rcp, rlogin, their servers, nc (Follow-up 48) |
 | Custom builds: a documented way to build Minix with own parameters (NR_PROCS, e.g. 64 with 5MB; NR_PTYS; NR_BUFS; console speed; which commands and data) (user, Follow-up 47) | Future plan; today CONSBAUD is the only make parameter |
-| Default passwords: root has none (Minix 1.5 used "Geheim"); network logins (telnet, ftp) need one | Open, the user's choice |
+| Default passwords: root has none (Minix 1.5 used "Geheim"); network logins (telnet, ftp) need one | Root stays without one (user); documented in ROSCO_M68K_USAGE.md (Follow-up 48) |
 | MicroPython (user question, Follow-up 47) | Not ported; assessed only |
+| 32-bit int build of the whole system (user question, Follow-up 48) | Assessed only, see Follow-up 48 |
 | zip/unzip-style compression for serial transfers | Done: GNU gzip 1.2.4 (gzip, gunzip, zcat), `src/rosco/gzip-1.2.4` with `cmds/gzip.patch` and `gzrosco.c` (Follow-up 36) |

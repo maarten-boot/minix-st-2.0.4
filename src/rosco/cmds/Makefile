@@ -47,11 +47,12 @@ SIMPLE	= basename cal cat chmod chown clr cmp cp cut date df dirname du echo \
 	  banner calendar cgrep ci co cleantmp decomp16 fix fortune ifdef \
 	  intr last leave look proto readall readfs remsync synctree sysenv \
 	  term termcap backup finger badblocks isoread \
-	  slip ifconfig add_route pr_routes hostaddr ping rdate nonamed
+	  slip ifconfig add_route pr_routes hostaddr ping rdate nonamed \
+	  rsh rcp rlogin in.rshd
 CMDS	= sh ps aal make patch mined elvis halt shutdown dosread $(SIMPLE) \
 	  awk bc yap m4 cron crontab kermit rz sz cawf asktime gzip ash \
 	  advent elle ellec de indent ic yacc flex urlget ftp in.ftpd \
-	  tcpd tcpdp telnet in.telnetd
+	  tcpd tcpdp telnet in.telnetd in.rlogind nc
 
 all:	$(addprefix bin/,$(CMDS))
 
@@ -62,6 +63,8 @@ STACK_cp = 24kw
 # at keeps three stdio buffers (stdin, stdout, the job file) on its heap; in
 # the ACK build's 4kw the stack ran into them ("Memory fault").
 STACK_at = 8kw
+# in.rshd ran out of its ACK 4kw ("Stack low" from the kernel) and failed
+STACK_in.rshd = 16kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -517,6 +520,13 @@ obj/telnetd/stamp:	$(wildcard $c/telnetd/*.[ch]) telnetd.patch
 $(TDSRC:%=obj/telnetd/%.o):	obj/telnetd/stamp
 	$(CC) $(CFLAGS) -c -o $@ $(@:.o=.c)
 
+# in.rlogind (commands/rlogind), on the ptys, 8kw (4kw in the ACK build,
+# like in.rshd too little here)
+$(eval $(call pkgbin,in.rlogind,rlogind,rlogind setup,8kw))
+obj/rlogind/%.o:	$c/rlogind/%.c
+	@mkdir -p obj/rlogind
+	$(CC) $(CFLAGS) -I$c/rlogind -c -o $@ $<
+
 # tcpd listens on a TCP port and runs a server for each connection; with
 # flags, or when /etc/serv.access exists, it runs tcpdp, the same source
 # built with PARANOID=1 (access checks, -d, -m)
@@ -528,6 +538,35 @@ obj/tcpd/tcpd.o:	$c/simple/tcpd.c
 obj/tcpd/tcpdp.o:	$c/simple/tcpd.c
 	@mkdir -p obj/tcpd
 	$(CC) $(CFLAGS) -DPARANOID=1 -c -o $@ $<
+
+# nc: rosco's own small netcat (TCP connect and listen), 4kw
+bin/nc:	obj/nc.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/nc.elf $L/crtso.o obj/nc.o $(LIBS)
+	$(MKMINIX) -S 4kw obj/nc.elf $@
+
+obj/nc.o:	nc.c
+	@mkdir -p obj
+	$(CC) $(CFLAGS) -c -o $@ nc.c
+
+# execl() calls ended with a bare 0 (a 2-byte int with -mshort, so the
+# argument list was not terminated): these files are compiled from copies
+# in obj/fix, made with execl0.sed.
+FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c
+$(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed
+	@mkdir -p $(@D)
+	sed -f execl0.sed $< > $@
+obj/in.rshd.o:	obj/fix/simple/in.rshd.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/make/make.o:	obj/fix/make/make.c $c/make/h.h
+	@mkdir -p obj/make
+	$(CC) $(CFLAGS) -Dunix -I$c/make -c -o $@ $<
+obj/elle/eemain.o:	obj/fix/elle/eemain.c
+	@mkdir -p obj/elle
+	$(CC) $(ELLECF) -c -o $@ $<
+obj/zmodem/rz.o:	obj/fix/zmodem/rz.c $c/zmodem/rbsb.c $c/zmodem/zm.c $c/zmodem/zmodem.h
+	@mkdir -p obj/zmodem
+	$(CC) $(CFLAGS) -I$c/zmodem -DPOSIX -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

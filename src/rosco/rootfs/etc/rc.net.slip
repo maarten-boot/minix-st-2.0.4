@@ -40,6 +40,11 @@ tcpd ftp /usr/bin/in.ftpd </dev/null >/dev/null 2>&1 &
 # console (getty, login).
 tcpd telnet /usr/bin/in.telnetd </dev/null >/dev/null 2>&1 &
 
+# rsh/rcp and rlogin servers.  These use no passwords: a host and user are
+# trusted by /etc/hosts.equiv or ~/.rhosts (for root only /.rhosts).
+tcpd shell /usr/bin/in.rshd </dev/null >/dev/null 2>&1 &
+tcpd login /usr/bin/in.rlogind </dev/null >/dev/null 2>&1 &
+
 # slip moves the packets between /dev/psip0 and the line.  stty and slip
 # share one open of tty00: the tty resets its settings on the last close.
 (stty raw -echo $speed; exec slip /dev/psip0) </dev/tty00 >/dev/tty00 2>/dev/console &

@@ -330,6 +330,14 @@ c /dev/ptyp0	666 4 192
 c /dev/ptyp1	666 4 193
 c /dev/ptyp2	666 4 194
 c /dev/ptyp3	666 4 195
+# rsh, rcp, rlogin and their servers (access by /etc/hosts.equiv and
+# ~/.rhosts, not passwords; root only by /.rhosts), nc (netcat)
+f /usr/bin/rsh	755 ../cmds/bin/rsh
+f /usr/bin/rcp	755 ../cmds/bin/rcp
+f /usr/bin/rlogin	755 ../cmds/bin/rlogin
+f /usr/bin/in.rshd	755 ../cmds/bin/in.rshd
+f /usr/bin/in.rlogind	755 ../cmds/bin/in.rlogind
+f /usr/bin/nc	755 ../cmds/bin/nc
 f /etc/inet.conf	644 ../../etc/inet.conf
 f /etc/services	644 ../../etc/services
 f /etc/protocols	644 ../../etc/protocols
@@ -352,3 +360,7 @@ d /usr/ftp/dev 751
 c /usr/ftp/dev/tcp	666 7 2
 d /usr/ftp/pub 755
 f /usr/ftp/pub/README	644 ../rootfs/ftp/README
+
+# The user guide (ROSCO_M68K_USAGE.md at the top of the tree)
+d /usr/doc 755
+f /usr/doc/README.rosco	644 ../../../ROSCO_M68K_USAGE.md
