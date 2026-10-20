@@ -1,0 +1,21 @@
+--- kermit/ckudia.c
++++ kermit/ckudia.c
+@@ -127,7 +127,8 @@
+ #include <setret.h>
+ #endif
+ 
+-extern int flow, local, mdmtyp, quiet, speed, parity, seslog;
++extern int flow, local, mdmtyp, quiet, parity, seslog;
++extern long speed;			/* rosco: long, see ckcmai.c */
+ extern char ttname[], sesfil[];
+ 
+ #ifndef MINIX
+@@ -613,7 +614,7 @@
+ 		    break;
+ 		    }
+ 
+-       printf("Dialing thru %s, speed %d, number %s.\r\n",ttname,speed,telnbr);
++       printf("Dialing thru %s, speed %ld, number %s.\r\n",ttname,speed,telnbr);
+        printf("The timeout for completing the call is %d seconds.\r\n",waitct);
+        printf("Type the interrupt character to cancel the dialing.\r\n");
+ 

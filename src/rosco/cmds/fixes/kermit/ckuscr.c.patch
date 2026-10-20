@@ -1,0 +1,21 @@
+--- kermit/ckuscr.c
++++ kermit/ckuscr.c
+@@ -35,7 +35,8 @@
+ #include "ckcker.h"
+ 
+ #ifndef MINIX
+-extern int local, speed, flow, seslog, mdmtyp, quiet, duplex;
++extern int local, flow, seslog, mdmtyp, quiet, duplex;
++extern long speed;			/* rosco: long, see ckcmai.c */
+ extern char ttname[];
+ extern CHAR dopar();
+ static char * chstr();
+@@ -251,7 +252,7 @@
+ 	    return(-2);
+     	}
+     	if (!quiet)
+-	  printf("Executing script thru %s, speed %d.\r\n",ttname,speed);
++	  printf("Executing script thru %s, speed %ld.\r\n",ttname,speed);
+ 	*seq_buf=0;
+ 	for (e=s; *e; e++) strcat(seq_buf, chstr(*e) );
+ 	if (!quiet) printf("Script string: %s\r\n",seq_buf);

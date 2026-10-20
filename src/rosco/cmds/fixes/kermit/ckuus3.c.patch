@@ -1,0 +1,70 @@
+--- kermit/ckuus3.c
++++ kermit/ckuus3.c
+@@ -31,7 +31,7 @@
+  
+ /* Variables */
+ 
+-extern int size, spsiz, rpsiz, urpsiz, npad, timint, rtimo, speed,
++extern int size, spsiz, rpsiz, urpsiz, npad, timint, rtimo,
+   local, server, lpcapr, fmask, cmask, backgrd,
+   flow, displa, binary, fncnv, delay, parity, deblog, escape, xargc,
+   turn, duplex, cxseen, czseen, nfils, ckxech, pktlog, seslog, tralog, stdouf,
+@@ -39,6 +39,8 @@
+   rptflg, ebqflg, warn, quiet, cnflg, timef, spsizf, mypadn;
+  
+ extern long filcnt, tlci, tlco, ffc, tfc, fsize;
++extern long speed;			/* rosco: long, see ckcmai.c */
++long chkspd(), atol();
+ 
+ extern char *versio, *protv, *ckxv, *ckzv, *fnsv, *connv, *dftty, *cmdv;
+ extern char *cmarg, *cmarg2, **xargv, **cmlist;
+@@ -410,14 +412,22 @@
+     }	
+     lp = line;
+     sprintf(lp,"Baud rate for %s",ttname);
+-    if ((y = cmnum(line,"",10,&x)) < 0) return(y);
+-    if (y = (cmcfm()) < 0) return(y);
+-    y = chkspd(x);
+-    if (y < 0) 
+-    	printf("?Unsupported line speed - %d\n",x);
+-    else {
+-    	speed = y;
+-	if (!backgrd) printf("%s: %d baud\n",ttname,speed);
++    /* rosco: cmnum() gives an int, too small for 38400 and up (-mshort): */
++    /* parse the field and convert it to a long; was also y = (cmcfm() < 0) */
++    {	long lx; char *s;
++	if ((y = cmfld(line,"",&s)) < 0) return(y);
++	if (!digits(s)) {
++	    printf("\n?not a number - %s\n",s);
++	    return(-2);
++	}
++	lx = atol(s);
++	if ((y = cmcfm()) < 0) return(y);
++	if (chkspd(lx) < 0)
++	    printf("?Unsupported line speed - %ld\n",lx);
++	else {
++	    speed = lx;
++	    if (!backgrd) printf("%s: %ld baud\n",ttname,speed);
++	}
+     }
+     return(0);
+  
+@@ -430,7 +440,8 @@
+ 
+ /*  C H K S P D  --  Check if argument is a valid baud rate  */
+  
+-chkspd(x) int x; {
++long
++chkspd(x) long x; {			/* rosco: long, see ckcmai.c */
+     switch (x) {
+ #ifndef AMIGA
+ 	case 0:
+@@ -486,7 +497,7 @@
+ #ifdef AMIGA
+ 	    if (ttsspd(x) > 0)
+ 	    {
+-	    	printf("Warning: non-standard baud rate - %d\n", x);
++	    	printf("Warning: non-standard baud rate - %ld\n", x);
+ 		return(x);
+ 	    }
+ #endif

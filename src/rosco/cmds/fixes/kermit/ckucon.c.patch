@@ -1,0 +1,30 @@
+--- kermit/ckucon.c
++++ kermit/ckucon.c
+@@ -36,7 +36,8 @@
+ #define SIGUSR1 16
+ #endif
+ 
+-extern int local, speed, escape, duplex, parity, flow, seslog, mdmtyp;
++extern int local, escape, duplex, parity, flow, seslog, mdmtyp;
++extern long speed;			/* rosco: long, see ckcmai.c */
+ extern int errno, cmask, fmask;
+ extern char ttname[], sesfil[];
+ extern CHAR dopar();
+@@ -87,7 +88,7 @@
+ 	    perror(errmsg);
+ 	    return(-2);
+     	}
+-    	printf("Connecting thru %s, speed %d.\r\n",ttname,speed);
++    	printf("Connecting thru %s, speed %ld.\r\n",ttname,speed);
+ 	printf("The escape character is %s (%d).\r\n",chstr(escape),escape);
+ 	printf("Type the escape character followed by C to get back,\r\n");
+ 	printf("or followed by ? to see other options.\r\n");
+@@ -240,7 +241,7 @@
+ 	    conol("\r\nConnected thru ");
+ 	    conol(ttname);
+ 	    if (speed >= 0) {
+-		sprintf(temp,", speed %d",speed); conol(temp);
++		sprintf(temp,", speed %ld",speed); conol(temp);
+ 	    }
+ 	    sprintf(temp,", %d bits",(cmask == 0177) ? 7 : 8);
+ 	    if (parity) {

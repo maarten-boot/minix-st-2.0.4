@@ -1,0 +1,23 @@
+--- kermit/ckcpro.c
++++ kermit/ckcpro.c
+@@ -45,7 +45,8 @@
+ /* External C-Kermit variable declarations */
+   extern char sstate, *versio, *srvtxt, *cmarg, *cmarg2, *rpar();
+   extern char data[], filnam[], srvcmd[], ttname[], *srvptr;
+-  extern int pktnum, timint, nfils, hcflg, xflg, speed, flow, mdmtyp;
++  extern int pktnum, timint, nfils, hcflg, xflg, flow, mdmtyp;
++  extern long speed;			/* rosco: long, see ckcmai.c */
+   extern int prvpkt, cxseen, czseen, server, local, displa, bctu, bctr, quiet;
+   extern int tsecs, parity, backgrd;
+   extern int putsrv(), puttrm(), putfil(), errpkt();
+@@ -386,8 +387,8 @@
+     if (x > -1) local = x;
+     debug(F111,"proto ttopen local",ttname,local);
+ 
+-    x = (local) ? speed : -1;
+-    if (ttpkt(x,flow,parity) < 0) {	/* Put line in packet mode, */
++    /* rosco: ttpkt() takes the speed as a long */
++    if (ttpkt(local ? speed : -1L,flow,parity) < 0) { /* Packet mode, */
+ 	screen(SCR_EM,0,0l,"Can't condition line");
+ 	return;
+     }

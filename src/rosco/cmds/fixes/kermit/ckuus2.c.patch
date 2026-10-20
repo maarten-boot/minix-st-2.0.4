@@ -1,0 +1,29 @@
+--- kermit/ckuus2.c
++++ kermit/ckuus2.c
+@@ -14,6 +14,7 @@
+ #include "ckcdeb.h"
+ #include <stdio.h>
+ #include <ctype.h>
++#include <string.h>			/* rosco: strcpy() returns a pointer */
+ #include "ckcker.h"
+ #include "ckucmd.h"
+ #include "ckuusr.h"
+@@ -21,7 +22,8 @@
+ extern CHAR mystch, stchr, eol, seol, padch, mypadc, ctlq;
+ extern CHAR data[], *rdatap, ttname[];
+ extern char cmdbuf[], line[], debfil[], pktfil[], sesfil[], trafil[];
+-extern int nrmt, nprm, dfloc, deblog, seslog, speed, local, parity, duplex;
++extern int nrmt, nprm, dfloc, deblog, seslog, local, parity, duplex;
++extern long speed;			/* rosco: long, see ckcmai.c */
+ extern int turn, turnch, pktlog, tralog, mdmtyp, flow, cmask, timef, spsizf;
+ extern int rtimo, timint, npad, mypadn, bctr, delay;
+ extern int maxtry, spsiz, urpsiz, maxsps, maxrps, ebqflg, ebq;
+@@ -692,7 +694,7 @@
+ 
+     printf("\n%s,%s, ",versio,ckxsys); 
+     puts("Communications Parameters:");
+-    printf(" Line: %s, speed: %d, mode: ",ttname,speed);
++    printf(" Line: %s, speed: %ld, mode: ",ttname,speed);
+     if (local) printf("local"); else printf("remote");
+  
+ #ifndef MINIX

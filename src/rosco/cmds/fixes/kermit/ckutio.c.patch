@@ -1,0 +1,71 @@
+--- kermit/ckutio.c
++++ kermit/ckutio.c
+@@ -24,6 +24,7 @@
+ #undef NULL
+ #endif /* NULL */
+ #include <stdio.h>			/* Unix Standard i/o */
++#include <string.h>			/* rosco: strcpy() returns a pointer */
+ #include <signal.h>			/* Interrupts */
+ 
+ #ifndef ZILOG
+@@ -948,7 +949,8 @@
+ 
+ /*  Returns 0 on success, -1 on failure.  */
+ 
+-ttpkt(speed,flow,parity) int speed, flow, parity; {
++/* rosco: speed is a long (ckcmai.c), 38400 and up do not fit in an int */
++ttpkt(speed,flow,parity) long speed; int flow, parity; {
+     int s, x;
+ 
+     if (ttyfd < 0) return(-1);		/* Not open. */
+@@ -1062,7 +1064,7 @@
+ 
+ /*  T T V T -- Condition communication line for use as virtual terminal  */
+ 
+-ttvt(speed,flow) int speed, flow; {
++ttvt(speed,flow) long speed; int flow; {	/* rosco: long speed */
+     int s;
+     if (ttyfd < 0) return(-1);		/* Not open. */
+ 
+@@ -1137,7 +1139,7 @@
+ 
+ /*  T T S S P D  --  Return the internal baud rate code for 'speed'.  */
+ 
+-ttsspd(speed) {
++ttsspd(speed) long speed; {		/* rosco: long, see ttpkt() */
+     int s, spdok;
+ 
+     if (speed < 0) return(-1);
+@@ -1175,7 +1177,7 @@
+ #endif
+ 	    default:
+ 	    	spdok = 0;
+-		fprintf(stderr,"Unsupported line speed - %d\n",speed);
++		fprintf(stderr,"Unsupported line speed - %ld\n",speed);
+ 		fprintf(stderr,"Current speed not changed\n");
+ 		break;
+ 	}    
+@@ -1798,6 +1800,7 @@
+ #else
+ #ifdef MINIX
+     tcsendbreak(ttyfd, 0);
++    return(0);				/* rosco: returned garbage */
+ #else
+ #ifdef	V7
+     genbrk(ttyfd);			/* Simulate a BREAK */
+@@ -1963,9 +1966,12 @@
+ 
+ #ifdef V7
+ #ifdef MINIX
+-    int utime[2];			/* Venix way */
+-    time(utime);
+-    *s = ctime(utime);
++    /* rosco: ctime() returns a pointer (was undeclared: an int, 16 bits */
++    /* with -mshort), and the time is a long, not int[2] */
++    char *ctime();
++    long utime;
++    time(&utime);
++    *s = ctime(&utime);
+ #else
+     char *asctime();			/* V7 way */
+     struct tm *localtime();

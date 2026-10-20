@@ -1,0 +1,20 @@
+--- kermit/ckcmai.c
++++ kermit/ckcmai.c
+@@ -214,7 +214,6 @@
+ 
+ int parity,                             /* Parity specified, 0,'e','o',etc */
+     flow,                               /* Flow control, 1 = xon/xoff */
+-    speed = -1,                         /* Line speed */
+     turn = 0,                           /* Line turnaround handshake flag */
+     turnch = XON,                       /* Line turnaround character */
+     duplex = 0,                         /* Duplex, full by default */
+@@ -222,6 +221,9 @@
+     delay = DDELAY,                     /* Initial delay before sending */
+     mdmtyp = 0;                         /* Modem type (initially none)  */
+ 
++/* rosco: a long, 38400 and up do not fit in a 16-bit int (-mshort) */
++long speed = -1;                        /* Line speed */
++
+     int tlevel = -1;			/* Take-file command level */
+ 
+ /* Statistics variables */

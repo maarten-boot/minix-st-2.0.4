@@ -206,6 +206,8 @@ d /usr/spool/at 755
 d /usr/spool/at/past 755
 d /usr/spool/crontabs 700
 d /usr/spool/mail 755
+# kermit locks the line with a file here (set line, -l)
+d /usr/spool/locks 755
 # man with cawf as nroff and its macros; whatis, apropos and makewhatis.
 # The pages, /usr/man, come from ../man (Makefile: boot/manproto).
 f /usr/bin/man	755 ../cmds/bin/man

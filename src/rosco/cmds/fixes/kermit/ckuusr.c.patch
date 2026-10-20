@@ -1,0 +1,50 @@
+--- kermit/ckuusr.c
++++ kermit/ckuusr.c
+@@ -75,6 +75,7 @@
+ #include "ckcdeb.h"
+ #include <stdio.h>
+ #include <ctype.h>
++#include <string.h>			/* rosco: strcpy() returns a pointer */
+ #ifndef AMIGA
+ #include <signal.h>
+ #endif
+@@ -96,7 +97,9 @@
+ 
+ /* External Kermit Variables, see ckmain.c for description. */
+  
+-extern int size, rpsiz, urpsiz, speed, local, 
++extern long speed;			/* rosco: long, see ckcmai.c */
++long chkspd(), atol();
++extern int size, rpsiz, urpsiz, local, 
+   server, displa, binary, parity, deblog, escape, xargc, flow,
+   turn, duplex, nfils, ckxech, pktlog, seslog, tralog, stdouf,
+   turnch, dfloc, keep, maxrps, warn, quiet, cnflg, tlevel;
+@@ -310,8 +313,8 @@
+     *xargv++, xargc--;
+     if ((xargc < 1) || (**xargv == '-'))
+     	fatal("missing baud");
+-    z = atoi(*xargv);			/* Convert to number */
+-    if (chkspd(z) > -1) speed = z;	/* Check it */
++    /* rosco: atol(), 38400 and up do not fit in an int (-mshort) */
++    if (chkspd(atol(*xargv)) > -1) speed = atol(*xargv); /* Check it */
+     	else fatal("unsupported baud rate");
+     break;
+  
+@@ -827,7 +830,8 @@
+ 	    return(zclose(ZTFILE));
+  
+ 	default:
+-	    printf("\n?Unexpected log designator - %ld\n", x);
++	    /* rosco: x is an int, was %ld */
++	    printf("\n?Unexpected log designator - %d\n", x);
+ 	    return(0);
+     }
+ 
+@@ -1125,6 +1129,7 @@
+  
+     	while (((wstat = wait((int *)0)) != pid) && (wstat != -1))
+ 	                                /* Wait for fork */
++	    ;	/* rosco: the ; was missing, SIGINT stayed ignored */
+ 	signal(SIGINT,istat);		/* Restore interrupts */
+ 	signal(SIGQUIT,qstat);
+     }

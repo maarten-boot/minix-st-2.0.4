@@ -1,0 +1,10 @@
+--- kermit/ckufio.c
++++ kermit/ckufio.c
+@@ -19,6 +19,7 @@
+ #include "ckcdeb.h"			/* Typedefs, debug formats, etc */
+ #include <ctype.h>			/* Character types */
+ #include <stdio.h>			/* Standard i/o */
++#include <string.h>			/* rosco: strcpy() returns a pointer */
+ #ifdef MINIX
+ #include <limits.h>
+ #endif

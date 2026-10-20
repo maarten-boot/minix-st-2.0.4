@@ -560,7 +560,10 @@ obj/nc.o:	nc.c
 # a rule that compiles its object from obj/fix/<path>.
 FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  reboot/halt.c reboot/shutdown.c reboot/log.c reboot/sh_wall.c \
-	  simple/grep.c simple/readfs.c flex-2.3.7/misc.c flex-2.3.7/dfa.c
+	  simple/grep.c simple/readfs.c flex-2.3.7/misc.c flex-2.3.7/dfa.c \
+	  kermit/ckcmai.c kermit/ckcpro.c kermit/ckucon.c kermit/ckudia.c \
+	  kermit/ckufio.c kermit/ckuscr.c kermit/ckutio.c kermit/ckuus2.c \
+	  kermit/ckuus3.c kermit/ckuusr.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -589,6 +592,12 @@ obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h
 	$(CC) $(CFLAGS) -DUSG -DDEFAULT_SKELETON_FILE='"/usr/lib/flex/flex.skel"' \
 		-Iobj/flex -I$c/flex-2.3.7 -c -o $@ $<
+obj/kermit/ckcmai.o obj/kermit/ckcpro.o obj/kermit/ckucon.o \
+obj/kermit/ckudia.o obj/kermit/ckufio.o obj/kermit/ckuscr.o \
+obj/kermit/ckutio.o obj/kermit/ckuus2.o obj/kermit/ckuus3.o \
+obj/kermit/ckuusr.o:	obj/kermit/%.o:	obj/fix/kermit/%.c
+	@mkdir -p obj/kermit
+	$(CC) $(CFLAGS) -I$c/kermit -DV7 -DMINIX -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
