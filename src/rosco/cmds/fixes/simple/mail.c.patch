@@ -1,0 +1,205 @@
+--- orig/simple/mail.c	2026-10-20 22:15:56.243431739 +0200
++++ new/simple/mail.c	2026-10-20 22:33:51.948967330 +0200
+@@ -67,6 +67,7 @@
+ char tempname[PATHLEN] = "/tmp/mailXXXXXX";	/* temporary file */
+ char *subject = NULL;
+ FILE *boxfp = NULL;		/* mailbox file */
++off_t boxend;			/* rosco: end of the letters readbox() saw */
+ jmp_buf printjump;		/* for quitting out of letters */
+ unsigned oldmask;		/* saved umask() */
+ 
+@@ -76,6 +77,7 @@
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(int deliver, (int count, char *vec []));
+ _PROTOTYPE(FILE *makerewindable, (void));
++_PROTOTYPE(FILE *opentemp, (void));
+ _PROTOTYPE(int copy, (FILE *fromfp, FILE *tofp));
+ _PROTOTYPE(void readbox, (void));
+ _PROTOTYPE(void printall, (void));
+@@ -216,9 +218,20 @@
+   /* If we need to rewind stdin and it isn't rewindable, make a copy */
+   if (isatty(0) || (count > 1 && lseek(0, 0L, 0) == (off_t) -1)) {
+ 	mailfp = makerewindable();
++	if (mailfp == NULL) return -1;	/* rosco: was used as NULL */
+   } else
+ 	mailfp = stdin;
+ 
++  /* rosco: cron and at mail the output of every job, with -s, also when
++   * there is none; a letter with -s and an empty body is not delivered.
++   */
++  if (subject != NULL) {
++	int c1;
++
++	if ((c1 = getc(mailfp)) == EOF) return 0;
++	ungetc(c1, mailfp);
++  }
++
+   /* Shut off signals during the delivery */
+   sigint = signal(SIGINT, SIG_IGN);
+   sighup = signal(SIGHUP, SIG_IGN);
+@@ -349,10 +362,11 @@
+   int c;			/* character being copied */
+   int state;			/* ".\n" detection state */
+ 
+-  if (NULL == (tempfp = fopen(tempname, "w"))) {
++  if (NULL == (tempfp = opentemp())) {
+ 	fprintf(stderr, "mail: can't create temporary file\n");
+ 	return NULL;
+   }
++  unlink(tempname);		/* rosco: the open file is all we need */
+ 
+   /* Here we copy until we reach the end of the letter (end of file or
+    * a line containing only a '.'), painstakingly avoiding setting a
+@@ -378,15 +392,38 @@
+ 		putc(c, tempfp);
+ 	}
+ done:
+-  if (ferror(tempfp) || fclose(tempfp)) {
++  /* rosco: read it back through the same descriptor; reopening it by
++   * name (as root) read whatever file had been linked there meanwhile.
++   */
++  if (fflush(tempfp) || ferror(tempfp)) {
+ 	fprintf(stderr, "mail: couldn't copy letter to temporary file\n");
++	fclose(tempfp);
+ 	return NULL;
+   }
+-  tempfp = freopen(tempname, "r", stdin);
+-  unlink(tempname);		/* unlink name; file lingers on in limbo */
++  rewind(tempfp);
+   return tempfp;
+ }
+ 
++/* rosco: mail is setuid root, and the temporary file was opened with
++ * fopen(tempname, "w"), a name made from the pid when mail started.  Any
++ * user could create it first, or link it to a system file, and have root
++ * write the letter or the whole maildrop into it (and the file was mode
++ * 644).  Make a fresh name and create the file exclusively, mode 600.
++ */
++FILE *opentemp()
++{
++  int fd, tries;
++
++  for (tries = 0; tries < 26; tries++) {
++	strcpy(tempname, "/tmp/mailXXXXXX");
++	if (strcmp(mktemp(tempname), "/") == 0) break;
++	fd = open(tempname, O_RDWR | O_CREAT | O_EXCL, 0600);
++	if (fd >= 0) return fdopen(fd, "w+");
++	if (errno != EEXIST) break;
++  }
++  return NULL;
++}
++
+ int copy(fromfp, tofp)
+ FILE *fromfp, *tofp;
+ {
+@@ -448,6 +485,8 @@
+ 		putc(c, tofp);
+ 	}
+   }
++  /* rosco: a last line that was the start of "From " was lost */
++  if ('P' == state) for (q = postmark; q < p; ++q) putc(*q, tofp);
+   if ('\n' != state) putc('\n', tofp);
+ done:
+   if (!blankline) putc('\n', tofp);
+@@ -460,6 +499,7 @@
+   char linebuf[512];
+   struct letter *let;
+   off_t current;
++  int bol = 1;			/* rosco: linebuf starts a line */
+ 
+   firstlet = lastlet = NULL;
+ 
+@@ -473,7 +513,10 @@
+   while (1) {
+ 	if (NULL == fgets(linebuf, sizeof linebuf, boxfp)) break;
+ 
+-	if (!strncmp(linebuf, "From ", (size_t)5)) {
++	/* rosco: a line longer than linebuf is read in pieces; a piece
++	 * that started with "From " was taken for a new letter.
++	 */
++	if (bol && !strncmp(linebuf, "From ", (size_t)5)) {
+ 		if (NULL == (let = (struct letter *) malloc(sizeof(struct letter)))) {
+ 			fprintf(stderr, "Out of memory.\n");
+ 			exit(1);
+@@ -493,7 +536,9 @@
+ 		D(printf("letter at %ld\n", current));
+ 	}
+ 	current += strlen(linebuf);
++	bol = (strchr(linebuf, '\n') != NULL);
+   }
++  boxend = current;
+ }
+ 
+ void printall()
+@@ -638,8 +683,25 @@
+ 
+   sprintf(lockname, LOCKNAME, whoami());
+ 
+-  if (NULL == (tempfp = fopen(tempname, "w"))) {
++  /* Shut off signals during the update */
++  signal(SIGINT, SIG_IGN);
++  signal(SIGHUP, SIG_IGN);
++  signal(SIGQUIT, SIG_IGN);
++
++  /* rosco: lock before the letters are copied, not after: a letter
++   * delivered in between was lost when the maildrop was rewritten.
++   */
++  if (usedrop) while (link(mailbox, lockname) != 0) {
++		if (++locktries >= LOCKTRIES) {
++			fprintf(stderr, "mail: couldn't lock maildrop for update\n");
++			return;
++		}
++		sleep(LOCKWAIT);
++	}
++
++  if (NULL == (tempfp = opentemp())) {
+ 	perror("mail: can't create temporary file");
++	if (usedrop) unlink(lockname);
+ 	return;
+   }
+   for (let = firstlet; let != NULL; let = let->next) {
+@@ -649,24 +711,18 @@
+ 	}
+   }
+ 
+-  if (ferror(tempfp) || NULL == (tempfp = freopen(tempname, "r", tempfp))) {
++  /* rosco: keep the letters delivered since readbox() */
++  fseek(boxfp, boxend, 0);
++  while ((c = getc(boxfp)) != EOF) putc(c, tempfp);
++
++  /* rosco: read it back through the same descriptor, not by name */
++  if (fflush(tempfp) || ferror(tempfp)) {
+ 	perror("mail: temporary file write error");
+ 	unlink(tempname);
++	if (usedrop) unlink(lockname);
+ 	return;
+   }
+-
+-  /* Shut off signals during the update */
+-  signal(SIGINT, SIG_IGN);
+-  signal(SIGHUP, SIG_IGN);
+-  signal(SIGQUIT, SIG_IGN);
+-
+-  if (usedrop) while (link(mailbox, lockname) != 0) {
+-		if (++locktries >= LOCKTRIES) {
+-			fprintf(stderr, "mail: couldn't lock maildrop for update\n");
+-			return;
+-		}
+-		sleep(LOCKWAIT);
+-	}
++  rewind(tempfp);
+ 
+   if (NULL == (boxfp = freopen(mailbox, "w", boxfp))) {
+ 	perror("mail: couldn't reopen maildrop");
+@@ -691,7 +747,10 @@
+   int c;
+ 
+   fseek(boxfp, (current = let->location), 0);
+-  limit = (NULL != let->next) ? let->next->location : -1;
++  /* rosco: the last letter ends where readbox() stopped, not at the end
++   * of the file: letters delivered since are not part of it.
++   */
++  limit = (NULL != let->next) ? let->next->location : boxend;
+ 
+   while (current != limit && (c = getc(boxfp)) != EOF) {
+ 	putc(c, tofp);

@@ -70,6 +70,10 @@ STACK_in.rshd = 16kw
 STACK_passwd = 8kw
 # who: "Memory fault" on every run with the ACK build's 4kw
 STACK_who = 8kw
+# mail: malloc() takes the heap in 4k steps (stdout, stdin and mailbox
+# buffers); "Memory fault" with the ACK build's 4kw when _doprnt's 1k
+# buffer met it (the * command as a user, on the console)
+STACK_mail = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -581,6 +585,7 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  kermit/ckuus3.c kermit/ckuusr.c simple/diff.c simple/cdiff.c \
 	  simple/login.c simple/getty.c simple/su.c sh/sh3.c sh/sh4.c sh/sh5.c \
 	  simple/passwd.c \
+	  simple/mail.c \
 	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
@@ -617,6 +622,8 @@ obj/getty.o:	obj/fix/simple/getty.c
 obj/su.o:	obj/fix/simple/su.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/passwd.o:	obj/fix/simple/passwd.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/mail.o:	obj/fix/simple/mail.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/cron/cron.o obj/cron/tab.o obj/cron/crontab.o: \
 		obj/cron/%.o:	obj/fix/cron/%.c $c/cron/misc.h $c/cron/tab.h

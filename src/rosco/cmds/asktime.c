@@ -38,11 +38,19 @@ char **argv;
   char buf[40];
   char *p;
   int n, secs = 30;
+  char c;
+  long l;
   time_t now;
 
   if (argc == 3 && strcmp(argv[1], "-t") == 0) {
-	secs = atoi(argv[2]);
-  } else if (argc != 1) {
+	/* alarm(0) would wait forever, and an int is 16 bits: take 1 to
+	 * 32767 seconds only.
+	 */
+	l = strtol(argv[2], &p, 10);
+	if (*p != 0 || p == argv[2] || l < 1 || l > 32767) argc = 0;
+	secs = l;
+  }
+  if (argc != 1 && argc != 3) {
 	tell("Usage: asktime [-t seconds]\n");
 	return 1;
   }
@@ -67,6 +75,12 @@ char **argv;
 	tcflush(0, TCIFLUSH);
 	tell("\nno answer, clock kept\n");
 	return 0;
+  }
+  if (n > 0 && buf[n-1] != '\n') {
+	/* More than fits in buf: read the rest of the line, so getty does
+	 * not get it (but keep what is typed after it).
+	 */
+	while (read(0, &c, 1) == 1 && c != '\n') {}
   }
   while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r' || buf[n-1] == ' '))
 	n--;
