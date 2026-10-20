@@ -563,7 +563,7 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/grep.c simple/readfs.c flex-2.3.7/misc.c flex-2.3.7/dfa.c \
 	  kermit/ckcmai.c kermit/ckcpro.c kermit/ckucon.c kermit/ckudia.c \
 	  kermit/ckufio.c kermit/ckuscr.c kermit/ckutio.c kermit/ckuus2.c \
-	  kermit/ckuus3.c kermit/ckuusr.c
+	  kermit/ckuus3.c kermit/ckuusr.c simple/diff.c simple/cdiff.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -587,6 +587,10 @@ obj/reboot/halt.o obj/reboot/shutdown.o obj/reboot/log.o obj/reboot/sh_wall.o: \
 	@mkdir -p obj/reboot
 	$(CC) $(CFLAGS) -I$c/reboot -c -o $@ $<
 obj/grep.o:	obj/fix/simple/grep.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/diff.o:	obj/fix/simple/diff.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/cdiff.o:	obj/fix/simple/cdiff.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h

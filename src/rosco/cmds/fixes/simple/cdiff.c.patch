@@ -1,0 +1,225 @@
+--- orig/simple/cdiff.c	2026-10-20 20:13:48.399768782 +0200
++++ new/simple/cdiff.c	2026-10-20 20:14:53.989312108 +0200
+@@ -23,10 +23,13 @@
+ 
+ FILE *inputfp, *oldfp, *newfp;
+ 
+-int oldmin, oldmax, newmin, newmax;
+-int oldbeg, oldend, newbeg, newend;
+-int preoldmax, prenewmax;
+-int preoldbeg, preoldend, prenewbeg, prenewend;
++/* rosco: line numbers in long: with 16-bit ints they went negative after
++ * line 32767 (diff prints them in long now).
++ */
++long oldmin, oldmax, newmin, newmax;
++long oldbeg, oldend, newbeg, newend;
++long preoldmax, prenewmax;
++long preoldbeg, preoldend, prenewbeg, prenewend;
+ int oldwanted, newwanted;
+ 
+ char *oldhunk, *newhunk;
+@@ -35,8 +38,10 @@
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void dumphunk, (void));
+-_PROTOTYPE(char *getold, (int targ));
+-_PROTOTYPE(char *getnew, (int targ));
++_PROTOTYPE(char *getold, (long targ));
++_PROTOTYPE(char *getnew, (long targ));
++_PROTOTYPE(char *getlin, (FILE *fp));
++_PROTOTYPE(char *roomfor, (char *hunk, size_t *allocp, long need));
+ _PROTOTYPE(void *xmalloc, (size_t size));
+ _PROTOTYPE(void *xrealloc, (void *ptr, size_t size));
+ 
+@@ -59,7 +64,7 @@
+   char sysbuf1[ENOUGH], sysbuf2[ENOUGH];
+   int len;
+   char *line;
+-  int i;
++  long i;
+   int status;
+ 
+   progname = argv[0];
+@@ -142,11 +147,11 @@
+ 
+   while (fgets(buff, sizeof buff, inputfp) != Nullch) {
+ 	if (isdigit(*buff)) {
+-		oldmin = atoi(buff);
++		oldmin = atol(buff);
+ 		for (s = buff; isdigit(*s); s++);
+ 		if (*s == ',') {
+ 			s++;
+-			oldmax = atoi(s);
++			oldmax = atol(s);
+ 			for (; isdigit(*s); s++);
+ 		} else {
+ 			oldmax = oldmin;
+@@ -157,11 +162,11 @@
+ 		}
+ 		op = *s;
+ 		s++;
+-		newmin = atoi(s);
++		newmin = atol(s);
+ 		for (; isdigit(*s); s++);
+ 		if (*s == ',') {
+ 			s++;
+-			newmax = atoi(s);
++			newmax = atol(s);
+ 			for (; isdigit(*s); s++);
+ 		} else {
+ 			newmax = newmin;
+@@ -206,10 +211,7 @@
+ 				break;
+ 			}
+ 			len = strlen(line) + 2;
+-			if (oldsize + len + 1 >= oldalloc) {
+-				oldalloc *= 2;
+-				oldhunk = (char *) xrealloc(oldhunk, oldalloc);
+-			}
++			oldhunk = roomfor(oldhunk, &oldalloc, (long) oldsize + len + 1);
+ 			if (i >= oldmin) {
+ 				strcpy(oldhunk + oldsize, oldmark);
+ 				oldwanted++;
+@@ -229,10 +231,7 @@
+ 				break;
+ 			}
+ 			len = strlen(line) + 2;
+-			if (newsize + len + 1 >= newalloc) {
+-				newalloc *= 2;
+-				newhunk = (char *) xrealloc(newhunk, newalloc);
+-			}
++			newhunk = roomfor(newhunk, &newalloc, (long) newsize + len + 1);
+ 			if (i >= newmin) {
+ 				strcpy(newhunk + newsize, newmark);
+ 				newwanted++;
+@@ -258,7 +257,7 @@
+ 
+ void dumphunk()
+ {
+-  int i;
++  long i;
+   char *line;
+   int len;
+ 
+@@ -269,10 +268,7 @@
+ 		break;
+ 	}
+ 	len = strlen(line) + 2;
+-	if (oldsize + len + 1 >= oldalloc) {
+-		oldalloc *= 2;
+-		oldhunk = (char *) xrealloc(oldhunk, oldalloc);
+-	}
++	oldhunk = roomfor(oldhunk, &oldalloc, (long) oldsize + len + 1);
+ 	strcpy(oldhunk + oldsize, "  ");
+ 	strcpy(oldhunk + oldsize + 2, line);
+ 	oldsize += len;
+@@ -284,19 +280,16 @@
+ 		break;
+ 	}
+ 	len = strlen(line) + 2;
+-	if (newsize + len + 1 >= newalloc) {
+-		newalloc *= 2;
+-		newhunk = (char *) xrealloc(newhunk, newalloc);
+-	}
++	newhunk = roomfor(newhunk, &newalloc, (long) newsize + len + 1);
+ 	strcpy(newhunk + newsize, "  ");
+ 	strcpy(newhunk + newsize + 2, line);
+ 	newsize += len;
+   }
+   printf("***************\n");
+   if (preoldbeg >= preoldend) {
+-	printf("*** %d ****\n", preoldend);
++	printf("*** %ld ****\n", preoldend);
+   } else {
+-	printf("*** %d,%d ****\n", preoldbeg, preoldend);
++	printf("*** %ld,%ld ****\n", preoldbeg, preoldend);
+   }
+   if (oldwanted) {
+ 	printf("%s", oldhunk);
+@@ -304,9 +297,9 @@
+   oldsize = 0;
+   *oldhunk = '\0';
+   if (prenewbeg >= prenewend) {
+-	printf("--- %d ----\n", prenewend);
++	printf("--- %ld ----\n", prenewend);
+   } else {
+-	printf("--- %d,%d ----\n", prenewbeg, prenewend);
++	printf("--- %ld,%ld ----\n", prenewbeg, prenewend);
+   }
+   if (newwanted) {
+ 	printf("%s", newhunk);
+@@ -316,11 +309,11 @@
+ }
+ 
+ char *getold(targ)
+-int targ;
++long targ;
+ {
+-  static int oldline = 0;
++  static long oldline = 0;
+ 
+-  while (fgets(buff, sizeof buff, oldfp) != Nullch) {
++  while (getlin(oldfp) != Nullch) {
+ 	oldline++;
+ 	if (oldline == targ) return buff;
+   }
+@@ -328,17 +321,56 @@
+ }
+ 
+ char *getnew(targ)
+-int targ;
++long targ;
+ {
+-  static int newline = 0;
++  static long newline = 0;
+ 
+-  while (fgets(buff, sizeof buff, newfp) != Nullch) {
++  while (getlin(newfp) != Nullch) {
+ 	newline++;
+ 	if (newline == targ) return buff;
+   }
+   return Nullch;
+ }
+ 
++/* rosco: read one line into buff.  A line longer than buff came back in
++ * pieces that getold() and getnew() counted as lines, which put the
++ * context out of step with the line numbers of diff; truncate it instead.
++ */
++char *getlin(fp)
++FILE *fp;
++{
++  size_t n;
++  int c;
++
++  if (fgets(buff, sizeof buff, fp) == Nullch) return Nullch;
++  n = strlen(buff);
++  if (n == sizeof buff - 1 && buff[n - 1] != '\n'
++      && (c = getc(fp)) != EOF) {
++	while (c != '\n' && c != EOF) c = getc(fp);
++	buff[n - 1] = '\n';
++  }
++  return buff;
++}
++
++/* rosco: make room for need bytes in a hunk.  Doubling the 16-bit size_t
++ * wrapped to 0 after 32K (realloc to 0 bytes, then strcpy past the end).
++ */
++char *roomfor(hunk, allocp, need)
++char *hunk;
++size_t *allocp;
++long need;
++{
++  if (need < *allocp) return hunk;
++  while (need >= *allocp) {
++	if (*allocp == (size_t) -1) {
++		fprintf(stderr, "%s: hunk too large\n", progname);
++		exit(2);
++	}
++	*allocp = *allocp > (size_t) -1 / 2 ? (size_t) -1 : *allocp * 2;
++  }
++  return (char *) xrealloc(hunk, *allocp);
++}
++
+ void *xmalloc(size)
+ size_t size;
+ {

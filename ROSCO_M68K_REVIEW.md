@@ -372,3 +372,4 @@ and sdproto edits are merged one at a time.
 | 1 | de, readfs | de: zone numbers and 'G' on V2/big endian, unsigned address test, inode overflow; readfs: V2 file systems read as V1, /bin/Mkdir, partial last block | 50 |
 | 2 | flex | realloc without prototype (pointer cut to 16 bits), allocation sizes in 16-bit int, upstream -F uninitialized state 0 | 51 |
 | 2 | kermit | the line speed in a 16-bit int (no speed above 32767 could be set), ctime without prototype, ttsndb, SIGINT after a shell escape; /usr/spool/locks was missing | 52 |
+| 3 | diff, cdiff | line numbers past 32767 negative, -c/cdiff hunk buffers wrapping at 32K, long lines in -c, -b running past the string, isdir, warn format, -r header order | 53 |

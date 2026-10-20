@@ -1,0 +1,377 @@
+--- orig/simple/diff.c	2026-10-20 20:13:48.399679112 +0200
++++ new/simple/diff.c	2026-10-20 20:45:33.767774742 +0200
+@@ -83,7 +83,7 @@
+ int trim_blanks = NOT_SET;	/* SET if -b specified	 		 */
+ int recursive_dir = NOT_SET;	/* SET if -r specified	 		 */
+ int context_lines = 3;		/* numbers of lines in a context	 */
+-static int offset;		/* offset of the actual line number for -e */
++static long offset;		/* offset of the actual line number for -e */
+ 
+  /* Function prototypes for the functions in this file	 */
+ struct f;
+@@ -111,11 +111,13 @@
+ _PROTOTYPE(void __diff, (FILE *fp1, FILE *fp2 ));
+ _PROTOTYPE(void differ, (struct f *f1, struct f *f2 ));
+ _PROTOTYPE(int wlen, (struct f *f ));
+-_PROTOTYPE(void range, (int a, int b ));
++_PROTOTYPE(void range, (long a, long b ));
+ _PROTOTYPE(void cdiff, (char *old, char *new, FILE *file1, FILE *file2 ));
+ _PROTOTYPE(void dumphunk, (void ));
+-_PROTOTYPE(char *getold, (int targ ));
+-_PROTOTYPE(char *getnew, (int targ ));
++_PROTOTYPE(char *getold, (long targ ));
++_PROTOTYPE(char *getnew, (long targ ));
++_PROTOTYPE(char *getlin, (FILE *fp ));
++_PROTOTYPE(char *roomfor, (char *hunk, size_t *allocp, long need ));
+ _PROTOTYPE(int isdir, (char *path ));
+ _PROTOTYPE(void diff_recursive, (char *dir1, char *dir2 ));
+ _PROTOTYPE(void file_type_error, (char *filename1, char *filename2, 
+@@ -350,7 +352,8 @@
+ char *string;			/* string to be inserted to the warning	 */
+ {
+   static char *warning[] = {
+-    "%s: The options -c, -e, -C n are mutually exclusive! Assuming -%c\n",
++    /* rosco: was -%c with a string argument: printed half the pointer */
++    "%s: The options -c, -e, -C n are mutually exclusive! Assuming -%s\n",
+     "%s: cannot open file %s for reading\n",
+   };
+   fprintf(stderr, warning[number], progname, string);
+@@ -366,6 +369,10 @@
+   char *line = l_text;
+   char *copy_to, *copy_from;
+ 
++  /* rosco: the eof line is empty, and the loop below started past its
++   * null: it ran on through the heap until some other null.
++   */
++  if (*line == '\0') return;
+   do {
+ 	if (*line == ' ') {
+ 		copy_from = line;
+@@ -385,16 +392,21 @@
+ char *filename(path_string)
+ char *path_string;
+ {
+-  char name[NAME_MAX + 2];	/* filename plus /		 	 */
++  /* rosco: static, the caller got the address of a dead local array
++   * (unused here, but fixed anyway); also start name with "/" and a null,
++   * and do not copy the / of the path a second time.
++   */
++  static char name[NAME_MAX + 2];	/* filename plus /		 	 */
+   char *ptr;
+ 
+   name[0] = '/';
++  name[1] = '\0';
+   ptr = strrchr(path_string, '/');
+ 
+   if (ptr == 0) {		/* no / in path_string, only a filename	 */
+ 	strcat(name, path_string);
+   } else {
+-	strcat(name, ptr);
++	strcat(name, ptr + 1);
+   }
+ 
+   return(name);
+@@ -519,7 +531,7 @@
+ struct f {
+   struct line *f_bwin, *f_ewin;
+   struct line *f_aside;
+-  int f_linecnt;		/* line number in file of last advanced line */
++  long f_linecnt;	/* line number in file of last advanced line */
+   FILE *f_fp;
+ };
+ 
+@@ -605,10 +617,6 @@
+   char *help;
+   int only_dot = 0;
+ 
+-  if (firstoutput && (recursive_dir == SET)) {
+-	printf("diff %s %s %s\n", options_string, oldfile, newfile);
+-	firstoutput = 0;
+-  }
+   while (f->f_bwin && f->f_bwin != f->f_ewin) {
+ 	if (mode != ed_mode) {
+ 		printf("%s%s", s, f->f_bwin->l_text);
+@@ -726,18 +734,29 @@
+ void differ(f1, f2)
+ register struct f *f1, *f2;
+ {
+-  int cnt1 = f1->f_linecnt, len1 = wlen(f1);
+-  int cnt2 = f2->f_linecnt, len2 = wlen(f2);
++  /* rosco: line numbers in long (also f_linecnt, offset, range() and the
++   * -c code below): with 16-bit ints they went negative after line 32767.
++   */
++  long cnt1 = f1->f_linecnt, cnt2 = f2->f_linecnt;
++  int len1 = wlen(f1), len2 = wlen(f2);
+   if ((len1 != 0) || (len2 != 0)) {
++	/* rosco: moved here from update(), which came after the first
++	 * line numbers had been printed: -r printed "11c11" before the
++	 * "diff <options> <oldfile> <newfile>" line it belongs to.
++	 */
++	if (firstoutput && (recursive_dir == SET)) {
++		printf("diff %s %s %s\n", options_string, oldfile, newfile);
++		firstoutput = 0;
++	}
+ 	if (len1 == 0) {
+ 		if (mode == ed_mode) {
+ 			cnt1 += offset;
+-			printf("%d a\n", cnt1);
++			printf("%ld a\n", cnt1);
+ 			update(f2, "");
+ 			printf(".\n");
+ 			offset += len2;
+ 		} else {
+-			printf("%da", cnt1);
++			printf("%lda", cnt1);
+ 			range(cnt2 + 1, cnt2 + len2);
+ 		}
+ 	} else if (len2 == 0) {
+@@ -750,7 +769,7 @@
+ 				advance(f1);
+ 		} else {
+ 			range(cnt1 + 1, cnt1 + len1);
+-			printf("d%d", cnt2);
++			printf("d%ld", cnt2);
+ 		}
+ 	} else {
+ 		if (mode != ed_mode) {
+@@ -767,7 +786,7 @@
+ 			} else {
+ 				range(cnt1 + 1, cnt1 + len1);
+ 				printf("d\n");
+-				printf("%d a\n", cnt1);
++				printf("%ld a\n", cnt1);
+ 				update(f2, "");
+ 				printf(".\n");
+ 				offset -= len1 - len2;
+@@ -808,9 +827,9 @@
+  * separated by a ",".
+  */
+ void range(a, b)
+-int a, b;
++long a, b;
+ {
+-  printf(((a == b) ? "%d" : "%d,%d"), a, b);
++  printf(((a == b) ? "%ld" : "%ld,%ld"), a, b);
+ }
+ 
+ /* Here follows the code for option -c.
+@@ -827,16 +846,16 @@
+ char buff[512];
+ FILE *oldfp, *newfp;
+ 
+-int oldmin, oldmax, newmin, newmax;
+-int oldbeg, oldend, newbeg, newend;
+-int preoldmax, prenewmax;
+-int preoldbeg, preoldend, prenewbeg, prenewend;
++long oldmin, oldmax, newmin, newmax;
++long oldbeg, oldend, newbeg, newend;
++long preoldmax, prenewmax;
++long preoldbeg, preoldend, prenewbeg, prenewend;
+ int oldwanted, newwanted;
+ 
+ char *oldhunk, *newhunk;
+ size_t oldsize, oldalloc, newsize, newalloc;
+ 
+-int oldline, newline; /* Jose */
++long oldline, newline; /* Jose */
+ 
+ void cdiff(old, new, file1, file2)
+ char *old, *new;		/* The names of the two files to be compared */
+@@ -849,7 +868,8 @@
+   char *newmark, *oldmark;
+   int len;
+   char *line;
+-  int i, status;
++  long i;
++  int status;
+ 
+   oldfp = file1;
+   newfp = file2;
+@@ -889,11 +909,11 @@
+ 		firstoutput = 0;
+ 	}
+ 	if (isdigit(*buff)) {
+-		oldmin = atoi(buff);
++		oldmin = atol(buff);
+ 		for (s = buff; isdigit(*s); s++);
+ 		if (*s == ',') {
+ 			s++;
+-			oldmax = atoi(s);
++			oldmax = atol(s);
+ 			for (; isdigit(*s); s++);
+ 		} else {
+ 			oldmax = oldmin;
+@@ -904,11 +924,11 @@
+ 		}
+ 		op = *s;
+ 		s++;
+-		newmin = atoi(s);
++		newmin = atol(s);
+ 		for (; isdigit(*s); s++);
+ 		if (*s == ',') {
+ 			s++;
+-			newmax = atoi(s);
++			newmax = atol(s);
+ 			for (; isdigit(*s); s++);
+ 		} else {
+ 			newmax = newmin;
+@@ -953,10 +973,7 @@
+ 				break;
+ 			}
+ 			len = strlen(line) + 2;
+-			if (oldsize + len + 1 >= oldalloc) {
+-				oldalloc *= 2;
+-				oldhunk = (char *) xrealloc(oldhunk, oldalloc);
+-			}
++			oldhunk = roomfor(oldhunk, &oldalloc, (long) oldsize + len + 1);
+ 			if (i >= oldmin) {
+ 				strcpy(oldhunk + oldsize, oldmark);
+ 				oldwanted++;
+@@ -976,10 +993,7 @@
+ 				break;
+ 			}
+ 			len = strlen(line) + 2;
+-			if (newsize + len + 1 >= newalloc) {
+-				newalloc *= 2;
+-				newhunk = (char *) xrealloc(newhunk, newalloc);
+-			}
++			newhunk = roomfor(newhunk, &newalloc, (long) newsize + len + 1);
+ 			if (i >= newmin) {
+ 				strcpy(newhunk + newsize, newmark);
+ 				newwanted++;
+@@ -1004,7 +1018,7 @@
+ 
+ void dumphunk()
+ {
+-  int i;
++  long i;
+   char *line;
+   int len;
+ 
+@@ -1015,10 +1029,7 @@
+ 		break;
+ 	}
+ 	len = strlen(line) + 2;
+-	if (oldsize + len + 1 >= oldalloc) {
+-		oldalloc *= 2;
+-		oldhunk = (char *) xrealloc(oldhunk, oldalloc);
+-	}
++	oldhunk = roomfor(oldhunk, &oldalloc, (long) oldsize + len + 1);
+ 	strcpy(oldhunk + oldsize, "  ");
+ 	strcpy(oldhunk + oldsize + 2, line);
+ 	oldsize += len;
+@@ -1030,19 +1041,16 @@
+ 		break;
+ 	}
+ 	len = strlen(line) + 2;
+-	if (newsize + len + 1 >= newalloc) {
+-		newalloc *= 2;
+-		newhunk = (char *) xrealloc(newhunk, newalloc);
+-	}
++	newhunk = roomfor(newhunk, &newalloc, (long) newsize + len + 1);
+ 	strcpy(newhunk + newsize, "  ");
+ 	strcpy(newhunk + newsize + 2, line);
+ 	newsize += len;
+   }
+   fputs("***************\n", stdout);
+   if (preoldbeg >= preoldend) {
+-	printf("*** %d ****\n", preoldend);
++	printf("*** %ld ****\n", preoldend);
+   } else {
+-	printf("*** %d,%d ****\n", preoldbeg, preoldend);
++	printf("*** %ld,%ld ****\n", preoldbeg, preoldend);
+   }
+   if (oldwanted) {
+ 	fputs(oldhunk, stdout);
+@@ -1050,9 +1058,9 @@
+   oldsize = 0;
+   *oldhunk = '\0';
+   if (prenewbeg >= prenewend) {
+-	printf("--- %d ----\n", prenewend);
++	printf("--- %ld ----\n", prenewend);
+   } else {
+-	printf("--- %d,%d ----\n", prenewbeg, prenewend);
++	printf("--- %ld,%ld ----\n", prenewbeg, prenewend);
+   }
+   if (newwanted) {
+ 	fputs(newhunk, stdout);
+@@ -1062,9 +1070,9 @@
+ }
+ 
+ char *getold(targ)
+-int targ;
++long targ;
+ {
+-  while (fgets(buff, sizeof buff, oldfp) != Nullch) {
++  while (getlin(oldfp) != Nullch) {
+ 	oldline++;
+ 	if (oldline == targ) return buff;
+   }
+@@ -1072,15 +1080,51 @@
+ }
+ 
+ char *getnew(targ)
+-int targ;
++long targ;
+ {
+-  while (fgets(buff, sizeof buff, newfp) != Nullch) {
++  while (getlin(newfp) != Nullch) {
+ 	newline++;
+ 	if (newline == targ) return buff;
+   }
+   return Nullch;
+ }
+ 
++/* rosco: read one line into buff.  A line longer than buff came back in
++ * pieces that getold() and getnew() counted as lines, which put the
++ * context out of step with the line numbers of diff; truncate it instead.
++ */
++char *getlin(fp)
++FILE *fp;
++{
++  size_t n;
++  int c;
++
++  if (fgets(buff, sizeof buff, fp) == Nullch) return Nullch;
++  n = strlen(buff);
++  if (n == sizeof buff - 1 && buff[n - 1] != '\n'
++      && (c = getc(fp)) != EOF) {
++	while (c != '\n' && c != EOF) c = getc(fp);
++	buff[n - 1] = '\n';
++  }
++  return buff;
++}
++
++/* rosco: make room for need bytes in a hunk.  Doubling the 16-bit size_t
++ * wrapped to 0 after 32K (realloc to 0 bytes, then strcpy past the end).
++ */
++char *roomfor(hunk, allocp, need)
++char *hunk;
++size_t *allocp;
++long need;
++{
++  if (need < *allocp) return hunk;
++  while (need >= *allocp) {
++	if (*allocp == (size_t) -1) fatal_error("hunk too large", "");
++	*allocp = *allocp > (size_t) -1 / 2 ? (size_t) -1 : *allocp * 2;
++  }
++  return (char *) xrealloc(hunk, *allocp);
++}
++
+ 
+ /* Isdir() checks, if <path> is the name of a directory. a return value
+  * is 0, <path> is a normal file. otherwise the <path> is a directory.
+@@ -1089,8 +1133,11 @@
+ char *path;
+ {
+   struct stat buf;
+-  stat(path, &buf);
+-  if (buf.st_mode & S_IFDIR) {	/* path is a directory		 */
++  /* rosco: on a missing file buf was left uninitialized, and the
++   * S_IFDIR bit is also set in S_IFBLK.
++   */
++  if (stat(path, &buf) != 0) return(0);
++  if (S_ISDIR(buf.st_mode)) {	/* path is a directory		 */
+ 	return(~0);
+   } else {
+ 	return(0);
