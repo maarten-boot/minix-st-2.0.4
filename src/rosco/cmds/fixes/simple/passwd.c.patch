@@ -1,0 +1,119 @@
+--- orig/simple/passwd.c
++++ new/simple/passwd.c
+@@ -20,6 +20,7 @@
+ _PROTOTYPE(void fatal, (char *label));
+ _PROTOTYPE(void usage, (void));
+ _PROTOTYPE(int goodchars, (char *s));
++_PROTOTYPE(char *askpass, (char *prompt));
+ _PROTOTYPE(int main, (int argc, char **argv));
+ 
+ char pw_file[] = "/etc/passwd";
+@@ -83,6 +84,21 @@
+   return(1);
+ }
+ 
++/* rosco: getpass() returns NULL without a /dev/tty; the strcpy()s below
++ * would copy from address 0.
++ */
++char *askpass(prompt)
++char *prompt;
++{
++  char *p;
++
++  if ((p = getpass(prompt)) == NULL) {
++	report("/dev/tty");	/* not fatal(): /etc/ptmp is not ours */
++	exit(1);
++  }
++  return(p);
++}
++
+ int main(argc, argv)
+ int argc;
+ char *argv[];
+@@ -92,7 +108,13 @@
+   FILE *fp_tmp;
+   time_t salt;
+   struct passwd *pwd;
+-  char *name, pwname[9], oldpwd[9], newpwd[9], newcrypted[14], sl[2];
++  /* rosco: getpass() returns up to 32 characters, oldpwd[9] and newpwd[9]
++   * overflowed on a password longer than 8 (in a set-uid root program);
++   * a user name is not limited to 8 characters in /etc/passwd.  The salt
++   * is passed to crypt() as a string, sl[2] had no null.
++   */
++  char *name, pwname[64], oldpwd[33], newpwd[33], newcrypted[14], sl[3];
++  char *cr;
+   char *argn;
+   int shadow = 0;
+ 
+@@ -114,7 +136,13 @@
+ 
+   if (argc == n) {
+ 	pwd = getpwuid(uid);
+-	strcpy(pwname, pwd->pw_name);
++	/* rosco: pwd is NULL for a uid without a passwd entry. */
++	if (pwd == NULL) {
++		std_err(bad);
++		exit(1);
++	}
++	strncpy(pwname, pwd->pw_name, sizeof(pwname) - 1);
++	pwname[sizeof(pwname) - 1] = 0;
+ 	name = pwname;
+   } else {
+ 	name = argv[1];
+@@ -145,7 +173,7 @@
+ 
+ 	oldpwd[0] = 0;
+ 	if (pwd->pw_passwd[0] != '\0' && uid != 0) {
+-		strcpy(oldpwd, getpass("Old password:"));
++		strcpy(oldpwd, askpass("Old password:"));
+ 		if (strcmp(pwd->pw_passwd, crypt(oldpwd, pwd->pw_passwd)) != 0)
+ 		{
+ 			std_err(bad);
+@@ -153,11 +181,11 @@
+ 		}
+ 	}
+ 	for (;;) {
+-		strcpy(newpwd, getpass("New password:"));
++		strcpy(newpwd, askpass("New password:"));
+ 
+ 		if (newpwd[0] == '\0')
+ 			std_err("Password cannot be null");
+-		else if (strcmp(newpwd, getpass("Retype password:")) != 0)
++		else if (strcmp(newpwd, askpass("Retype password:")) != 0)
+ 			std_err("Passwords don't match");
+ 		else
+ 			break;
+@@ -171,7 +199,17 @@
+ 		if (sl[cn] > '9') sl[cn] += 7;
+ 		if (sl[cn] > 'Z') sl[cn] += 6;
+ 	}
+-	strcpy(newcrypted, crypt(newpwd, sl));
++	sl[2] = 0;
++	/* rosco: crypt() returns a one-character failure string if pwdauth
++	 * fails, which would lock the account; anything but the 13 DES
++	 * characters is an error.
++	 */
++	cr = crypt(newpwd, sl);
++	if (strlen(cr) != 13) {
++		std_err("passwd: password encryption failed\n");
++		exit(1);
++	}
++	strcpy(newcrypted, cr);
+ 	break;
+ 
+       case CHFN:
+@@ -219,10 +257,10 @@
+ 		    	break;
+ 		}
+ 	}
+-	if (strcmp(pwd->pw_shell, "/bin/sh") == 0
+-		|| strcmp(pwd->pw_shell, "/usr/bin/sh") == 0
+-	)
+-		pwd->pw_shell = "";
++	/* rosco: the shell field of every entry was emptied if it was
++	 * /bin/sh or /usr/bin/sh (empty means /bin/sh to login and su);
++	 * passwd dropped ast's shell.  Write the entries back unchanged.
++	 */
+ 
+ 	fprintf(fp_tmp, "%s:%s:%s:",
+ 		pwd->pw_name,

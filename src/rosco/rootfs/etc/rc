@@ -17,6 +17,10 @@ esac
 PATH=/usr/local/bin:/bin:/usr/bin
 export PATH
 
+# New files are not writable by others (as src/etc/rc); the kernel starts
+# with umask 0.
+umask 022
+
 echo "rosco_m68k: running /etc/rc"
 
 # Start from the saved time, then ask on the console (RETURN or 30 seconds

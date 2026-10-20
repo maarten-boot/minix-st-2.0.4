@@ -9,6 +9,11 @@ TZ='GMT0'	export TZ
 # nroff, for instance) found nothing.
 PATH=/usr/local/bin:/bin:/usr/bin	export PATH
 
+# New files are not writable by others.  A login comes from init, getty
+# and login, not from /etc/rc, so it would have the kernel's umask 0.
+
+umask 022
+
 # Interrupt with Ctrl-C, as most terminals expect, instead of the Minix
 # default DEL, and erase with DEL, which is what the Backspace key of most
 # terminal programs sends (the Minix default is ^H).  The tty resets this
