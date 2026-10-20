@@ -1,0 +1,102 @@
+--- orig/reboot/shutdown.c
++++ new/reboot/shutdown.c
+@@ -89,6 +89,8 @@
+       p++;
+     minutes = strtoul(p, &p, 10);
+     if (*p != 0) bad = 1;
++    /* rosco: 25:99 was taken (as 02:39 the next day). */
++    if (!delta && (hours > 23 || minutes > 59)) bad = 1;
+   }
+   if (bad) {
+     fprintf(stderr,"Invalid time specification `%s'\n",arg);
+@@ -119,7 +121,10 @@
+     "The system will shutdown in %d hour%s and %d minute%s at %02d:%02d\n\n",
+     hours,hours==1?"":"s",minutes,minutes==1?"":"s",info_hour,info_min);
+ 
+-  wait_time += hours * 3600 + minutes * 60;
++  /* rosco: long, hours * 3600 overflowed the 16-bit int from 10 hours
++   * (or minutes * 60 from +547) and the system went down at once.
++   */
++  wait_time += hours * 3600L + minutes * 60L;
+   return;
+ }
+ 
+@@ -158,7 +163,8 @@
+ 	    opt=argv[i];
+ 	  }
+ 	  reboot_code=opt;
+-	  opt="";
++	  /* rosco: was "", the opt++ of the loop then went past its end. */
++	  opt="\0";
+ 	}
+ 	break;
+       case 'R':
+@@ -193,7 +199,8 @@
+ 
+   if ((argc - i) == 2) {
+     /* One line message */
+-    strcat(message, argv[i+1]);
++    /* rosco: a long message ran over message[]. */
++    strncat(message, argv[i+1], sizeof(message) - 2);
+     strcat(message, "\n");
+   }
+ 
+@@ -288,7 +295,7 @@
+ {
+   FILE *in;
+   pid_t pid;
+-  char c_pid[5];
++  char c_pid[8];		/* rosco: was 5, pids have up to 5 digits */
+   char buf[80];
+ 
+   in = fopen(SHUT_PID,"r");
+@@ -296,10 +303,11 @@
+     fputs ("Can't get pid of shutdown process, probably not running shutdown\n", stderr);
+     exit(1);
+   }
+-  fgets(c_pid,5,in);
++  fgets(c_pid,sizeof(c_pid),in);
+   fclose(in);
+   pid = atoi(c_pid);
+-  if (kill(pid,9) == -1)
++  /* rosco: pid 0 (an empty file) killed our own process group. */
++  if (pid <= 0 || kill(pid,9) == -1)
+     fputs("Can't kill the shutdown process, probably not running anymore\n",stderr);
+   else
+     puts("Shutdown process terminated");
+@@ -324,6 +332,8 @@
+   puts ("Type your message. End with ^D at an empty line");
+   fputs ("shutdown> ",stdout);fflush(stdout);
+   while (fgets(line,80,stdin) != (char *)0) {
++    /* rosco: a long message ran over message[]. */
++    if (strlen(message) + strlen(line) >= sizeof(message)) break;
+     strcat (message,line);
+     bzero(line,strlen(line));
+     fputs ("shutdown> ",stdout);fflush(stdout);
+@@ -367,7 +377,7 @@
+   else
+   if (wait_time > 1)
+     sprintf(mes,
+-    "\nThe system will shutdown in %d seconds\n\n",
++    "\nThe system will shutdown in %ld seconds\n\n",	/* rosco: long */
+     wait_time);
+   else
+     sprintf(mes,
+@@ -378,14 +388,14 @@
+ 
+ void write_pid()
+ {
+-  char pid[5];
++  char pid[8];		/* rosco: was 5, no room for the null */
+   int fd;
+ 
+   fd = creat(SHUT_PID,00600);
+-  if (!fd)
++  if (fd < 0)		/* rosco: was !fd */
+     return;
+   strncpy (pid,itoa(getpid()), sizeof(pid));
+-  write (fd,pid,sizeof(pid));
++  write (fd,pid,strlen(pid));
+   close(fd);
+   return;
+ }

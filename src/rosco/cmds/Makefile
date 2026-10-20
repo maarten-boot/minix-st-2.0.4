@@ -65,6 +65,9 @@ STACK_cp = 24kw
 STACK_at = 8kw
 # in.rshd ran out of its ACK 4kw ("Stack low" from the kernel) and failed
 STACK_in.rshd = 16kw
+# passwd forks and execs /usr/lib/pwdauth for crypt(): with 4kw the child's
+# execl had no room to build the new stack ("Arg list too long")
+STACK_passwd = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -501,9 +504,10 @@ obj/ftpd/%.o:	$c/ftpd/%.c
 	@mkdir -p obj/ftpd
 	$(CC) $(CFLAGS) -I$c/ftpd -c -o $@ $<
 
-# telnet (commands/telnet, "ttn"), 4kw, and in.telnetd (commands/telnetd,
-# needs the ptys), 8kw
-$(eval $(call pkgbin,telnet,telnet,ttn ttn_conf,4kw))
+# telnet (commands/telnet, "ttn"), 16kw (it died with "Memory fault" after
+# connecting with the ACK 4kw), and in.telnetd (commands/telnetd, needs the
+# ptys), 8kw
+$(eval $(call pkgbin,telnet,telnet,ttn ttn_conf,16kw))
 obj/telnet/%.o:	$c/telnet/%.c
 	@mkdir -p obj/telnet
 	$(CC) $(CFLAGS) -I$c/telnet -c -o $@ $<
@@ -554,13 +558,17 @@ obj/nc.o:	nc.c
 # execl0.sed (execl() lists that ended with a bare 0, a 2-byte int with
 # -mshort), then fixes/<path>.patch if there is one.  Each file also needs
 # a rule that compiles its object from obj/fix/<path>.
-FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c
+FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
+	  reboot/halt.c reboot/shutdown.c reboot/log.c reboot/sh_wall.c \
+	  simple/grep.c simple/readfs.c flex-2.3.7/misc.c flex-2.3.7/dfa.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
 	sed -f execl0.sed $< > $@
 	if [ -f fixes/$*.patch ]; then patch -s $@ fixes/$*.patch; fi
 obj/in.rshd.o:	obj/fix/simple/in.rshd.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/readfs.o:	obj/fix/simple/readfs.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/make/make.o:	obj/fix/make/make.c $c/make/h.h
 	@mkdir -p obj/make
@@ -571,6 +579,16 @@ obj/elle/eemain.o:	obj/fix/elle/eemain.c
 obj/zmodem/rz.o:	obj/fix/zmodem/rz.c $c/zmodem/rbsb.c $c/zmodem/zm.c $c/zmodem/zmodem.h
 	@mkdir -p obj/zmodem
 	$(CC) $(CFLAGS) -I$c/zmodem -DPOSIX -c -o $@ $<
+obj/reboot/halt.o obj/reboot/shutdown.o obj/reboot/log.o obj/reboot/sh_wall.o: \
+		obj/reboot/%.o:	obj/fix/reboot/%.c
+	@mkdir -p obj/reboot
+	$(CC) $(CFLAGS) -I$c/reboot -c -o $@ $<
+obj/grep.o:	obj/fix/simple/grep.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/flex/misc.o obj/flex/dfa.o: \
+		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h
+	$(CC) $(CFLAGS) -DUSG -DDEFAULT_SKELETON_FILE='"/usr/lib/flex/flex.skel"' \
+		-Iobj/flex -I$c/flex-2.3.7 -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

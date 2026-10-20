@@ -937,4 +937,6 @@ fallback.
 | Default passwords: root has none (Minix 1.5 used "Geheim"); network logins (telnet, ftp) need one | Root stays without one (user); documented in ROSCO_M68K_USAGE.md (Follow-up 48) |
 | MicroPython (user question, Follow-up 47) | Not ported; assessed only |
 | 32-bit int build of the whole system (user question, Follow-up 48) | Assessed only, see Follow-up 48 |
+| Kernel panic from a user program: a bus error in a process (old shutdown overrunning a buffer) gave "kernel trap ... trap via vector 2" (Follow-up 50) | Open |
+| cc (ACK) on the board: C files of about 32K or more fail (em_cemcom.ansi "no source file" from about 50K, a pass dies with sig=10 at about 32K) (Follow-up 51) | Open |
 | zip/unzip-style compression for serial transfers | Done: GNU gzip 1.2.4 (gzip, gunzip, zcat), `src/rosco/gzip-1.2.4` with `cmds/gzip.patch` and `gzrosco.c` (Follow-up 36) |

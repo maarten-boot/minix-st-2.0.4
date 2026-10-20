@@ -1,0 +1,14 @@
+--- orig/flex-2.3.7/dfa.c
++++ new/flex-2.3.7/dfa.c
+@@ -522,6 +522,11 @@
+ 	for ( i = 0; i <= numecs; ++i )
+ 	    state[i] = 0;
+ 	place_state( state, 0, 0 );
++	/* rosco: genctbl() also writes out the action number of this
++	 * dummy state 0, which was never set: -F scanners got whatever
++	 * was in the malloc()ed memory (as flex 2.5 does, set it to 0)
++	 */
++	dfaacc[0].dfaacc_state = 0;
+ 	}
+ 
+     else if ( fulltbl )

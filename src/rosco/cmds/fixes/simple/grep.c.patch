@@ -1,0 +1,29 @@
+--- orig/simple/grep.c
++++ new/simple/grep.c
+@@ -117,8 +117,11 @@
+   }
+ 
+   if (!egrep) {
+-	  if ((v8pattern=malloc(2*strlen(pattern)))==(char*)0) {
+-		fprintf(stderr,"%s: out of memory\n");
++	  /* rosco: +1, "?" becomes "\?" and the null did not fit; and the
++	   * program name was missing.
++	   */
++	  if ((v8pattern=malloc(2*strlen(pattern)+1))==(char*)0) {
++		fprintf(stderr,"%s: out of memory\n",program);
+ 		exit(FAILURE);
+ 	  }
+ 	  tov8(v8pattern,pattern);
+@@ -274,7 +277,11 @@
+ 	if (c == EOF)
+ 		return (ferror(input) || bp == buf) ? NULL : buf;
+ 	new_size = buf_size << 1;
+-	if ((new_buf = (char *) realloc(buf, new_size)) == NULL) {
++	/* rosco: stop at 32K, after that the 16-bit size_t wraps to 0 (and
++	 * n = buf_size + 1 goes negative).
++	 */
++	if (new_size < buf_size
++	    || (new_buf = (char *) realloc(buf, new_size)) == NULL) {
+ 		fprintf(stderr, "%s: line too long - truncated\n", program);
+ 		while ((c = getc(input)) != EOF && c != '\n') ;
+ 		*bp = '\0';

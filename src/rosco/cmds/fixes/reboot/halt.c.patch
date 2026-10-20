@@ -1,0 +1,11 @@
+--- orig/reboot/halt.c
++++ new/reboot/halt.c
+@@ -130,6 +130,7 @@
+   }
+ 
+   reboot(flag, monitor_code, strlen(monitor_code));
+-  fprintf(stderr, "%s: reboot(): %s\n", strerror(errno));
++  /* rosco: the program name was missing. */
++  fprintf(stderr, "%s: reboot(): %s\n", prog, strerror(errno));
+   return 1;
+ }

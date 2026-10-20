@@ -1,0 +1,12 @@
+--- orig/reboot/sh_wall.c
++++ new/reboot/sh_wall.c
+@@ -74,7 +74,8 @@
+ 	if (utmp.ut_type != USER_PROCESS) continue;
+ 
+ 	strncpy(utmptty+5, utmp.ut_line, sizeof(utmp.ut_line));
+-	utmptty[5 + sizeof(utmp.ut_line) + 1] = 0;
++	/* rosco: was [5 + sizeof(utmp.ut_line) + 1], one past the end */
++	utmptty[5 + sizeof(utmp.ut_line)] = 0;
+ 	if ((ttyfd = open(utmptty, O_WRONLY | O_NONBLOCK)) < 0) {
+ 		perror(utmptty);
+ 		continue;

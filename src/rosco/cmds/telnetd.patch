@@ -13,3 +13,35 @@
  	}
  	if (strcmp(ttyp->ty_name, tty_name+5) == 0) break;
  	lineno++;
+@@ -136,6 +139,8 @@
+ 	(void) execl("/usr/bin/getty", "getty", (char *)NULL);
+ 	(void) execl("/usr/bin/login", "login", (char *)NULL);
+ 	(void) write(1, "EXEC failed!\r\n", 14);
++	/* rosco: the child went on as the parent (utmp, term_inout). */
++	return(-1);
+    } else if (pid < 0) {
+ 	sprintf(buff, "I am sorry, but the fork(2) call failed!\r\n");
+ 	(void) write(1, buff, strlen(buff));
+--- a/term.c
++++ b/term.c
+@@ -65,7 +65,8 @@
+ 		tel_in(pty_fd, 1, buff, i);
+ 	}
+ 	/* EOF, kill opposite number and exit. */
+-	(void) kill(pid, SIGKILL);
++	/* rosco: not after a failed fork, kill(-1) killed every process. */
++	if (pid > 0) (void) kill(pid, SIGKILL);
+   } else {
+   	/* login process -> network */
+ 	while ((i = read(pty_fd, buff, sizeof(buff))) > 0) {
+--- a/wtmp.c
++++ b/wtmp.c
+@@ -108,6 +108,7 @@
+ {
+   char message[128];
+ 
+-  sprintf(message, "telnetd: %s: %s\r\n", strerror(errno));
++  /* rosco: the label was missing. */
++  sprintf(message, "telnetd: %s: %s\r\n", label, strerror(errno));
+   (void) write(1, message, strlen(message));
+ }

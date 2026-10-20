@@ -368,3 +368,6 @@ and sdproto edits are merged one at a time.
 
 | Step | Tools | Result | Follow-up |
 |---|---|---|---|
+| 1 | halt, shutdown, grep, in.telnetd | 4 format bugs fixed, plus: shutdown 16-bit overflow at 10 hours, -x broken, pid file, buffer overruns; grep malloc one byte short; telnetd kill(-1) after a failed fork, child running on after exec failure | 50 |
+| 1 | de, readfs | de: zone numbers and 'G' on V2/big endian, unsigned address test, inode overflow; readfs: V2 file systems read as V1, /bin/Mkdir, partial last block | 50 |
+| 2 | flex | realloc without prototype (pointer cut to 16 bits), allocation sizes in 16-bit int, upstream -F uninitialized state 0 | 51 |

@@ -1,0 +1,62 @@
+--- orig/flex-2.3.7/misc.c
++++ new/flex-2.3.7/misc.c
+@@ -33,6 +33,11 @@
+ 
+ #include <ctype.h>
+ #include "flexdef.h"
++/* rosco: flexdef.h declares malloc() but not realloc(); without a
++ * prototype realloc() returned an int, 2 bytes with -mshort, and
++ * reallocate_array() kept only half of the pointer
++ */
++#include <stdlib.h>
+ 
+ 
+ /* ANSI C does not guarantee that isascii() is defined */
+@@ -76,15 +81,24 @@
+ 
+     {
+     register void *mem;
++    long nbytes = (long) element_size * size;
+ 
+     /* on 16-bit int machines (e.g., 80286) we might be trying to
+      * allocate more than a signed int can hold, and that won't
+      * work.  Cheap test:
+      */
+-    if ( element_size * size <= 0 )
++    /* rosco: with -mshort the int product overflowed: tables of 16K
++     * ints failed with "< 1 byte", pointer tables of 16K+ entries got a
++     * wrapped (too small) size.  Compute it in a long; malloc() takes a
++     * 16-bit size_t.
++     */
++    if ( nbytes <= 0 )
+         flexfatal( "request for < 1 byte in allocate_array()" );
+ 
+-    mem = (void *) malloc( (unsigned) (element_size * size) );
++    if ( nbytes > (size_t) -1 )
++        flexfatal( "request for more than 64K in allocate_array()" );
++
++    mem = (void *) malloc( (size_t) nbytes );
+ 
+     if ( mem == NULL )
+ 	flexfatal( "memory allocation failed in allocate_array()" );
+@@ -759,13 +773,17 @@
+ 
+     {
+     register void *new_array;
++    long nbytes = (long) size * element_size;
+ 
+     /* same worry as in allocate_array(): */
+-    if ( size * element_size <= 0 )
++    /* rosco: computed in a long, as in allocate_array() */
++    if ( nbytes <= 0 )
+         flexfatal( "attempt to increase array size by less than 1 byte" );
+ 
+-    new_array =
+-	(void *) realloc( (char *)array, (unsigned) (size * element_size ));
++    if ( nbytes > (size_t) -1 )
++        flexfatal( "attempt to increase array size beyond 64K" );
++
++    new_array = (void *) realloc( (char *)array, (size_t) nbytes );
+ 
+     if ( new_array == NULL )
+ 	flexfatal( "attempt to increase array size failed" );

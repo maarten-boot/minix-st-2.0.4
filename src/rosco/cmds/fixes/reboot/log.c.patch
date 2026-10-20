@@ -1,0 +1,36 @@
+--- orig/reboot/log.c
++++ new/reboot/log.c
+@@ -24,7 +24,7 @@
+ static char WTMP[] = "/usr/adm/wtmp";	/* Record of logins and logouts. */
+ static char SHUT_LOG[] = "/usr/adm/log";
+ 
+-char who[8];
++char who[9];		/* rosco: was 8, no room for the null */
+ extern char *prog;
+ static char *month[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+ 			 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+@@ -51,11 +51,12 @@
+   if (pwd == (struct passwd *)0)
+     strcpy (who,"root");
+   else
+-    strcpy (who,pwd->pw_name);
++    strncpy (who,pwd->pw_name,sizeof(who)-1);
+   fd = open(WTMP,O_APPEND|O_WRONLY,1);
+   if (fd) {
++    /* rosco: strncpy, "shutdown" (from shutdown) has no room for the null */
+     if (strcmp(prog,"reboot"))
+-      strcpy (wtmp.ut_user, prog);
++      strncpy (wtmp.ut_user, prog, sizeof(wtmp.ut_user));
+     else
+       strcpy (wtmp.ut_user, "shutdown"); /* last ... */
+     strcpy (wtmp.ut_id, "~~");
+@@ -71,7 +72,8 @@
+   if (!fd) 
+     perror ("open");
+   else {
+-    sprintf (mes,"%s %02d %02d:%02d:%02d %s: system %s by %s@%s\n",
++    /* rosco: %.24s, a long host name (up to 255) ran over mes[] */
++    sprintf (mes,"%s %02d %02d:%02d:%02d %.8s: system %.8s by %s@%.24s\n",
+ 	month[tm->tm_mon],tm->tm_mday,tm->tm_hour,tm->tm_min,tm->tm_sec,
+ 	prog,prog,who,host);
+     write (fd,mes,strlen(mes));

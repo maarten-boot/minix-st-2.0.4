@@ -21,3 +21,91 @@
    bitchunk_t __filler_for_compiler_restriction;
  #endif /* CHIP != M68000 */
  
+--- a/de.c
++++ b/de.c
+@@ -509,7 +509,11 @@
+     case 'G' :				/*  Goto block indirect	*/
+ 
+ 		{
+-		unsigned block = *( (word_t *) &s->buffer[ s->offset ] );
++		/*  rosco: a V2 zone number is a 4-byte zone_t, and the word  */
++		/*  under the cursor is its high half on the 68000.	      */
++		zone_t block = s->is_fs && ! s->v1
++			? *( (zone_t *) &s->buffer[ s->offset & ~3 ] )
++			: *( (word_t *) &s->buffer[ s->offset ] );
+ 
+ 		if ( s->mode != WORD )
+ 		  {
+--- a/de_stdout.c
++++ b/de_stdout.c
+@@ -443,7 +443,9 @@
+   {
+   Goto( STATUS_COLUMN, STATUS_LINE + 1 );
+ 
+-  printf( "Block  = %5u of %-5u  ", s->block, s->zones );
++  /*  rosco: block and zones are zone_t, a long; %u took only the	*/
++  /*  high half of the block number with a 16-bit int.		*/
++  printf( "Block  = %5lu of %-5lu  ", s->block, s->zones );
+ 
+   if ( !s->is_fs )
+     return;
+@@ -915,7 +917,7 @@
+     long bit = (s->address - 2 * K) * 8;
+ 
+     if ( bit < s->inodes_in_map )
+-	printf( "I-node %ld of %d     ", bit, s->inodes );
++	printf( "I-node %ld of %u     ", bit, s->inodes );	/* rosco: unsigned */
+     else
+ 	printf( "(padding)                " );
+     }
+@@ -925,7 +927,7 @@
+     long bit = (s->address - (2 + s->inode_maps) * K) * 8;
+ 
+     if ( bit < s->zones_in_map )
+-	printf( "Block %ld of %u     ", bit + s->first_data - 1, s->zones );
++	printf( "Block %ld of %lu     ", bit + s->first_data - 1, s->zones );	/* rosco: zones is a long */
+     else
+ 	printf( "(padding)                " );
+     }
+@@ -1159,7 +1161,8 @@
+     if ( s->magic != SUPER_MAGIC )
+       {
+       zone = inode->i_zone[ zindex ];
+-      if ( zone != (word_t) zone )
++      /*  rosco: always print a V2 zone number; on the big-endian	*/
++      /*  68000 the word shown on this line is its high half.	*/
+ 	{
+ 	Goto( INFO_COLUMN + 16, INFO_LINE + zrow );
+ 	printf("%ld", (long) zone );
+--- a/de_diskio.c
++++ b/de_diskio.c
+@@ -74,7 +74,9 @@
+   off_t end_addr = (long) s->device_size * K - 1;
+   off_t block_addr;
+ 
+-  if ( s->address < 0 )
++  /*  rosco: off_t is unsigned here; moving back from the start	*/
++  /*  wrapped around and went to the end of the device.		*/
++  if ( (long) s->address < 0 )
+     s->address = 0L;
+ 
+   if ( s->address > end_addr )
+@@ -178,7 +180,8 @@
+     s->zone_maps = super->s_zmap_blocks;
+     }
+ 
+-  s->inode_blocks = (s->inodes + inodes_per_block - 1) / inodes_per_block;
++  /*  rosco: (long), 65535 inodes + 15 overflowed a 16-bit unsigned  */
++  s->inode_blocks = (s->inodes + (long) inodes_per_block - 1) / inodes_per_block;
+   s->first_data   = 2 + s->inode_maps + s->zone_maps + s->inode_blocks;
+   if ( s->first_data != super->s_firstdatazone )
+   {
+@@ -189,7 +192,7 @@
+     s->first_data = super->s_firstdatazone;
+   }  
+ 
+-  s->inodes_in_map = s->inodes + 1;
++  s->inodes_in_map = (bit_t) s->inodes + 1;	/* rosco: 65535 + 1 was 0 */
+   s->zones_in_map  = s->zones + 1 - s->first_data;
+ 
+   /*
