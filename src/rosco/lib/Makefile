@@ -49,11 +49,22 @@ CDIRS	= ansi posix other stdio ip
 # Not in the ACK build's makefile.all: posix/_exec.c and _execn.c are old
 # versions of the exec family (their execl() passes the wrong argv, and
 # whichever _execl comes first in the archive wins), other/execlp.c
-# duplicates posix/_execlp.c.  regexp.c, system.c and _uname.c are built
-# from ./
+# duplicates posix/_execlp.c.  regexp.c, system.c, _uname.c and the fixed
+# copies below are built from ./ (each starts with a comment on what was
+# changed):
+#	getpwent.c, getgrent.c	a last line without a newline and an
+#			overlong line no longer end the file (passwd lost
+#			the entries after them)
+#	_execl.c, _execlp.c	a bare 0 ending the list (2 bytes) is the end
+#	_execve.c	E2BIG for a frame over ARG_MAX, before sbrk()
+#	popen.c		pclose() waits with waitpid() for its own child
+#	misc.c		TZ offsets of 10 hours and more; Mm.5.d dates
+#	chartab.c	<ctype.h> with a negative char (chars 128-255)
 EXCLUDE	= $l/other/regexp.c $l/posix/_exec.c $l/posix/_execn.c \
 	  $l/other/execlp.c $l/other/v8regerror.c $l/ansi/system.c \
-	  $l/posix/_uname.c
+	  $l/posix/_uname.c $l/other/getpwent.c $l/other/getgrent.c \
+	  $l/posix/_execl.c $l/posix/_execlp.c $l/posix/_execve.c \
+	  $l/other/popen.c $l/ansi/misc.c $l/ansi/chartab.c
 CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
 # u64.c replaces lib/m68000/misc/u64.c (cmp64u() fixed).
 # fphook/fltpr.c and strtod.c: printf and strtod without floating point,
@@ -62,6 +73,8 @@ CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
 # libc too.
 COBJ	= $(patsubst $l/%.c,obj/%.o,$(CSRC)) obj/u64.o \
 	  obj/m68000/rts/__intsize.o obj/regexp.o obj/system.o obj/_uname.o \
+	  obj/getpwent.o obj/getgrent.o obj/_execl.o obj/_execlp.o \
+	  obj/_execve.o obj/popen.o obj/misc.o obj/chartab.o \
 	  obj/fphook/fltpr.o obj/fphook/strtod.o
 
 # GNU replacements of lib/m68000/rts
@@ -148,6 +161,9 @@ obj/gccmem.o:	CFLAGS += -fno-tree-loop-distribute-patterns
 
 # no floating point in scanf (no soft float runtime for -mshort)
 obj/stdio/doscan.o:	CFLAGS += -DNOFLOAT
+
+# misc.c includes "loc_time.h"
+obj/misc.o:	CFLAGS += -I$l/ansi
 
 # fslib.c includes "fs/const.h"
 obj/other/fslib.o:	CFLAGS += -I../..
