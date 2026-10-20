@@ -1,0 +1,48 @@
+--- nonamed.c.orig
++++ nonamed.c
+@@ -502,10 +502,11 @@
+     if (debug >= 2) {
+ 	unsigned n= 0;
+ 	for (qp= mru; qp != nil; qp= qp->less) n++;
+-	printf("%u cached repl%s, %u bytes, sbrk(0) = %u\n",
++	/* rosco: sbrk(0) is a 32-bit pointer, an unsigned is 16 bits */
++	printf("%u cached repl%s, %u bytes, sbrk(0) = %lu\n",
+ 	    n, n == 1 ? "y" : "ies",
+ 	    (unsigned) n_data,
+-	    (unsigned) sbrk(0));
++	    (unsigned long) sbrk(0));
+     }
+ }
+ 
+@@ -1163,6 +1164,9 @@
+     if (!expired) return 0;
+     cache2file();
+     dirty= 0;
++    return 1;	/* rosco: was missing; gcc returns 0, so the job never
++		 * left the queue and main() ran it in a loop, at 100% CPU
++		 */
+ }
+ 
+ static int compose_reply(dns_t *dp, size_t *pdlen)
+@@ -1353,7 +1357,11 @@
+     /* Restart this job no matter what. */
+     newjob(job_read_udp, NEVER, nil);
+ 
+-    if (ulen < (ssize_t) (sizeof(udp_io_hdr_t) + sizeof(dns_hdr_t))) return 1;
++    /* rosco: compare signed, an unsigned ulen of -1 (a read error) passed
++     * this test and the old packet was handled again with a huge dlen
++     */
++    if ((ssize_t) ulen < (ssize_t) (sizeof(udp_io_hdr_t) + sizeof(dns_hdr_t)))
++	return 1;
+ 
+     if (debug >= 1) {
+ 	printf("%s:%u UDP ", inet_ntoa(udp.hdr.uih_src_addr),
+@@ -2160,6 +2168,7 @@
+     }
+     cache2file();
+     (void) unlink(PIDFILE);
+-    if (debug >= 2) printf("sbrk(0) = %u\n", (unsigned) sbrk(0));
++    /* rosco: sbrk(0) is a 32-bit pointer */
++    if (debug >= 2) printf("sbrk(0) = %lu\n", (unsigned long) sbrk(0));
+     return 0;
+ }

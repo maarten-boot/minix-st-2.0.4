@@ -1,0 +1,46 @@
+--- ping.c.orig
++++ ping.c
+@@ -51,6 +51,7 @@
+ 	ipaddr_t dst_addr;
+ 	struct hostent *hostent;
+ 	int length;
++	long lenl;
+ 
+ 	if (argc<2 || argc>3)
+ 	{
+@@ -73,8 +74,19 @@
+ 		dst_addr= *(ipaddr_t *)(hostent->h_addr);
+ 	if (argc == 3)
+ 	{
+-		length= strtol (argv[2], (char **)0, 0);
+-		if (length< sizeof(icmp_hdr_t) + IP_MIN_HDR_SIZE)
++		/* rosco: check the long, and compare signed: in the unsigned
++		 * size_t compare a negative length passed, and anything over
++		 * the buffer was sent from beyond its end
++		 */
++		lenl= strtol (argv[2], (char **)0, 0);
++		if (lenl > (long) sizeof(buffer))
++		{
++			fprintf(stderr, "%s: length too large (%s)\n",
++				argv[0], argv[2]);
++			exit(1);
++		}
++		length= lenl;
++		if (lenl < (long) (sizeof(icmp_hdr_t) + IP_MIN_HDR_SIZE))
+ 		{
+ 			fprintf(stderr, "%s: length too small (%s)\n",
+ 				argv[0], argv[2]);
+@@ -108,8 +120,12 @@
+ 		icmp_hdr->ih_type= 8;
+ 		icmp_hdr->ih_code= 0;
+ 		icmp_hdr->ih_chksum= 0;
++		/* rosco: the checksum covers the whole ICMP message, not
++		 * just the WRITE_SIZE default (the data is all zero, so it
++		 * came out right anyway)
++		 */
+ 		icmp_hdr->ih_chksum= ~oneC_sum(0, (u16_t *)icmp_hdr,
+-			WRITE_SIZE-20);
++			length-20);
+ 		result= write(fd, buffer, length);
+ 		if (result<0)
+ 		{

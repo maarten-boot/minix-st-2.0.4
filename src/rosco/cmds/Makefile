@@ -74,6 +74,11 @@ STACK_who = 8kw
 # buffers); "Memory fault" with the ACK build's 4kw when _doprnt's 1k
 # buffer met it (the * command as a user, on the console)
 STACK_mail = 8kw
+# nonamed: its reply cache may grow to 16k (N_DATAMAX, 4096 pointers), all of
+# the 8kw (16k) heap and stack; with a name server in /etc/hosts it died with
+# "malloc(): Not enough core" after about 90 cached answers.  32k, as 8kw
+# was on Minix i386.
+STACK_nonamed = 16kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -586,7 +591,8 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/login.c simple/getty.c simple/su.c sh/sh3.c sh/sh4.c sh/sh5.c \
 	  simple/passwd.c \
 	  simple/mail.c \
-	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c
+	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c \
+	  simple/nonamed.c simple/ping.c simple/hostaddr.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -630,6 +636,12 @@ obj/cron/cron.o obj/cron/tab.o obj/cron/crontab.o: \
 	@mkdir -p obj/cron
 	$(CC) $(CFLAGS) -fcommon -I$c/cron -c -o $@ $<
 obj/at.o:	obj/fix/simple/at.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/nonamed.o:	obj/fix/simple/nonamed.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/ping.o:	obj/fix/simple/ping.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/hostaddr.o:	obj/fix/simple/hostaddr.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h
