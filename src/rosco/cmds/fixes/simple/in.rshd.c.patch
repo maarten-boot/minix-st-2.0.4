@@ -1,0 +1,81 @@
+--- in.rshd.c.orig
++++ in.rshd.c
+@@ -129,9 +129,27 @@
+ 			exit(1);
+ 		if (c == 0)
+ 			break;
++		/* rosco: only digits, and no wrap-around in the 16-bit
++		 * tcpport_t (70000 became port 4464).
++		 */
++		if (c < '0' || c > '9' || err_port > (TCPPORT_RESERVED-1)/10)
++		{
++			printf("\1%s: bad stderr port\n", prog_name);
++			exit(1);
++		}
+ 		err_port= err_port*10 + c - '0';
+ 	}
+ 	alarm(0);
++	/* rosco: the stderr port must be a reserved one (as the client's
++	 * rcmd() binds it, and as the BSD rshd checks), or this root daemon
++	 * connects from a reserved port to any port the client names.
++	 */
++	if (err_port != 0 && (err_port >= TCPPORT_RESERVED ||
++		err_port < TCPPORT_RESERVED/2))
++	{
++		printf("\1%s: stderr port not reserved\n", prog_name);
++		exit(1);
++	}
+ 	if (err_port != 0)
+ 	{
+ 		int n, pid, lport;
+@@ -214,7 +232,14 @@
+ 					prog_name, errno, strerror(errno));
+ 				exit(1);
+ 			}
+-			if (--n == 0) break;
++			if (--n == 0)
++			{
++				/* rosco: give up, the command's stderr would
++				 * go to an unconnected channel.
++				 */
++				printf("\1can't connect to stderr port\n");
++				exit(1);
++			}
+ 			sleep(1);
+ #if DEBUG
+ { where(); fprintf(stderr, "\n"); }
+@@ -387,8 +412,13 @@
+ #if __minix_vmd
+ 	initgroups(pwent->pw_name, pwent->pw_gid);
+ #endif
+-	setgid(pwent->pw_gid);
+-	setuid(pwent->pw_uid);
++	/* rosco: do not run the command as root when this fails */
++	if (setgid(pwent->pw_gid) < 0 || setuid(pwent->pw_uid) < 0)
++	{
++		printf("\1Can't set user id.\n");
++		if (err_port) kill(getppid(), SIGTERM);
++		exit(1);
++	}
+ 	TZ=getenv("TZ");
+ 	environ= envinit;
+ 	strncat(homedir, pwent->pw_dir, sizeof(homedir)-6);
+@@ -414,7 +444,8 @@
+ 	open("/dev/tty", O_RDWR);
+ 	fprintf(stderr, "%s: execl(%s, %s, .., %s)= %d : %s\n", prog_name,
+ 		pwent->pw_shell, cp, cmdbuf, errno, strerror(errno));
+-	kill(getppid(), SIGTERM);
++	/* rosco: without a stderr port the parent is tcpd, keep it alive */
++	if (err_port) kill(getppid(), SIGTERM);
+ 	exit(1);
+ }
+ 
+@@ -432,7 +463,7 @@
+ 		*buf++ = c;
+ 		if (--cnt == 0)
+ 		{
+-			printf("\1%s too long", err);
++			printf("\1%s too long\n", err);	/* rosco: \n */
+ 			exit(1);
+ 		}
+ 	} while (c != 0);

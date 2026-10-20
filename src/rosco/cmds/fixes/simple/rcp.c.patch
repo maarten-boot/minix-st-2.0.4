@@ -1,0 +1,66 @@
+--- rcp.c.orig
++++ rcp.c
+@@ -43,6 +43,9 @@
+ #include <net/gen/netdb.h>
+ #include <net/netlib.h>
+ 
++/* rosco: <stdio.h> declares it only with _MINIX, which is undefined above */
++int vsnprintf(char *_s, size_t _n, const char *_format, va_list _arg);
++
+ #if __STDC__
+ #define PROTO(func, args)	func args
+ #else
+@@ -641,6 +644,11 @@
+ 		do {
+ 			if (read(rem, cp, 1) != 1)
+ 				SCREWUP("lost connection");
++			/* rosco: the line came from the network, keep it in
++			 * cmdbuf
++			 */
++			if (cp >= cmdbuf + sizeof(cmdbuf) - 2)
++				SCREWUP("line too long");
+ 		} while (*cp++ != '\n');
+ 		*cp = 0;
+ 		if (cmdbuf[0] == '\01' || cmdbuf[0] == '\02') {
+@@ -701,14 +709,28 @@
+ 		if (*cp++ != ' ')
+ 			SCREWUP("mode not delimited");
+ 		size = 0;
+-		while (isdigit(*cp))
++		while (isdigit(*cp)) {
++			/* rosco: no overflow into a negative size */
++			if (size > (0x7FFFFFFFL - 9) / 10)
++				SCREWUP("size too large");
+ 			size = size * 10 + (*cp++ - '0');
++		}
+ 		if (*cp++ != ' ')
+ 			SCREWUP("size not delimited");
+-		if (targisdir)
++		/* rosco: the name comes from the other end; it must not
++		 * leave the target directory ("../x", "a/b", ".."), as the
++		 * later BSD rcp checks.
++		 */
++		if (*cp == 0 || strchr(cp, '/') != NULL ||
++		    strcmp(cp, ".") == 0 || strcmp(cp, "..") == 0)
++			SCREWUP("unexpected file name");
++		if (targisdir) {
++			/* rosco: nambuf is BUFSIZ too */
++			if (strlen(targ) + 1 + strlen(cp) >= sizeof(nambuf))
++				SCREWUP("name too long");
+ 			(void) sprintf(nambuf, "%s%s%s", targ,
+ 			    *targ ? "/" : "", cp);
+-		else
++		} else
+ 			(void) strcpy(nambuf, targ);
+ 		exists = stat(nambuf, &stb) == 0;
+ 		if (cmdbuf[0] == 'D') {
+@@ -834,7 +856,8 @@
+ 
+ 	errs++;
+ 	*cp++ = 1;
+-	(void) vsprintf(cp, fmt, ap);
++	/* rosco: names of up to BUFSIZ plus the text did not fit */
++	(void) vsnprintf(cp, sizeof(buf) - 1, fmt, ap);
+ 	va_end(ap);
+ 	(void) write(rem, buf, strlen(buf));
+ 	if (iamremote == 0)

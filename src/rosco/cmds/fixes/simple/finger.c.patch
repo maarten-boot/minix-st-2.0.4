@@ -1,0 +1,76 @@
+--- finger.c.orig
++++ finger.c
+@@ -629,14 +629,16 @@
+ 	bp = buffer;
+ 	if (*gp == ASTERISK)
+ 		gp++;
+-	while (*gp && *gp != COMMA) 			/* name */
++	/* rosco: stay inside buffer[]; chfn lets any user set 80 '&'s,
++	 * each one the login name.
++	 */
++	while (*gp && *gp != COMMA && bp < buffer + sizeof(buffer) - 1) /* name */
+ 		if (*gp == SAMENAME) {
+ 			lp = pers->pwd->pw_name;
+ 			if (islower(*lp))
+ 				*bp++ = toupper(*lp++);
+-			while (*bp++ = *lp++)
+-				;
+-			bp--;
++			while (*lp && bp < buffer + sizeof(buffer) - 1)
++				*bp++ = *lp++;
+ 			gp++;
+ 		} else
+ 			*bp++ = *gp++;
+@@ -808,7 +810,7 @@
+ 	char *login;
+ 	char *given;
+ {
+-	char buffer[100];
++	char buffer[100 + 1];	/* rosco: + 1 for the 0 after 100 chars */
+ 	register char *bp, *lp;
+ 	register c;
+ 
+@@ -819,10 +821,11 @@
+ 	for (;;)
+ 		switch (c = *gname++) {
+ 		case SAMENAME:
+-			for (lp = login; bp < buffer + sizeof buffer
++			for (lp = login; bp < buffer + sizeof buffer - 1
+ 					 && (*bp++ = *lp++);)
+ 				;
+-			bp--;
++			if (bp > buffer && bp[-1] == 0)	/* rosco: not when full */
++				bp--;
+ 			break;
+ 		case ' ':
+ 		case COMMA:
+@@ -835,7 +838,7 @@
+ 			bp = buffer;
+ 			break;
+ 		default:
+-			if (bp < buffer + sizeof buffer)
++			if (bp < buffer + sizeof buffer - 1)
+ 				*bp++ = c;
+ 		}
+ 	/*NOTREACHED*/
+@@ -917,7 +920,7 @@
+ 			printf("unknown host: %s\n", host);
+ 			return (1);
+ 		}
+-		strcpy(namebuf, host);
++		strncpy(namebuf, host, sizeof(namebuf) - 1);	/* rosco */
+ 		def.h_name = namebuf;
+ 		def.h_addr = (char *)&defaddr;
+ 		def.h_length = sizeof (ipaddr_t);
+@@ -987,7 +990,10 @@
+ 		c &= ~0200;
+ 		if (c == '\r')
+ 		{
+-			c= getc(f) & ~0200;
++			c= getc(f);
++			if (c == EOF)	/* rosco: was printed as a character */
++				break;
++			c &= ~0200;
+ 			if (c == '\012')
+ 			{
+ 				lastc= c;

@@ -65,6 +65,9 @@ STACK_cp = 24kw
 STACK_at = 8kw
 # in.rshd ran out of its ACK 4kw ("Stack low" from the kernel) and failed
 STACK_in.rshd = 16kw
+# rcp -r: sink() (2K of buffers) and rsource()/source() (2K) recurse per
+# directory level; with the ACK build's 8kw "Memory fault" at 4 levels
+STACK_rcp = 16kw
 # passwd forks and execs /usr/lib/pwdauth for crypt(): with 4kw the child's
 # execl had no room to build the new stack ("Arg list too long")
 STACK_passwd = 8kw
@@ -511,8 +514,10 @@ obj/flex/%.o:	$c/flex-2.3.7/%.c obj/flex/parse.h
 obj/flex/parse.o:	obj/flex/parse.c
 	$(CC) $(CFLAGS) -DUSG -Iobj/flex -I$c/flex-2.3.7 -c -o $@ $<
 
-# urlget (also httpget, ftpget by its name): commands/urlget, 4kw
-$(eval $(call pkgbin,urlget,urlget,urlget net,4kw))
+# urlget (also httpget, ftpget by its name): commands/urlget, 8kw (4kw in
+# the ACK build: the resolver's buffers and malloc() in res_send() share
+# that space, as in nc)
+$(eval $(call pkgbin,urlget,urlget,urlget net,8kw))
 obj/urlget/%.o:	$c/urlget/%.c
 	@mkdir -p obj/urlget
 	$(CC) $(CFLAGS) -I$c/urlget -c -o $@ $<
@@ -575,11 +580,12 @@ obj/tcpd/tcpdp.o:	$c/simple/tcpd.c
 	@mkdir -p obj/tcpd
 	$(CC) $(CFLAGS) -DPARANOID=1 -c -o $@ $<
 
-# nc: rosco's own small netcat (TCP connect and listen), 4kw
+# nc: rosco's own small netcat (TCP connect and listen), 8kw: with 4kw
+# "nc host port" died with "Memory fault" in the name lookup (the resolver)
 bin/nc:	obj/nc.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/nc.elf $L/crtso.o obj/nc.o $(LIBS)
-	$(MKMINIX) -S 4kw obj/nc.elf $@
+	$(MKMINIX) -S 8kw obj/nc.elf $@
 
 obj/nc.o:	nc.c
 	@mkdir -p obj
@@ -601,6 +607,7 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/mail.c \
 	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c \
 	  simple/nonamed.c simple/ping.c simple/hostaddr.c \
+	  simple/rcp.c simple/rsh.c simple/finger.c urlget/urlget.c \
 	  telnet/ttn.c rlogind/rlogind.c rlogind/setup.c simple/rlogin.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
@@ -609,6 +616,11 @@ $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	if [ -f fixes/$*.patch ]; then patch -s $@ fixes/$*.patch; fi
 obj/in.rshd.o:	obj/fix/simple/in.rshd.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+obj/rcp.o obj/rsh.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/urlget/urlget.o:	obj/fix/urlget/urlget.c
+	@mkdir -p obj/urlget
+	$(CC) $(CFLAGS) -I$c/urlget -c -o $@ $<
 obj/readfs.o:	obj/fix/simple/readfs.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/make/make.o:	obj/fix/make/make.c $c/make/h.h
@@ -675,13 +687,10 @@ obj/asktime.o:	asktime.c
 	@mkdir -p obj
 	$(CC) $(CFLAGS) -c -o $@ asktime.c
 
-# finger without the network part (NONET 1: netfinger() is a stub); the
-# rosco libc has no lib/ip (gethostbyname, inet_addr)
-obj/finger.c:	$c/simple/finger.c
-	@mkdir -p obj
-	sed 's/^#define NONET	0$$/#define NONET	1/' $< > $@
-obj/finger.o:	obj/finger.c
-	$(CC) $(CFLAGS) -c -o $@ obj/finger.c
+# finger, with the network part (user@host) now that the libc has lib/ip;
+# compiled from obj/fix (Source fixes)
+obj/finger.o:	obj/fix/simple/finger.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 # printf.c passes strtoul() results to printf("%d"), see printfint.h
 obj/printf.o:	CFLAGS += -include printfint.h

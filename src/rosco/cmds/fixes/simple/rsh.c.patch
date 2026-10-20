@@ -1,0 +1,57 @@
+--- rsh.c.orig
++++ rsh.c
+@@ -370,8 +370,14 @@
+ 		(void)close(rfd2);
+ 
+ reread:		errno = 0;
+-		if ((cc = read(0, buf, sizeof buf)) <= 0)
++		if ((cc = read(0, buf, sizeof buf)) <= 0) {
++#if _MINIX
++			/* rosco: a ^C (sent on by sendsig) is no end of input */
++			if (cc < 0 && errno == EINTR)
++				goto reread;
++#endif
+ 			goto done;
++		}
+ 		bp = buf;
+ 
+ rewrite:
+@@ -400,6 +406,9 @@
+ #if !_MINIX
+ 			if (errno == EWOULDBLOCK)
+ 				goto rewrite;
++#else
++			if (errno == EINTR)	/* rosco: as above */
++				goto rewrite;
+ #endif
+ 			goto done;
+ 		}
+@@ -424,11 +433,27 @@
+ 		(void)fprintf(stderr, "rsh: fork: %s.\n", strerror(errno));
+ 		exit(1);
+ 	}
+-	close (pid1 ? rfd2 : rem);
++	/* rosco: the parent keeps rfd2, sendsig() writes the signal there.
++	 * It closed it, so a signal sent to rsh itself (kill) was lost; a
++	 * ^C only got through because this child, which reads rfd2, got it
++	 * too.  Now the parent sends it and the child ignores them.
++	 */
++	if (pid1 == 0)
++	{
++		close (rem);
++		(void)signal(SIGINT, SIG_IGN);
++		(void)signal(SIGQUIT, SIG_IGN);
++		(void)signal(SIGTERM, SIG_IGN);
++	}
+ 	for(;;)
+ 	{
+ 		errno = 0;
+ 		cc = read(pid1 ? rem : rfd2, buf, sizeof buf);
++		/* rosco: a signal (sent on to the other end by sendsig) must
++		 * not end the copy; the output that follows was lost.
++		 */
++		if (cc < 0 && errno == EINTR)
++			continue;
+ 		if (cc <= 0)
+ 		{
+ 			if (pid1)
