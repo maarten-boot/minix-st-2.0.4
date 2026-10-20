@@ -1,0 +1,29 @@
+--- ftp/file.c
++++ ftp/file.c
+@@ -35,7 +35,7 @@
+ char *path;
+ int full;
+ {
+-char cmd[128];
++char cmd[512+64];	/* rosco: was 128, overrun by a long mput pattern */
+ static char name[32];
+ 
+    tmpnam(name);
+@@ -73,7 +73,7 @@
+ 	p = buffer;
+ 	while(s-- > 0) {
+ 		c = *p++;
+-		if(c == '\r') {
++		if(c == '\n') {	/* rosco: was '\r', lines went without CR */
+ 			*op++ = '\r';
+ 			total++;
+ 		}
+@@ -157,7 +157,7 @@
+ char *op, *ope;
+ unsigned long total=0L;
+ 
+-   if(isatty && fd > 2) {
++   if(atty && fd > 2) {	/* rosco: was isatty, the function */
+ 	printf("Received ");
+ 	fflush(stdout);
+    }

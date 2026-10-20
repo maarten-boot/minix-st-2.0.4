@@ -1,0 +1,218 @@
+--- ftpd/file.c
++++ ftpd/file.c
+@@ -20,6 +20,8 @@
+ #include <unistd.h>
+ #include <string.h>
+ #include <time.h>
++#include <ctype.h>
++#include <limits.h>	/* rosco: OPEN_MAX; ctype.h for isalnum */
+ #include <net/hton.h>
+ #include <net/gen/in.h>
+ #include <net/gen/inet.h>
+@@ -30,6 +32,7 @@
+ #include "file.h"
+ #include "net.h"
+ 
++_PROTOTYPE(static int shellsafe, (char *s));
+ _PROTOTYPE(static int fdxcmd, (char *xcmd, char *args));
+ _PROTOTYPE(static int endfdxcmd, (int fd));
+ _PROTOTYPE(static int asciisize, (char *filename, unsigned long *filesize));
+@@ -378,6 +381,10 @@
+ {
+ char *args;
+ 
++   /* rosco: SITE CRC ran a shell command before the login, as root */
++   if(ChkLoggedIn())
++	return(GOOD);
++
+    strncpy(line, buff, sizeof(line));
+ 
+    cvtline(&args);
+@@ -456,7 +463,8 @@
+    printf("211-Status of %s:\r\n", buff);
+ 
+    if((fd = fdxcmd(CMD_LIST, buff)) < 0)
+-	printf("   Could not retrieve status");
++	/* rosco: \r\n, the client did not see the end of the reply */
++	printf("   Could not retrieve status\r\n");
+    else {
+ 	while((s = read(fd, buffer, 1)) == 1) {
+ 		if(*buffer == '\n')
+@@ -538,6 +546,21 @@
+    return(GOOD);
+ }
+ 
++/* rosco: the client's names and arguments go to "sh -c" (LIST, NLST,
++ * STAT, SITE CRC, RETR of name.tar and so on): "LIST ;cmd" ran any
++ * command.  Only characters that the shell takes as plain text or as a
++ * wildcard may pass.
++ */
++static int shellsafe(s)
++char *s;
++{
++   for(; *s; s++)
++	if(!(isalnum((unsigned char)*s)
++				|| strchr(" \t._-+/,=:@%~*?[]#", *s) != NULL))
++		return(0);
++   return(1);
++}
++
+ static int fdxcmd(xcmd, args)
+ char *xcmd;
+ char *args;
+@@ -545,10 +568,22 @@
+ char cmd[512];
+ char *argv[5];
+ int fds[2];
++int i;
+ char *smallenv[] = { "PATH=/bin:/usr/bin:/usr/local/bin", NULL, NULL };
+ 
+    if ((smallenv[1] = getenv("TZ")) != NULL) smallenv[1] -= 3;	/* ouch... */
+ 
++   if(!shellsafe(args)) {
++	errno = EINVAL;
++	return(-1);
++   }
++
++   /* rosco: a 505 character argument overran cmd[] */
++   if(strlen(xcmd) + 1 + strlen(args) >= sizeof(cmd)) {
++	errno = E2BIG;
++	return(-1);
++   }
++
+    sprintf(cmd, "%s %s", xcmd, args);
+ 
+    argv[0] = CMD_SH;
+@@ -572,8 +607,11 @@
+ 	dup2(fds[1], 1);
+ 	dup2(fds[1], 2);
+ 	close(fds[1]);
++	/* rosco: no log files or data connection for the command */
++	for(i = 3; i < OPEN_MAX; i++)
++		close(i);
+ 	execve(argv[0], argv, smallenv);
+-	exit(0);
++	_exit(127);	/* rosco: not exit(), stdio's buffers are ftpd's */
+    }
+ 
+    close(fds[1]);
+@@ -769,6 +807,10 @@
+    }
+ 
+    if(cmdfmt != NULL) {
++	if(!shellsafe(name2)) {		/* rosco: see shellsafe() */
++		printf(msg550, name, strerror(EINVAL));
++		return(-1);
++	}
+ 	sprintf(command, cmdfmt, cdcmd, name2);
+ 	fd = fdxcmd(command, "");
+    } else {
+@@ -796,6 +838,7 @@
+ char *op, *ope;
+ off_t sp;
+ int doascii;
++int werr;
+ 
+    if(ChkLoggedIn()) 
+ 	return(CleanUpData());
+@@ -881,10 +924,14 @@
+    /* start transfer */
+    doascii = (type == TYPE_A) ||
+    	((xmode == SEND_LIST) || (xmode == SEND_NLST)); /* per RFC1123 4.1.2.7 */
++   /* rosco: write errors (the client gone) were not seen, and the
++    * transfer was reported as successful; werr stops it with a 451.
++    */
++   werr = 0;
+    datacount = 0;
+    time(&datastart);
+    op = bufout; ope = bufout + sizeof(bufout) - 3;
+-   while((s = read(fd, buffer, sizeof(buffer))) > 0) {
++   while(!werr && (s = read(fd, buffer, sizeof(buffer))) > 0) {
+ 	datacount += s;
+ 	if(doascii) {
+ 		p = buffer;
+@@ -896,15 +943,19 @@
+ 			}
+ 			*op++ = c;
+ 			if(op >= ope) {
+-				write(ftpdata_fd, bufout, op - bufout);
++				if(write(ftpdata_fd, bufout, op - bufout) != op - bufout)
++					werr = 1;
+ 				op = bufout;
++				if(werr) break;
+ 			}
+ 		}
+ 	} else
+-		write(ftpdata_fd, buffer, s);
++		if(write(ftpdata_fd, buffer, s) != s)
++			werr = 1;
+    }
+-   if(op > bufout)
+-	write(ftpdata_fd, bufout, op - bufout);
++   if(!werr && op > bufout)
++	if(write(ftpdata_fd, bufout, op - bufout) != op - bufout)
++		werr = 1;
+    time(&dataend);
+ 
+ #ifdef DEBUG
+@@ -918,7 +969,7 @@
+    if(dataend == datastart) dataend++;
+    kbs = (datacount * 100 / (dataend - datastart)) / 1024;
+ 
+-   if(s < 0)
++   if(s < 0 || werr)
+ 	printf("451 Transfer aborted.\r\n");
+    else
+ 	printf("226 Transfer finished successfully. %ld.%02d KB/s\r\n",
+@@ -942,6 +993,7 @@
+ int s;
+ int gotcr;
+ off_t sp;
++int werr;
+ 
+    if(ChkLoggedIn())
+ 	return(CleanUpData());
+@@ -1024,6 +1076,10 @@
+ #endif
+ 
+    /* start receiving file */
++   /* rosco: write errors (disk full) were not seen, and the transfer
++    * was reported as successful; werr gives a 451.
++    */
++   werr = 0;
+    datacount = 0;
+    gotcr = 0;
+    op = bufout; ope = bufout + sizeof(bufout) - 3;
+@@ -1044,17 +1100,20 @@
+ 			else
+ 				*op++ = c;
+ 			if(op >= ope) {
+-				write(fd, bufout, op - bufout);
++				if(!werr && write(fd, bufout, op - bufout) != op - bufout)
++					werr = 1;
+ 				op = bufout;
+ 			}
+ 		}
+ 	} else
+-		write(fd, buffer, s);
++		if(!werr && write(fd, buffer, s) != s)
++			werr = 1;
+    }
+    if(gotcr)
+ 	*op++ = '\r';
+    if(op > bufout)
+-	write(fd, bufout, op - bufout);
++	if(!werr && write(fd, bufout, op - bufout) != op - bufout)
++		werr = 1;
+    time(&dataend);
+ 
+ #ifdef DEBUG
+@@ -1068,7 +1127,7 @@
+    if(dataend == datastart) dataend++;
+    kbs = (datacount * 100 / (dataend - datastart)) / 1024;
+ 
+-   if(s < 0)
++   if(s < 0 || werr)
+ 	printf("451 Transfer aborted.\r\n");
+    else {
+ 	printf("226 Transfer finished successfully. ");

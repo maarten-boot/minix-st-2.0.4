@@ -1,0 +1,28 @@
+--- ftp/local.c
++++ ftp/local.c
+@@ -91,19 +91,25 @@
+    return(0);
+ }
+ 
++/* rosco: these three returned nothing, a random value that main() took
++ * as the end when it was negative (e.g. system()'s -1).
++ */
+ int DOllist(void)
+ {
+    dodir(".", 1);
++   return(0);
+ }
+ 
+ int DOlnlst(void)
+ {
+    dodir(".", 0);
++   return(0);
+ }
+ 
+ int DOlshell(void)
+ {
+    system("$SHELL");
++   return(0);
+ }
+ 
+ static void dodir(path, full)

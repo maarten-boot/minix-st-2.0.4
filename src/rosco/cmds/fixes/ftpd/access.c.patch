@@ -1,0 +1,10 @@
+--- ftpd/access.c
++++ ftpd/access.c
+@@ -44,6 +44,7 @@
+    loggedin = 0;
+    gotuser = 0;
+    strncpy(username, buff, sizeof(username));
++   username[sizeof(username)-1] = '\0';	/* rosco: a long name was not ended */
+ 
+    if(*username == '\0') {
+ 	printf("501 Bad user name.\r\n");

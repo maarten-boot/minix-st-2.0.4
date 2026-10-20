@@ -1,0 +1,91 @@
+--- simple/tcpd.c
++++ simple/tcpd.c
+@@ -40,7 +40,11 @@
+ 
+ static void sigchld(int sig)
+ {
+-    while (waitpid(0, NULL, WNOHANG) > 0) {
++    /* rosco: -1, any child, not 0, the children in my process group: the
++     * servers that make a session of their own (in.telnetd, in.rshd,
++     * in.rlogind) left zombies when tcpd had a process group of its own.
++     */
++    while (waitpid(-1, NULL, WNOHANG) > 0) {
+ 	if (nchildren > 0) nchildren--;
+     }
+ }
+@@ -84,7 +88,9 @@
+     /* Switch to the paranoid version of me if there are flags, or if
+      * there is an access file.
+      */
+-    if (argv[1][0] == '-' || access(_PATH_SERVACCES, F_OK) == 0) {
++    /* rosco: argc first, "tcpd" alone dereferenced argv[1], a null. */
++    if ((argc > 1 && argv[1][0] == '-')
++				|| access(_PATH_SERVACCES, F_OK) == 0) {
+ 	execv("/usr/bin/tcpdp", argv);
+ 	report("tcpdp");
+ 	exit(1);
+@@ -222,10 +228,14 @@
+ 		close(tcp_fd);
+ 		close(pfd[0]);
+ #if PARANOID
+-		/* Check if access to this service allowed. */
+-		if (ioctl(client_fd, NWIOGTCPCONF, &tcpconf) == 0
+-		    && tcpconf.nwtc_remaddr != tcpconf.nwtc_locaddr
+-		    && !servxcheck(tcpconf.nwtc_remaddr, argv[1], NULL)
++		/* Check if access to this service allowed.  rosco: the
++		 * service, not argv[1] (a flag with -d or -m), and no
++		 * access when the peer is unknown (ioctl failed, e.g. the
++		 * connection was reset).
++		 */
++		if (ioctl(client_fd, NWIOGTCPCONF, &tcpconf) < 0
++		    || (tcpconf.nwtc_remaddr != tcpconf.nwtc_locaddr
++		    && !servxcheck(tcpconf.nwtc_remaddr, service, NULL))
+ 		) {
+ 		    exit(1);
+ 		}
+@@ -249,14 +259,21 @@
+ 	    }
+ 	}
+ 
++	/* rosco: collect the servers that are done; SIGCHLD stays blocked
++	 * during the listen.  A SIGCHLD that interrupted it while a client's
++	 * SYN had just been answered made INET drop that half open
++	 * connection without a RST: the client was "connected" to nothing
++	 * and hung (every other connection when they came quickly).  The
++	 * price: a finished server stays a zombie until the next connection.
++	 */
++	sigchld(SIGCHLD);
++
+ 	while (nchildren >= max_children) {
+ 	    /* Too many clients, wait for one to die off. */
+ 	    sigsuspend(&chldunmask);
+ 	}
+ 
+ 	/* Wait for a new connection. */
+-	sigprocmask(SIG_UNBLOCK, &chldmask, NULL);
+-
+ 	tcplistenopt.nwtcl_flags= 0;
+ 	while (ioctl(tcp_fd, NWIOTCPLISTEN, &tcplistenopt) < 0) {
+ 	    if (errno != EINTR) {
+@@ -266,7 +283,7 @@
+ 		goto bad;
+ 	    }
+ 	}
+-	sigprocmask(SIG_BLOCK, &chldmask, NULL);
++	sigchld(SIGCHLD);	/* rosco: see above */
+ 
+ 	/* We got a connection. */
+ 	client_fd= tcp_fd;
+@@ -295,7 +312,11 @@
+ 		    stall, stall == 1 ? "" : "s");
+ 	    }
+ 	    sleep(stall);
+-	    stall <<= 1;
++	    /* rosco: about a minute at most; it doubled without end (fork
++	     * failing on a full process table stopped the service for
++	     * hours).
++	     */
++	    if (stall < 60) stall <<= 1;
+ 	} else {
+ 	    stall= 1;
+ 	}

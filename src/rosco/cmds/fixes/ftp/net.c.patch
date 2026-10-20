@@ -1,0 +1,11 @@
+--- ftp/net.c
++++ ftp/net.c
+@@ -299,7 +299,7 @@
+    lport = tcpconf.nwtc_locport;
+ 
+    if(passive) {
+-	tcplopt.nwtcl_flags = 0;
++	tcpcopt.nwtcl_flags = 0;	/* rosco: was tcplopt, tcpcopt unset */
+ 	s = ioctl(ftpdata_fd, NWIOTCPCONN, &tcpcopt);
+ 	if(s < 0) {
+ 		perror("ftp: error on ioctl NWIOTCPCONN");

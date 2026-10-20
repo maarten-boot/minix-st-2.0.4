@@ -1,0 +1,48 @@
+--- ftp/ftp.c
++++ ftp/ftp.c
+@@ -53,8 +53,9 @@
+    for(i = 0; i < NUMARGS; i++)
+ 	cmdargv[i] = (char *)0;
+ 
++   /* rosco: p > buff, an empty line started before buff[] */
+    p = buff + strlen(buff) - 1;
+-   while(p != buff)
++   while(p > buff)
+ 	if(*p == '\r' || *p == '\n' || isspace(*p))
+ 		*p-- = '\0';
+ 	else
+@@ -85,6 +86,9 @@
+ char *buff;
+ int len;
+ {
++char *nl;
++int c;
++
+    printf(prompt); fflush(stdout);
+ 
+    if(fgets(buff, len, stdin) == (char *)NULL) {
+@@ -92,7 +96,14 @@
+ 	exit(1);
+    }
+ 
+-   *strchr(buff, '\n') = 0;
++   /* rosco: a line longer than buff[] (or a last line without a newline)
++    * has no '\n': it wrote a 0 to address 0.  The rest of a long line is
++    * skipped.
++    */
++   if((nl = strchr(buff, '\n')) != (char *)NULL)
++	*nl = 0;
++   else
++	while((c = getchar()) != EOF && c != '\n') {}
+ 
+    if(!atty) {
+ 	printf("%s\n", buff);
+@@ -115,7 +126,7 @@
+ 		if(fgets(reply, sizeof(reply), fpcommin) == (char *)0)
+ 			return(-1);
+ 		p = reply + strlen(reply) - 1;
+-		while(p != reply)
++		while(p > reply)	/* rosco: was !=, see makeargs() */
+ 			if(*p == '\r' || *p == '\n' || isspace(*p))
+ 				*p-- = '\0';
+ 			else

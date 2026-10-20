@@ -1,0 +1,43 @@
+--- ftpd/net.c
++++ ftpd/net.c
+@@ -171,24 +171,29 @@
+ {
+ u32_t ipaddr;
+ u16_t port;
+-int i;
++int i, n[6];
+ 
+-   ipaddr = (u32_t)0;
+-   for(i = 0; i < 4; i++) {
+-	ipaddr = (ipaddr << 8) + (u32_t)atoi(buff);
+-	if((buff = strchr(buff, ',')) == (char *)0) {
++   /* rosco: each number 0-255 (they were added up unchecked), and only
++    * the client's own address: no data connections to other hosts from
++    * port 20 (the "FTP bounce").
++    */
++   for(i = 0; i < 6; i++) {
++	n[i] = atoi(buff);
++	if(n[i] < 0 || n[i] > 255
++		|| (i < 5 && (buff = strchr(buff, ',')) == (char *)0)) {
+ 		printf(msg501);
+ 		return(GOOD);
+ 	}
+ 	buff++;
+    }
+-   port = (u16_t)atoi(buff);
+-   if((buff = strchr(buff, ',')) == (char *)0) {
+-	printf(msg501);
+-	return(0);
++   ipaddr = ((u32_t)n[0] << 24) | ((u32_t)n[1] << 16)
++		| ((u32_t)n[2] << 8) | (u32_t)n[3];
++   port = (u16_t)(((unsigned)n[4] << 8) | n[5]);
++
++   if(htonl(ipaddr) != rmtipaddr) {
++	printf("500 PORT only to the client's own address.\r\n");
++	return(GOOD);
+    }
+-   buff++;
+-   port = (port << 8) + (u16_t)atoi(buff);
+ 
+    dataaddr = htonl(ipaddr);
+    dataport = htons(port);

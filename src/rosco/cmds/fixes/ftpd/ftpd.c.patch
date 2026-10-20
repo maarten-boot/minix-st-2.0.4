@@ -1,0 +1,40 @@
+--- ftpd/ftpd.c
++++ ftpd/ftpd.c
+@@ -190,8 +190,9 @@
+ {
+ char *p;
+ 
++   /* rosco: p > line, an empty line started before line[] */
+    p = line + strlen(line) - 1;
+-   while(p != line)
++   while(p > line)
+ 	if(*p == '\r' || *p == '\n' || isspace(*p))
+ 		*p-- = '\0';
+ 	else
+@@ -217,11 +218,22 @@
+ char **args;
+ {
+    char *nl;
++   int c;
+ 
+-   if (fgets(line, sizeof(line), stdin) == (char *)NULL)
+-	return(BAD);
+-   if ((nl = strchr(line, '\n')) == NULL)
+-	return(BAD);
++   /* rosco: a line too long for line[] was taken as the end of the
++    * session; now it is skipped with a 500 reply.
++    */
++   while(1) {
++	if (fgets(line, sizeof(line), stdin) == (char *)NULL)
++		return(BAD);
++	if ((nl = strchr(line, '\n')) != NULL)
++		break;
++	while ((c = getchar()) != EOF && c != '\n') {}
++	if (c == EOF)
++		return(BAD);
++	printf("500 Command line too long.\r\n");
++	fflush(stdout);
++   }
+    *nl = '\0';
+ 
+    cvtline(args);

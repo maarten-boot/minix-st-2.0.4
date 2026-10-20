@@ -532,6 +532,17 @@ $(eval $(call pkgbin,in.ftpd,ftpd,ftpd access file net,8kw))
 obj/ftpd/%.o:	$c/ftpd/%.c
 	@mkdir -p obj/ftpd
 	$(CC) $(CFLAGS) -I$c/ftpd -c -o $@ $<
+# the fixed copies (Source fixes, below): in.ftpd ran client arguments in
+# a shell (LIST ;cmd, SITE CRC before the login), PORT to any host; ftp
+# wrote through a null pointer on a long line, ASCII put sent no CRs
+obj/ftp/ftp.o obj/ftp/local.o obj/ftp/file.o obj/ftp/net.o: \
+		obj/ftp/%.o:	obj/fix/ftp/%.c
+	@mkdir -p obj/ftp
+	$(CC) $(CFLAGS) -I$c/ftp -c -o $@ $<
+obj/ftpd/ftpd.o obj/ftpd/access.o obj/ftpd/file.o obj/ftpd/net.o: \
+		obj/ftpd/%.o:	obj/fix/ftpd/%.c
+	@mkdir -p obj/ftpd
+	$(CC) $(CFLAGS) -I$c/ftpd -c -o $@ $<
 
 # telnet (commands/telnet, "ttn"), 16kw (it died with "Memory fault" after
 # connecting with the ACK 4kw), and in.telnetd (commands/telnetd, needs the
@@ -570,13 +581,14 @@ obj/rlogind/rlogind.o obj/rlogind/setup.o: \
 
 # tcpd listens on a TCP port and runs a server for each connection; with
 # flags, or when /etc/serv.access exists, it runs tcpdp, the same source
-# built with PARANOID=1 (access checks, -d, -m)
+# built with PARANOID=1 (access checks, -d, -m).  Both from the fixed copy
+# (Source fixes, below): zombies of servers with their own session.
 $(eval $(call pkgbin,tcpd,tcpd,tcpd,4kw))
 $(eval $(call pkgbin,tcpdp,tcpd,tcpdp,8kw))
-obj/tcpd/tcpd.o:	$c/simple/tcpd.c
+obj/tcpd/tcpd.o:	obj/fix/simple/tcpd.c
 	@mkdir -p obj/tcpd
 	$(CC) $(CFLAGS) -DPARANOID=0 -c -o $@ $<
-obj/tcpd/tcpdp.o:	$c/simple/tcpd.c
+obj/tcpd/tcpdp.o:	obj/fix/simple/tcpd.c
 	@mkdir -p obj/tcpd
 	$(CC) $(CFLAGS) -DPARANOID=1 -c -o $@ $<
 
@@ -607,6 +619,8 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/mail.c \
 	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c \
 	  simple/nonamed.c simple/ping.c simple/hostaddr.c \
+	  simple/tcpd.c ftpd/ftpd.c ftpd/access.c ftpd/file.c ftpd/net.c \
+	  ftp/ftp.c ftp/local.c ftp/file.c ftp/net.c \
 	  simple/rcp.c simple/rsh.c simple/finger.c urlget/urlget.c \
 	  telnet/ttn.c rlogind/rlogind.c rlogind/setup.c simple/rlogin.c
 .SECONDEXPANSION:
