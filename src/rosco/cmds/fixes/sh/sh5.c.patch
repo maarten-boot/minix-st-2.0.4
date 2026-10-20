@@ -1,0 +1,81 @@
+--- a/sh5.c
++++ b/sh5.c
+@@ -3,6 +3,7 @@
+ #include <signal.h>
+ #include <errno.h>
+ #include <setjmp.h>
++#include <sys/wait.h>
+ #include "sh.h"
+ 
+ /* -------- io.c -------- */
+@@ -21,6 +22,7 @@
+ _PROTOTYPE(static void readhere, (char **name, char *s, int ec ));
+ _PROTOTYPE(void pushio, (struct ioarg *argp, int (*fn)()));
+ _PROTOTYPE(static int xxchar, (struct ioarg *ap ));
++_PROTOTYPE(static int gravefile, (struct ioarg *ap ));
+ _PROTOTYPE(void tempname, (char *tname ));
+ 
+ int
+@@ -351,9 +353,9 @@
+ 		}
+ 		c = iop->xchar;
+ 		iop->xchar = 0;
+-	} else if ((c = filechar(ap)) == '\n') {
++	} else if ((c = gravefile(ap)) == '\n') {
+ 		iop->nlcount = 1;
+-		while ((c = filechar(ap)) == '\n')
++		while ((c = gravefile(ap)) == '\n')
+ 			iop->nlcount++;
+ 		iop->xchar = c;
+ 		if (c == 0)
+@@ -365,6 +367,36 @@
+ }
+ 
+ /*
++ * rosco: filechar() for the pipe from `...`, which also waits for the
++ * process at the end of its output (its pid in afpos, see grave()).
++ * Nothing waited for it before: in a loop without other commands, as
++ * "while read l; do n=`expr $n + 1`; done", the zombies filled the
++ * process table and fork failed ("try again").
++ */
++static int
++gravefile(ap)
++register struct ioarg *ap;
++{
++	register int i;
++	char c;
++	int s;
++
++	if (ap->afid != AFID_NOBUF)
++		return(filechar(ap));
++	do {
++		i = read(ap->afile, &c, sizeof(c));
++	} while (i < 0 && errno == EINTR);
++	if (i == sizeof(c))
++		return(c&0177);
++	closef(ap->afile);
++	if (ap->afpos > 0) {
++		waitpid((pid_t) ap->afpos, &s, 0);
++		ap->afpos = 0;
++	}
++	return(0);
++}
++
++/*
+  * Return a single command (usually the first line) from a file.
+  */
+ int
+@@ -675,7 +707,12 @@
+ 
+ 	for (cp = tname, lp = "/tmp/shtm"; (*cp = *lp++) != '\0'; cp++)
+ 		;
+-	lp = putn(getpid()*1000 + inc++);
++	/* rosco: was putn(getpid()*1000 + inc++), which overflows the 16-bit
++	 * int (-mshort): shells with pids 8192 apart made the same names */
++	lp = itoa(getpid(), 0);
++	for (; (*cp = *lp++) != '\0'; cp++)
++		;
++	lp = itoa((unsigned)inc++ % 1000, 3);
+ 	for (; (*cp = *lp++) != '\0'; cp++)
+ 		;
+ }

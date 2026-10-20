@@ -73,16 +73,25 @@ STACK_who = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
-# the shell: 11kw in the ACK build
+# the shell: 11kw in the ACK build.  Its heap (all its strings and lists,
+# never given back) and stack share this space; a here document puts a 4K
+# line buffer on the stack, and MM keeps 1.5K free below the stack.  With
+# 11kw a script with a 2000 character variable got "argument list too long"
+# for "echo $v" (14.7K heap: the child had no room for the exec frame).
 SHOBJ	= $(addprefix obj/sh/,sh1.o sh2.o sh3.o sh4.o sh5.o sh6.o)
 bin/sh:	$(SHOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/sh.elf $L/crtso.o $(SHOBJ) $(LIBS)
-	$(MKMINIX) -S 11kw obj/sh.elf $@
+	$(MKMINIX) -S 16kw obj/sh.elf $@
 
 obj/sh/%.o:	$c/sh/%.c $c/sh/sh.h
 	@mkdir -p obj/sh
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+# sh3.c, sh4.c and sh5.c are compiled from fixed copies (Source fixes, below)
+obj/sh/sh3.o obj/sh/sh4.o obj/sh/sh5.o:	obj/sh/%.o:	obj/fix/sh/%.c $c/sh/sh.h
+	@mkdir -p obj/sh
+	$(CC) $(CFLAGS) -I$c/sh -c -o $@ $<
 
 # ps reads the kernel, MM and FS tables (sttools/ps.c, 24kw in the ACK build)
 bin/ps:	obj/ps.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
@@ -570,7 +579,7 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  kermit/ckcmai.c kermit/ckcpro.c kermit/ckucon.c kermit/ckudia.c \
 	  kermit/ckufio.c kermit/ckuscr.c kermit/ckutio.c kermit/ckuus2.c \
 	  kermit/ckuus3.c kermit/ckuusr.c simple/diff.c simple/cdiff.c \
-	  simple/login.c simple/getty.c simple/su.c \
+	  simple/login.c simple/getty.c simple/su.c sh/sh3.c sh/sh4.c sh/sh5.c \
 	  simple/passwd.c \
 	  cron/cron.c cron/tab.c cron/crontab.c simple/at.c
 .SECONDEXPANSION:

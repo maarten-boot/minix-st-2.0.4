@@ -1,0 +1,91 @@
+--- a/sh3.c
++++ b/sh3.c
+@@ -71,6 +71,7 @@
+ _PROTOTYPE(int doset, (struct op *t ));
+ _PROTOTYPE(void varput, (char *s, int out ));
+ _PROTOTYPE(int dotimes, (void));
++_PROTOTYPE(static char **copywords, (char **wp, int n ));
+ 
+ int
+ execute(t, pin, pout, act)
+@@ -80,7 +81,7 @@
+ {
+ 	register struct op *t1;
+ 	int i, pv[2], rv, child, a;
+-	char *cp, **wp, **wp2;
++	char *cp, **wp, **wp2, **cw;
+ 	struct var *vp;
+ 	struct brkcon bc;
+ 
+@@ -156,6 +157,9 @@
+ 			wp = dolv+1;
+ 			if ((i = dolc) < 0)
+ 				i = 0;
++			/* rosco: loop over a copy, a set in the loop frees dolv */
++			if ((cw = copywords(wp, i)) != NULL)
++				wp = cw;
+ 		} else {
+ 			i = -1;
+ 			while (*wp++ != NULL)
+@@ -1063,17 +1067,58 @@
+ 		setdash();
+ 	}
+ 	if (t->words[1]) {
++		/* rosco: the arguments of each set were kept for good (area 0),
++		 * so "while read l; do set -- $l; done" ran out of memory after
++		 * some 100 lines.  Keep a copy in one cell, freed by the next
++		 * set.  (dolv-1 was not the start of the cell either, after
++		 * an assignment in front of the set.)
++		 */
++		static char **setv;	/* the cell of the last set, or NULL */
++		register char **nv;
++
+ 		t->words[0] = dolv[0];
+ 		for (n=1; t->words[n]; n++)
+-			setarea((char *)t->words[n], 0);
++			;
++		if ((nv = copywords(t->words, n)) == NULL)
++			return(1);
++		setarea((char *)nv, 0);
++		if (setv != NULL)
++			xfree((char *)setv);
++		setv = nv;
+ 		dolc = n-1;
+-		dolv = t->words;
++		dolv = nv;
+ 		setval(lookup("#"), putn(dolc));
+-		setarea((char *)(dolv-1), 0);
+ 	}
+ 	return(0);
+ }
+ 
++/*
++ * rosco: copy of the words wp[0] .. wp[n-1], NULL terminated, with
++ * the strings in the same cell (in the current area)
++ */
++static char **
++copywords(wp, n)
++register char **wp;
++int n;
++{
++	register char **nv, *cp;
++	register int i;
++	unsigned len;
++
++	len = (n+1) * sizeof(char *);
++	for (i = 0; i < n; i++)
++		len += strlen(wp[i]) + 1;
++	if ((nv = (char **) space(len)) == NULL)
++		return((char **)NULL);
++	cp = (char *)(nv + n + 1);
++	for (i = 0; i < n; i++) {
++		nv[i] = strcpy(cp, wp[i]);
++		cp += strlen(cp) + 1;
++	}
++	nv[n] = NULL;
++	return(nv);
++}
++
+ void
+ varput(s, out)
+ register char *s;

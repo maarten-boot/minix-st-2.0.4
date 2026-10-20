@@ -1,0 +1,33 @@
+--- a/sh4.c
++++ b/sh4.c
+@@ -33,6 +33,8 @@
+ _PROTOTYPE(void glob2, (char *i, char *j ));
+ _PROTOTYPE(void glob3, (char *i, char *j, char *k ));
+ _PROTOTYPE(char *memcopy, (char *ato, char *from, int nb ));
++/* rosco: in sh5.c, was called undeclared */
++_PROTOTYPE(void inithere, (void));
+ 
+ char **
+ eval(ap, f)
+@@ -382,7 +384,10 @@
+ 	if (i != 0) {
+ 		e.linep = s;
+ 		close(pf[1]);
++		/* rosco: the pid for gravefile() (sh5.c), to wait for it */
++		temparg.afpos = i;
+ 		PUSHIO(afile, remap(pf[0]), quoted? qgravechar: gravechar);
++		temparg.afpos = 0;
+ 		return(1);
+ 	}
+ 	*e.linep = 0;
+@@ -509,7 +514,9 @@
+ 		return;
+ 	}
+ 	dname[NAME_MAX] = '\0';
+-	while ((n = read(dn, (char *)ent, sizeof(ent))) >= sizeof(*ent)) {
++	/* rosco: (int), or a read error (-1) compared as unsigned (65535) and
++	 * the loop ran over 4095 entries, again and again */
++	while ((n = read(dn, (char *)ent, sizeof(ent))) >= (int)sizeof(*ent)) {
+ 		n /= sizeof(*ent);
+ 		for (j=0; j<n; j++) {
+ 			if (ent[j].d_ino == 0)
