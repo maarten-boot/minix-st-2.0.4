@@ -1,0 +1,163 @@
+--- orig/awk/r.c
++++ new/awk/r.c
+@@ -58,11 +58,12 @@
+   int i;
+   FILE *fp, *getfp();
+ 
+-  if ((int) p->n_arg[0])	/* read into var */
++  /* rosco: these are pointers, (int) is their low 16 bits only */
++  if (p->n_arg[0] != NULL)	/* read into var */
+ 	s = str;
+   else
+ 	s = NULL;
+-  if ((int) p->n_arg[1]) {	/* file name */
++  if (p->n_arg[1] != NULL) {	/* file name */
+ 	u = execute(p->n_arg[1]);
+ 	fnam = getsval(u);
+ 	fp = getfp(fnam, (int) p->n_arg[2]);
+@@ -98,6 +99,9 @@
+ 	return 0;
+   for (s = buf; ; ) {
+ 	for ( ; c != rs && c != EOF; c = getc(fp)) {
++		/* rosco: buf is BUFSIZ bytes, do not run past its end */
++		if (s >= buf + BUFSIZ - 3)
++			error("record too long", (char *) 0);
+ 		if (isKanji(c)) {
+ 			*s++ = c; c = getc(fp);
+ 		}
+@@ -106,6 +110,8 @@
+ 	if (mflg) {
+ 		if ((c = getc(fp)) == '\n' || c == EOF)
+ 			break;
++		if (s >= buf + BUFSIZ - 3)	/* rosco: as above */
++			error("record too long", (char *) 0);
+ 		*s++ = '\n';
+ 	}
+ 	else
+@@ -158,8 +164,15 @@
+ 			*FILENAME = file;
+ 		}
+ 	}
+-	if (get1rec(s, ifp))
++	if (get1rec(s, ifp)) {
++		/* rosco: "getline var" counts records too (get1rec() only
++		 * counts those read into $0) */
++		if (s != NULL) {
++			(*NR)++;
++			(*FNR)++;
++		}
+ 		return 1;
++	}
+ 	else {
+ 		if (ifp != stdin)
+ 			fclose(ifp);
+@@ -204,6 +217,9 @@
+ 		*t++ = *s++;
+ 	}
+ 	*t = '\0';
++	/* rosco: fld[] (field[]) has MAXFLD entries, $0 included */
++	if (i >= MAXFLD - 1)
++		error("too many fields", (char *) 0);
+ 	if (isnum(str))
+ 		fld[++i] =  mkcell(FLD|STR|NUM, str, atof(str));
+ 	else
+@@ -226,7 +242,8 @@
+   regexp *mkpat();
+   extern int r_start, r_length;
+ 
+-  if (strcmp(*FS, fs_str) != 0) {
++  /* rosco: fs_str is NULL the first time */
++  if (fs_str == NULL || strcmp(*FS, fs_str) != 0) {
+ 	sfree(fs_str); sfree(fs_pat);
+ 	fs_str = strsave(*FS);
+ 	fs_pat = mkpat(fs_str);
+@@ -247,6 +264,8 @@
+ 	}
+ 	*t = '\0';
+ 	t = str;
++	if (i >= MAXFLD - 1)	/* rosco: as in mkfld() */
++		error("too many fields", (char *) 0);
+ 	fld[++i] = mkcell(FLD|STR, str, 0.0);
+ 	if (*s)
+ 		s += r_length;
+@@ -285,9 +304,14 @@
+ {
+   CELL *u;
+   int i, j;
++  double x;
+ 
+   u = execute(p->n_arg[0]);
+-  i = (int) getfval(u);
++  /* rosco: field[] has MAXFLD entries (and int is 16 bits) */
++  x = getfval(u);
++  if (x < 0.0 || x >= MAXFLD)
++	error("field number out of range", (char *) 0);
++  i = (int) x;
+   c_free(u);
+   j = (int)*NF;
+   if (i > j)
+@@ -396,11 +420,19 @@
+ 	else if (*(s + 1) == '%') {
+ 		*t++ = *s++; continue;
+ 	}
++	/* rosco: also %i, %X, %E and %G */
+ 	for (r = fmt, *r++ = *s++; *r++ = *s; s++) {
+-		if (strchr("%cdefgosux", *s))
++		if (strchr("%cdefgiosuxEGX", *s))
+ 			break;
+ 	}
+ 	*r = '\0';
++	/* rosco: a '%' without a conversion at the end: copy it, the
++	 * s++ of the loop would step past the end of the format */
++	if (*s == '\0') {
++		strcpy(t, fmt);
++		t += strlen(t);
++		break;
++	}
+ 	if (p->n_arg[i] == NULL)
+ 		error("not enough args in printf(%s)", s0);
+ 	v = execute(p->n_arg[i++]);
+@@ -413,22 +445,26 @@
+ */
+ 	switch (*s) {
+ 	case 'c':
++		/* rosco: a string prints its first character */
++		if (!(v->c_type & NUM))
++			x = (double) (*getsval(v) & 0377);
+ 		sprintf(t, fmt, (int) x);
+ 		break;
+-	case 'd':
++	case 'd': case 'i':
+ 		if (*(s - 1) != 'l') {
+ 			*--r = 'l'; *++r = 'd'; *++r = '\0';
+ 		}
+ 		sprintf(t, fmt, (long) x);
+ 		break;
+-	case 'e': case 'f': case 'g':
++	case 'e': case 'f': case 'g': case 'E': case 'G':
+ 		sprintf(t, fmt, x);
+ 		break;
+-	case 'o': case 'u': case 'x':
+-		if (*(s - 1) == 'l')
+-			sprintf(t, fmt, (long) x);
+-		else
+-			sprintf(t, fmt, (int) x);
++	case 'o': case 'u': case 'x': case 'X':
++		/* rosco: int is 16 bits, always print a long (as %d does) */
++		if (*(s - 1) != 'l') {
++			*--r = 'l'; *++r = *s; *++r = '\0';
++		}
++		sprintf(t, fmt, (long) x);
+ 		break;
+ 	case 's':
+ 		/*r = getsval(v);*/
+@@ -525,7 +561,8 @@
+   register int i;
+ 
+   for (i = 0; i < MAXFILE; i++)
+-	if (strcmp(s, filetab[i].f_name) == 0) {
++	/* rosco: unused entries have a NULL name */
++	if (filetab[i].f_name && strcmp(s, filetab[i].f_name) == 0) {
+ 		close1(i);
+ 		break;
+ 	}

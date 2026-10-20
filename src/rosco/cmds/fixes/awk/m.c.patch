@@ -1,0 +1,29 @@
+--- orig/awk/m.c
++++ new/awk/m.c
+@@ -62,7 +62,13 @@
+ 			/* no return */
+ #endif
+ 		case 'F':
+-			*FS = ++s;
++			/* rosco: FS is freed when it is assigned, so it must
++			 * be malloc'ed; the rest of the argument is FS, not
++			 * more options */
++			*FS = strsave(++s);
++			while (*s)
++				s++;
++			s--;
+ 			break;
+ 		case 'f':
+ 			if (*(s+1))
+@@ -78,6 +84,11 @@
+   if (pfp == NULL && xargc > 0) {
+ 	srcprg = *xargv++; xargc--;
+   }
++  /* rosco: without a program, Getc() read the NULL pfp */
++  if (pfp == NULL && srcprg == NULL) {
++	fprintf(stderr, "Usage: %s [-Fc] [-f source | 'cmds'] [files]\n", cmd);
++	exit(2);
++  }
+ /*
+   if (pfp == NULL && xargc > 0) {
+ 	if (strpbrk(xargv[0], " !$^()={}[];<>,/~") != NULL) {

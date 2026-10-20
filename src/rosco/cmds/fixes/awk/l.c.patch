@@ -1,0 +1,12 @@
+--- orig/awk/l.c
++++ new/awk/l.c
+@@ -43,7 +43,8 @@
+   while ((c = Getc()) == ' ' || c == '\t')
+ 	;
+   while (c == '#')
+-	for (c = Getc(); c != '\n'; c = Getc())
++	/* rosco: stop at EOF too, a comment on the last line looped */
++	for (c = Getc(); c != '\n' && c != EOF; c = Getc())
+ 		;
+   switch (c) {
+   case '\\':

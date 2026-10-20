@@ -1,0 +1,120 @@
+--- orig/awk/e.c
++++ new/awk/e.c
+@@ -351,6 +351,10 @@
+   CELL *u, *v;
+   double x, y;
+   double atan2(), cos(), exp(), log(), sin(), sqrt(), modf();
++  /* rosco: time() returns a long (an int without this declaration,
++   * 2 bytes with -mshort) */
++  long time();
++  static double seed;
+ 
+   if ((int) p->n_arg[1] == 0) {
+ 	u = NULL;
+@@ -379,11 +383,17 @@
+   case SQRT:	x = sqrt(x); break;
+   case RAND:	x = (double) rand() / 32768.0; break;
+   case SRAND:	if (x == 0.0)
+-			x = (double) time(0);
+-		x = (double) srand((int) x);
++			x = (double) time((long *) 0);
++		/* rosco: time() takes a pointer, a bare 0 is a 2 byte int;
++		 * srand() returns void: return the previous seed instead */
++		y = seed;
++		seed = x;
++		srand((unsigned) (long) x);
++		x = y;
+ 		break;
+   default:
+-	fprintf(stderr, "unknown math function (%d)\n", p->n_arg[2]);
++	/* rosco: the function is n_arg[0], an int, not the n_arg[2] node */
++	fprintf(stderr, "unknown math function (%d)\n", (int) p->n_arg[0]);
+ 	break;
+   }
+   if (u != NULL)
+@@ -431,14 +441,26 @@
+   case SUBSTR:
+ 	if (n > 1) {
+ 		v = execute(p->n_arg[3]);
+-		m = (int) getfval(v) - 1;
++		/* rosco: int is 16 bits, (int) 99999.0 is negative: clamp */
++		x = getfval(v);
++		if (x > BUFSIZ)
++			x = BUFSIZ;
++		else if (x < -BUFSIZ)
++			x = -BUFSIZ;
++		m = (int) x - 1;
+ 		c_free(v);
+ 	}
+ 	else
+ 		m = 0;
+ 	if (n > 2) {
+ 		v = execute(p->n_arg[4]);
+-		n = (int) getfval(v);
++		/* rosco: clamp as above */
++		x = getfval(v);
++		if (x > BUFSIZ)
++			x = BUFSIZ;
++		else if (x < -BUFSIZ)
++			x = -BUFSIZ;
++		n = (int) x;
+ 		c_free(v);
+ 	}
+ 	else
+@@ -460,10 +482,9 @@
+ 		pat = getpat(v);
+ 		match(pat, s);
+ 		c_free(v);
+-		if (r_start) {	/* change only if match */
+-			*RSTART = (double) r_start;
+-			*RLENGTH = (double) r_length;
+-		}
++		/* rosco: awk sets RSTART 0 and RLENGTH -1 if there is no match */
++		*RSTART = (double) r_start;
++		*RLENGTH = r_start ? (double) r_length : -1.0;
+ 		r = mktmp(NUM, NULL, (double) r_start);
+ 	}
+ 	else
+@@ -473,7 +494,11 @@
+ 	r = Close(s);
+ 	break;
+   case SYSTEM:
+-	r = mktmp(NUM, NULL, system(s) == -1 ? 0.0 : 1.0);
++	/* rosco: return the exit status of the command, not 1 (and flush
++	 * stdout first, as other awks do) */
++	fflush(stdout);
++	i = system(s);
++	r = mktmp(NUM, NULL, i == -1 ? -1.0 : (double) ((i >> 8) & 0377));
+ 	break;
+   default:
+ 	fprintf(stderr, "unknown string function");
+@@ -761,7 +786,8 @@
+   case BREAK:	u = &breakcell; break;
+   case CONTIN:	u = &contcell;  break;
+   case EXIT:
+-	if ((int) p->n_arg[1]) {
++	/* rosco: a pointer, (int) is its low 16 bits only */
++	if (p->n_arg[1] != NULL) {
+ 		u = execute(p->n_arg[1]);
+ 		i = (int) getfval(u);
+ 	}
+@@ -883,6 +909,8 @@
+ #endif
+ 				/* Don't free original */
+ 			}
++			/* rosco: v is a copy, free u if it is a temporary */
++			c_free(u);
+ /*
+ printf("pass1, j(%d)typ(%d)\n", j, v->c_type);
+ */
+@@ -934,6 +962,10 @@
+   sfree(arg);
+ /*  return retval;*/
+   u = mktmp(retval->c_type, retval->c_sval, retval->c_fval);
++  /* rosco: free retval now, the next Call() set it to &truecell
++   * and lost it (fib(15) ran out of memory) */
++  c_free(retval);
++  retval = &truecell;
+   return u;
+ }
+ 

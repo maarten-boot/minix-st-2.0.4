@@ -373,3 +373,4 @@ and sdproto edits are merged one at a time.
 | 2 | flex | realloc without prototype (pointer cut to 16 bits), allocation sizes in 16-bit int, upstream -F uninitialized state 0 | 51 |
 | 2 | kermit | the line speed in a 16-bit int (no speed above 32767 could be set), ctime without prototype, ttsndb, SIGINT after a shell escape; /usr/spool/locks was missing | 52 |
 | 3 | diff, cdiff | line numbers past 32767 negative, -c/cdiff hunk buffers wrapping at 32K, long lines in -c, -b running past the string, isdir, warn format, -r header order | 53 |
+| 3 | awk | pointer NULL tests through 16-bit int, time(0), %x/%o/%u and substr cut to 16 bits, undeclared jStrchr; lost statements in multi-statement rules, delete losing hash chains, $0 assignment freeing a static buffer, call leaks, gsub empty-match loop, regexp jumps over 255, EOF-comment hang, record/field overruns, system()/match()/split(re) | 54 |

@@ -202,17 +202,19 @@ FPLIBS	= $L/fpprintf.o -Wl,--start-group $L/libm.a $L/libc.a $(LIBGCC) \
 
 # awk: commands/awk (32kw in the ACK build).  The sources declare functions
 # extern ("CELL *Arith();") and define them static, which gcc rejects; the
-# copies in obj/awk have the "static" of the definitions removed.
+# copies in obj/awk have the "static" of the definitions removed, then get
+# fixes/awk/<file>.patch if there is one (the code review).
 AWKOBJ	= $(addprefix obj/awk/,m.o e.o n.o l.o r.o v.o y.o regexp.o k.o)
 bin/awk:	$(AWKOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/awk.elf $L/crtso.o $(AWKOBJ) $(FPLIBS)
 	$(MKMINIX) -S 32kw obj/awk.elf $@
 
-obj/awk/%.c:	$c/awk/%.c
+obj/awk/%.c:	$c/awk/%.c $(wildcard fixes/awk/*.patch)
 	@mkdir -p obj/awk
 	sed -e 's/^static\([^;=(]*\)$$/\1/' \
 	    -e 's/^static \([A-Za-z_0-9]*(\)/\1/' $< > $@
+	if [ -f fixes/awk/$*.c.patch ]; then patch -s $@ fixes/awk/$*.c.patch; fi
 
 # -I$c/awk first: the copies are in obj/awk, and "regexp.h" must be awk's,
 # not the one in the system include directories

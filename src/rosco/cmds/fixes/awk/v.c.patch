@@ -1,0 +1,104 @@
+--- orig/awk/v.c	2026-10-20 21:21:17.560054830 +0200
++++ new/awk/v.c	2026-10-20 21:21:17.563514733 +0200
+@@ -24,7 +24,9 @@
+ #define MAXFIELD	100
+ 
+ double atof();
+-char *getsval(), *jStrchar();
++/* rosco: was jStrchar, so jStrchr() was undeclared and its pointer
++ * result was tested as a 16-bit int */
++char *getsval(), *jStrchr();
+ extern CELL *execute(), *_Arg();
+ 
+ extern char record[];
+@@ -338,10 +340,12 @@
+   if (q) {
+ 	sfree(q->s_val->c_sval);
+ 	sfree(q->s_name);
++	/* rosco: unlink only q, "h[i] = NULL" also dropped the elements
++	 * after it in the chain */
+ 	if (r)
+ 		r->s_next = q->s_next;
+-	if (q == h[i])
+-		h[i] = (SYMBOL *)NULL;
++	else
++		h[i] = q->s_next;
+   }
+   return &truecell;
+ }
+@@ -382,6 +386,7 @@
+   char elm[8], str[BUFSIZ];
+   static char *s_str;
+   static regexp *s_pat;
++  regexp *pat = NULL;
+   regexp *mkpat();
+   extern int r_start, r_length;
+ 
+@@ -403,20 +408,29 @@
+ 	c_free(v);
+ 	if (n > 2) {
+ 		v = execute(p->n_arg[4]);
+-		sep = getsval(v);
++		/* rosco: split(s, a, /re/), getsval() fails on a pattern */
++		if (v->c_type & PAT) {
++			pat = (regexp *) v->c_sval;
++			sep = "";
++		}
++		else
++			sep = getsval(v);
+ 	}
+ 	else {
+ 		v = (CELL *)NULL;
+ 		sep = *FS;
+ 	}
+-	if (strlen(sep) > 1) {	/* reg_exp */
+-		if (strcmp(sep, s_str) != 0) {
++	if (pat != NULL || strlen(sep) > 1) {	/* reg_exp */
++		/* rosco: s_str is NULL the first time */
++		if (pat == NULL && (s_str == NULL || strcmp(sep, s_str) != 0)) {
+ 			sfree(s_str); sfree(s_pat);
+ 			s_str = strsave(sep);
+ 			s_pat = mkpat(s_str);
+ 		}
++		if (pat == NULL)
++			pat = s_pat;
+ 		for (i = 0, t = str; *s; ) {
+-			if (match(s_pat, s)) {
++			if (match(pat, s)) {
+ 				for (n = r_start; --n > 0; )
+ 					*t++ = *s++;
+ 			}
+@@ -551,6 +565,14 @@
+ 
+ setfval(u, f) CELL *u; double f;
+ {
++  CELL *t;
++
++  if (u->c_type & REC) {	/* rosco: see setsval() */
++	t = mktmp(NUM, (char *)NULL, f);
++	setsval(u, getsval(t));
++	c_free(t);
++	return;
++  }
+   if (u->c_type == UDF) {	/* fix up local var */
+ /*
+ printf("setfval_fix_to_VAR\n");
+@@ -574,6 +596,18 @@
+ {
+   double atof();
+ 
++  /*
++   * rosco: $0 is record[] itself; sfree() below freed the static
++   * array, and the fields were not split again
++   */
++  if (u->c_type & REC) {
++	if (s != record) {
++		strncpy(record, s, BUFSIZ - 1);
++		record[BUFSIZ - 1] = '\0';
++	}
++	mkfld(record, *FS, field);
++	return;
++  }
+   if (u->c_type == UDF) {	/* fix up local var */
+ /*
+ printf("setsval_fix_to_VAR\n");

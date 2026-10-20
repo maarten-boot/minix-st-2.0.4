@@ -1,0 +1,61 @@
+--- orig/awk/y.c
++++ new/awk/y.c
+@@ -34,7 +34,7 @@
+ 
+ char *emalloc(), *strsave();
+ NODE *node0(), *node1(), *node2(), *node3(), *node4();
+-NODE *stat(), *pastat();
++NODE *stat(), *pastat(), *addstat();
+ NODE *expr(), *expr1(), *expr2(), *expr3(), *expr4();
+ NODE *expr5(), *expr6(), *expr7(), *expr8(), *expr9(), *expr10();
+ NODE *doprint(), *dofuncn(), *doif(), *dowhile(), *dofor(), *body();
+@@ -57,7 +57,7 @@
+ 	switch (sym) {
+ 	case BEGIN:
+ 		lex();
+-		begin = stat();
++		begin = addstat(begin, stat());	/* rosco: see addstat() */
+ 		break;
+ 	case END:
+ 		lex();
+@@ -75,12 +75,11 @@
+ 		dousrfun();
+ 		break;
+ 	default:
+-		q = loop = pastat();
++		/* rosco: see addstat() */
++		loop = addstat(loop, pastat());
+ 		skipeol();
+ 		while (sym &&  sym != BEGIN && sym != END && sym != FUNC) {
+-			r = pastat();
+-			q->n_next = r;
+-			q = r;
++			loop = addstat(loop, pastat());
+ 			skipeol();
+ 		}
+ 		break;
+@@ -104,6 +103,24 @@
+   }
+ }
+ 
++/*
++ * rosco: append statement list p to list.  "{ a; b }" is the list a, b
++ * itself, and the next rule was linked to a, which lost b; a second
++ * BEGIN, or rules after a BEGIN, END or function, replaced the first.
++ */
++NODE *
++addstat(list, p) NODE *list, *p;
++{
++  NODE *q;
++
++  if (list == NULL)
++	return p;
++  for (q = list; q->n_next != NULL; q = q->n_next)
++	;
++  q->n_next = p;
++  return list;
++}
++
+ #define MAXARG		100
+ static char *argnam[MAXARG];
+ static int narg;
