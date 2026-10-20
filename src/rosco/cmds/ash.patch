@@ -1,6 +1,166 @@
+--- a/bltin/expr.c
++++ b/bltin/expr.c
+@@ -180,10 +180,13 @@
+ 			} else if (c >= OP_STRING) { /* OP_STRING or OP_FILE */
+ 			      if (valsp->type == INTEGER) {
+ 				    p = stalloc(32);
++				    /* rosco: u.num is a long, %d took only
++				     * its upper half: "expr 1 + 2 = 3" failed.
++				     */
+ #ifdef SHELL
+-				    fmtstr(p, 32, "%d", valsp->u.num);
++				    fmtstr(p, 32, "%ld", valsp->u.num);
+ #else
+-				    sprintf(p, "%d", valsp->u.num);
++				    sprintf(p, "%ld", valsp->u.num);
+ #endif
+ 				    valsp->u.string = p;
+ 			      } else if (valsp->type == BOOLEAN) {
+--- a/cd.c
++++ b/cd.c
+@@ -51,6 +51,7 @@
+ #include "memalloc.h"
+ #include "error.h"
+ #include "mystring.h"
++#include "redir.h"	/* rosco: declares copyfd */
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <errno.h>
+--- a/eval.c
++++ b/eval.c
+@@ -63,6 +63,9 @@
+ #include <sys/types.h>
+ #include <signal.h>
+ 
++int trputs __P((char *));	/* rosco: in show.c, no header */
++int trargs __P((char **));
++
+ 
+ /* flags in argument to evaltree */
+ #define EV_EXIT 01		/* exit after evaluating tree */
+--- a/input.c
++++ b/input.c
+@@ -52,6 +52,7 @@
+ #include "output.h"
+ #include "memalloc.h"
+ #include "error.h"
++#include "redir.h"	/* rosco: declares copyfd */
+ 
+ #define EOF_NLEFT -99		/* value of parsenleft when EOF pushed back */
+ 
+@@ -84,6 +85,7 @@
+ #if READLINE
+ char *readline __P((const char *prompt));
+ char *r_use_prompt = NULL;	/* the prompt to use with readline */
++STATIC char *r_buf = NULL;	/* rosco: the last line read by readline */
+ #endif
+ 
+ #ifdef __STDC__
+@@ -189,8 +191,6 @@
+ 	char *prompt;
+ 	char *line;
+ 
+-	p = parsenextc = parsefile->buf;
+-
+ 	prompt = r_use_prompt;
+ 	r_use_prompt = NULL;
+ 
+@@ -198,9 +198,27 @@
+                 parsenleft = EOF_NLEFT;
+                 return PEOF;
+ 	}
++	/* rosco: readline's line has no length limit; copying a long one
++	 * into the BUFSIZ input buffer overran it.  Give such a line a
++	 * buffer of its own, which is used up when the next line is read.
++	 */
++	INTOFF;
++	if (r_buf != NULL) {
++		ckfree(r_buf);
++		r_buf = NULL;
++	}
++	i = strlen(line);
++	if (i < BUFSIZ) {
++		p = parsefile->buf;
++	} else if ((p = r_buf = malloc(i + 2)) == NULL) {
++		free(line);
++		INTON;
++		error("Out of space");
++	}
++	parsenextc = p;
+ 	strcpy(p, line);
+ 	free(line);
+-	i = strlen(p);
++	INTON;
+ 	p[i++] = '\n';
+     } else {
+ #endif
+--- a/main.c
++++ b/main.c
+@@ -54,6 +54,7 @@
+ #include "output.h"
+ #include "parser.h"
+ #include "nodes.h"
++#include "exec.h"	/* rosco: declares defun */
+ #include "eval.h"
+ #include "jobs.h"
+ #include "input.h"
+--- a/memalloc.c
++++ b/memalloc.c
+@@ -103,6 +103,9 @@
+ 
+ #define MINSIZE 504		/* minimum size of a block */
+ 
++/* rosco: sizes are ints, 16 bits with -mshort: no block can be larger. */
++#define MAXSIZE 32760		/* maximum size of a block */
++
+ 
+ struct stack_block {
+ 	struct stack_block *prev;
+@@ -200,11 +203,21 @@
+ void
+ growstackblock() {
+ 	char *p;
+-	int newlen = stacknleft * 2 + 100;
++	int newlen;
+ 	char *oldspace = stacknxt;
+ 	int oldlen = stacknleft;
+ 	struct stack_block *sp;
+ 
++	/* rosco: with 16-bit ints the doubling below went negative after
++	 * 16K (a long here document, command substitution or line), which
++	 * corrupted the stack: stop at MAXSIZE and fail cleanly beyond it.
++	 */
++	if (stacknleft >= MAXSIZE)
++		error("Out of space");
++	if (stacknleft > (MAXSIZE - 100) / 2)
++		newlen = MAXSIZE;
++	else
++		newlen = stacknleft * 2 + 100;
+ 	if (stacknxt == stackp->space && stackp != &stackbase) {
+ 		INTOFF;
+ 		sp = stackp;
+--- a/miscbltin.c
++++ b/miscbltin.c
+@@ -49,6 +49,8 @@
+ #include "memalloc.h"
+ #include "error.h"
+ #include "mystring.h"
++#include <sys/types.h>
++#include <sys/stat.h>	/* rosco: declares umask */
+ 
+ #undef eflag
+ 
 --- a/parser.c
 +++ b/parser.c
-@@ -130,7 +130,11 @@
+@@ -104,6 +104,7 @@
+ STATIC void parseheredoc __P((void));
+ STATIC int readtoken __P((void));
+ STATIC int readtoken1 __P((int, char const *, char *, int));
++STATIC int peektoken __P((void));	/* rosco: used before defined */
+ STATIC void attyline __P((void));
+ STATIC int noexpand __P((char *));
+ STATIC void synexpect __P((int));
+@@ -130,7 +131,11 @@
  
  	doprompt = interact;
  	if (doprompt)
@@ -13,3 +173,51 @@
  	needprompt = 0;
  	if ((t = readtoken()) == TEOF)
  		return NEOF;
+--- a/trap.c
++++ b/trap.c
+@@ -95,6 +95,11 @@
+ 		action = NULL;
+ 	else
+ 		action = *ap++;
++	/* rosco: "trap - signo" resets the signal to its default (POSIX);
++	 * without this, "-" was run as a command when the signal came.
++	 */
++	if (action != NULL && action[0] == '-' && action[1] == '\0')
++		action = NULL;
+ 	while (*ap) {
+ 		if ((signo = number(*ap)) < 0 || signo > MAXSIG)
+ 			error("%s: bad trap", *ap);
+@@ -189,7 +194,10 @@
+ 		 * There is a race condition here if action is not S_IGN.
+ 		 * A signal can be ignored that shouldn't be.
+ 		 */
+-		if ((int)(sigact = signal(signo, SIG_IGN)) == -1)
++		/* rosco: compare with SIG_ERR, not as an int: a 32-bit
++		 * pointer cast to a 16-bit int loses its upper half.
++		 */
++		if ((sigact = signal(signo, SIG_IGN)) == SIG_ERR)
+ 			error("Signal system call failed");
+ 		if (sigact == SIG_IGN) {
+ 			*t = S_HARD_IGN;
+@@ -205,7 +213,10 @@
+ 		case S_IGN:	sigact = SIG_IGN;	break;
+ 	}
+ 	*t = action;
+-	return (int)signal(signo, sigact);
++	/* rosco: the old handler does not fit in a 16-bit int; nobody
++	 * uses the value, so return success or failure.
++	 */
++	return signal(signo, sigact) == SIG_ERR ? -1 : 0;
+ }
+ 
+ 
+--- a/var.c
++++ b/var.c
+@@ -107,6 +107,7 @@
+ STATIC void unsetvar __P((char *));
+ STATIC struct var **hashvar __P((char *));
+ STATIC int varequal __P((char *, char *));
++int unsetcmd __P((int, char **));	/* rosco: used before defined */
+ 
+ /*
+  * Initialize the varable symbol tables and import the environment

@@ -359,6 +359,8 @@ obj/gzrosco.o:	gzrosco.c
 # global with stdin, which is not a constant in glibc; host/mknodes.c
 # does without (infp is always set by fopen).  -Dconst= for main.c's
 # getenv(char *), -D__CC68__ for bltin/regexp.c's malloc declaration.
+# 32kw, not 12kw: with 12kw a 2000-character variable value or a 15K
+# here document already gave "Out of space"; 32kw holds a 20K one.
 HOSTCC	= gcc -std=gnu89 -w
 ASHSRC	= builtins cd dirent error eval exec expand input jobs mail main \
 	  memalloc miscbltin mystring nodes options parser redir show \
@@ -368,7 +370,7 @@ ASHOBJ	= $(ASHSRC:%=obj/ash/%.o) obj/ash/init.o \
 bin/ash:	$(ASHOBJ) $L/crtso.o $L/libedit.a $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/ash.elf $L/crtso.o $(ASHOBJ) $L/libedit.a $(LIBS)
-	$(MKMINIX) -S 12kw obj/ash.elf $@
+	$(MKMINIX) -S 32kw obj/ash.elf $@
 
 obj/ash/stamp:	$(wildcard $c/ash/* $c/ash/bltin/* $c/ash/sys/*) $i/signal.h ash.patch
 	rm -rf obj/ash
