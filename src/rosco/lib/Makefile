@@ -60,11 +60,16 @@ CDIRS	= ansi posix other stdio ip
 #	popen.c		pclose() waits with waitpid() for its own child
 #	misc.c		TZ offsets of 10 hours and more; Mm.5.d dates
 #	chartab.c	<ctype.h> with a negative char (chars 128-255)
+#	ruserok.c	.rhosts is read without /etc/hosts.equiv, hosts.equiv
+#			is not for root, .rhosts owner and mode checked, a
+#			last line without a newline counts
+#	gethostent.c	a last /etc/hosts line without a newline counts
 EXCLUDE	= $l/other/regexp.c $l/posix/_exec.c $l/posix/_execn.c \
 	  $l/other/execlp.c $l/other/v8regerror.c $l/ansi/system.c \
 	  $l/posix/_uname.c $l/other/getpwent.c $l/other/getgrent.c \
 	  $l/posix/_execl.c $l/posix/_execlp.c $l/posix/_execve.c \
-	  $l/other/popen.c $l/ansi/misc.c $l/ansi/chartab.c
+	  $l/other/popen.c $l/ansi/misc.c $l/ansi/chartab.c \
+	  $l/ip/ruserok.c $l/ip/gethostent.c
 CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
 # u64.c replaces lib/m68000/misc/u64.c (cmp64u() fixed).
 # fphook/fltpr.c and strtod.c: printf and strtod without floating point,
@@ -74,7 +79,8 @@ CSRC	= $(filter-out $(EXCLUDE),$(foreach d,$(CDIRS),$(wildcard $l/$d/*.c)))
 COBJ	= $(patsubst $l/%.c,obj/%.o,$(CSRC)) obj/u64.o \
 	  obj/m68000/rts/__intsize.o obj/regexp.o obj/system.o obj/_uname.o \
 	  obj/getpwent.o obj/getgrent.o obj/_execl.o obj/_execlp.o \
-	  obj/_execve.o obj/popen.o obj/misc.o obj/chartab.o \
+	  obj/_execve.o obj/popen.o obj/misc.o obj/chartab.o obj/ruserok.o \
+	  obj/gethostent.o \
 	  obj/fphook/fltpr.o obj/fphook/strtod.o
 
 # GNU replacements of lib/m68000/rts
