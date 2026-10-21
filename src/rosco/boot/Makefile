@@ -99,6 +99,22 @@ inetobj/generic/tcp_recv.o:	inetfix/generic/tcp_recv.c
 	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
 		-I$s/inet/generic -c -o $@ $<
 
+# Fixed copy: IP reassembly holds at most 16 accessors per packet and no
+# longer leaks or loses fragments (a remote host could panic INET with
+# fragments: out of accessors, or of buffers)
+inetobj/generic/ip_read.o:	inetfix/generic/ip_read.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
+# BUF512_NR 120 (the CRAMPED default is 32): 120 buffers of 512 bytes and
+# 180 accessors, 60 of them spare for packets in hand (see the
+# ip_read.c fix); 120 keeps the buffer array under 64k
+inetobj/buf.o:	$s/inet/buf.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-DBUF512_NR=120 -c -o $@ $<
+
 # TCP_DEF_MSS 256: the TCP segment size INET announces, for the classic
 # SLIP MTU of 296 (this INET cannot set an MTU; set 296 at the other end)
 inetobj/%.o:	$s/inet/%.c
