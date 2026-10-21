@@ -79,6 +79,13 @@ inetobj/inetrosco.o:	inetrosco.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# Fixed copy: psip drops a packet too big for slip's read (was EPACKSIZE
+# forever, slip exited)
+inetobj/generic/psip.o:	inetfix/generic/psip.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
 # Fixed copies: a listen cancelled after answering a SYN keeps the half
 # open connection for the next listen (was closed without a RST, the
 # client hung)
