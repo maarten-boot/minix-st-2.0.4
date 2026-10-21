@@ -8,6 +8,16 @@
  * ("Invalid packet size"): any user could take SLIP down.  INET does
  * not fragment for psip, so such a packet can never be delivered: it is
  * now dropped, and the reader stays queued without an error reply.
+ *
+ * The same in promisc_restart_read (promiscuous readers; slip does not
+ * use them): a queued packet bigger than the read got EPACKSIZE and
+ * stayed at the head of the queue, so every later promiscuous read
+ * failed.  It is dropped the same way.
+ *
+ * psip_write, promiscuous mode: the queued copy of the written packet
+ * was linked in without setting pp_promisc_tail, so the next packet was
+ * linked after a stale tail (an accessor that may have been freed and
+ * reused: memory corruption) and queued packets were lost.
  */
 /*
 generic/psip.c
@@ -419,11 +429,13 @@ size_t count;
 		{
 			/* Append at the end. */
 			psip_port->pp_promisc_tail->acc_ext_link= hdr_pack;
+			psip_port->pp_promisc_tail= hdr_pack;	/* rosco */
 		}
 		else
 		{
 			/* First packet. */
 			psip_port->pp_promisc_head= hdr_pack;
+			psip_port->pp_promisc_tail= hdr_pack;	/* rosco */
 			if (psip_port->pp_rd_head)
 				promisc_restart_read(psip_port);
 		}
@@ -570,10 +582,25 @@ psip_port_t *psip_port;
 			ip_panic(( "psip'promisc_restart_read: loop" ));
 
 		assert(psip_fd->pf_flags & PFF_READ_IP);
-		psip_fd->pf_flags &= ~PFF_READ_IP;
 
 		pack= psip_port->pp_promisc_head;
 		buf_size= bf_bufsize(pack);
+		if (buf_size > psip_fd->pf_rd_count)
+		{
+			/* rosco: as in psip_send: drop the packet and put the
+			 * reader back at the head of the queue, still reading
+			 * (EPACKSIZE kept the packet, every later read failed).
+			 */
+			psip_port->pp_promisc_head= pack->acc_ext_link;
+			bf_afree(pack);
+			psip_fd->pf_rd_next= psip_port->pp_rd_head;
+			if (psip_port->pp_rd_head == NULL)
+				psip_port->pp_rd_tail= psip_fd;
+			psip_port->pp_rd_head= psip_fd;
+			continue;
+		}
+		psip_fd->pf_flags &= ~PFF_READ_IP;
+
 		if (buf_size <= psip_fd->pf_rd_count)
 		{
 			psip_port->pp_promisc_head= pack->acc_ext_link;

@@ -109,8 +109,33 @@ inetobj/generic/tcp_send.o:	inetfix/generic/tcp_send.c
 
 # Fixed copy: IP reassembly holds at most 16 accessors per packet and no
 # longer leaks or loses fragments (a remote host could panic INET with
-# fragments: out of accessors, or of buffers)
+# fragments: out of accessors, or of buffers); IP review: IP header
+# length < 20 dropped
 inetobj/generic/ip_read.o:	inetfix/generic/ip_read.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
+# Fixed copies (IP review): /dev/ip ioctls with a bad address or bad
+# header options, a write with a bad address (no reply), a full output
+# route table (NULL route), invalid source addresses from the line; psip
+# promiscuous mode (stale queue tail, EPACKSIZE forever) is in psip.c
+inetobj/generic/ip_ioctl.o:	inetfix/generic/ip_ioctl.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
+inetobj/generic/ip_write.o:	inetfix/generic/ip_write.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
+inetobj/generic/ipr.o:	inetfix/generic/ipr.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
+inetobj/generic/ip_ps.o:	inetfix/generic/ip_ps.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
 		-I$s/inet/generic -c -o $@ $<

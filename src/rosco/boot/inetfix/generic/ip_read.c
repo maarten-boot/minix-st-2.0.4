@@ -30,6 +30,13 @@
  *   duplicate) replaced that piece, so the data of the rest of the piece
  *   was lost and the packet could not complete.  The duplicate is now
  *   dropped instead.
+ *
+ * Header check (ip_frag_chk): a header length (IHL) below 5 was
+ * accepted when the checksum over IHL*4 bytes came out right, which a
+ * sender can arrange for IHL 1 to 4; TCP, UDP and ICMP then took the
+ * header length as the offset of their data (negative option sizes,
+ * bf_cut past the end, with INET's asserts compiled out).  Such a
+ * packet is now dropped (RFC 791: the minimum is 5).
  */
 /*
 ip_read.c
@@ -388,6 +395,12 @@ acc_t *pack;
 	ip_hdr= (ip_hdr_t *)ptr2acc_data(pack);
 
 	hdr_len= (ip_hdr->ih_vers_ihl & IH_IHL_MASK) * 4;
+	/* rosco: a header shorter than 20 bytes is invalid */
+	if (hdr_len < IP_MIN_HDR_SIZE)
+	{
+		DBLOCK(1, printf("header too short\n"));
+		return FALSE;
+	}
 	if (pack->acc_length < hdr_len)
 	{
 		DBLOCK(1, printf("wrong length\n"));
