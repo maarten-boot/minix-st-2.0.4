@@ -99,6 +99,14 @@ inetobj/generic/tcp_recv.o:	inetfix/generic/tcp_recv.c
 	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
 		-I$s/inet/generic -c -o $@ $<
 
+# Fixed copy (TCP review): an established orphan is not closed, 32-bit
+# congestion window, no 64K write after an urgent byte; tcp.c and
+# tcp_recv.c above have fixes of the review too (see their headers)
+inetobj/generic/tcp_send.o:	inetfix/generic/tcp_send.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
 # Fixed copy: IP reassembly holds at most 16 accessors per packet and no
 # longer leaks or loses fragments (a remote host could panic INET with
 # fragments: out of accessors, or of buffers)

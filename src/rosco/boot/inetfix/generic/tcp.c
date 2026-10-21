@@ -13,6 +13,20 @@
  * listen without a SYN, and a cancelled NWIOTCPCONN, are closed as
  * before.  tcp_recv.c (fixed copy) no longer expects a user when such
  * an orphan becomes established.
+ *
+ * Review (agent F):
+ * - NWIOSTCPCONF and NWIOSTCPOPT with an argument INET cannot copy (a bad
+ *   address) returned EFAULT from tcp_ioctl(), which sr.c does not reply
+ *   to (it expects OK or SUSPEND): the process hung in the ioctl until a
+ *   signal.  They now reply EFAULT (tcp_setconf, tcp_setopt).
+ * - NWIOSTCPOPT with a flag both enabled and disabled (EBADMODE) did not
+ *   free the copy of the argument: any user could use up INET's buffers
+ *   with a loop of such ioctls, "panic at ../../inet/buf.c, 295".
+ * - A new connection of a 4-tuple whose previous connection was closed
+ *   within its quiet time (tc_senddis) got that connection's ISS again
+ *   (tcp_setup_conn, and find_best_conn for a listen): old segments could
+ *   fall into the new connection.  It now starts ISS_INC_FREQ beyond the
+ *   old connection's SND_NXT, as BSD does.
  */
 /*
 tcp.c
@@ -783,7 +797,12 @@ tcp_fd_t *tcp_fd;
 		sizeof(nwio_tcpconf_t), TRUE);
 
 	if (!data)
-		return EFAULT;
+	{
+		/* rosco: reply; sr.c does not reply to an error result */
+		tcp_fd->tf_flags &= ~TFF_IOCTL_IP;
+		reply_thr_get(tcp_fd, EFAULT, TRUE);
+		return NW_OK;
+	}
 
 	data= bf_packIffLess(data, sizeof(nwio_tcpconf_t));
 assert (data->acc_length == sizeof(nwio_tcpconf_t));
@@ -975,7 +994,12 @@ tcp_fd_t *tcp_fd;
 		sizeof(nwio_tcpopt_t), TRUE);
 
 	if (!data)
-		return EFAULT;
+	{
+		/* rosco: reply; sr.c does not reply to an error result */
+		tcp_fd->tf_flags &= ~TFF_IOCTL_IP;
+		reply_thr_get(tcp_fd, EFAULT, TRUE);
+		return NW_OK;
+	}
 
 	data= bf_packIffLess(data, sizeof(nwio_tcpopt_t));
 assert (data->acc_length == sizeof(nwio_tcpopt_t));
@@ -992,6 +1016,7 @@ assert (data->acc_length == sizeof(nwio_tcpopt_t));
 		0xffff;
 	if (new_en_flags & new_di_flags)
 	{
+		bf_afree(data);		/* rosco: was leaked */
 		tcp_fd->tf_flags &= ~TFF_IOCTL_IP;
 		reply_thr_get(tcp_fd, EBADMODE, TRUE);
 		return NW_OK;
@@ -1429,7 +1454,8 @@ tcp_hdr_t *tcp_hdr;
 		if (best_conn->tc_state != TCS_CLOSED)
 			tcp_close_connection(best_conn, ENOCONN);
 
-		listen_conn->tc_ISS= best_conn->tc_ISS;
+		/* rosco: beyond the old connection, not its ISS again */
+		listen_conn->tc_ISS= best_conn->tc_SND_NXT + ISS_INC_FREQ;
 		if (best_conn->tc_senddis > listen_conn->tc_senddis)
 			listen_conn->tc_senddis= best_conn->tc_senddis;
 		return listen_conn;
@@ -2167,6 +2193,13 @@ tcp_conn_t *tcp_conn;
 		assert (!tcp_conn->tc_send_data);
 		if (tcp_conn->tc_senddis < get_time())
 			tcp_conn->tc_ISS= 0;
+		else
+		{
+			/* rosco: same 4-tuple within the quiet time: start
+			 * beyond the old connection, not at its ISS again.
+			 */
+			tcp_conn->tc_ISS= tcp_conn->tc_SND_NXT + ISS_INC_FREQ;
+		}
 	}
 	else
 	{

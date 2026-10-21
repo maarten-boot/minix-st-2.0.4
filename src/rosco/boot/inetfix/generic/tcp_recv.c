@@ -5,6 +5,22 @@
  * A connection in SYN_RECEIVED whose listen was cancelled is kept without
  * a user for the next listen (see the fixed tcp.c, tcp_cancel); when the
  * client's ACK makes it ESTABLISHED there is then no listen to answer.
+ *
+ * Review (agent F):
+ * - process_data: a segment with URG whose urgent pointer ended before
+ *   RCV.NXT (a retransmission overlapping data already received, e.g. a
+ *   resent urgent byte of rlogin or telnet) was cut to the urgent part and
+ *   then bf_delhead() was asked to drop more than was left: it walked
+ *   off the end of the buffer chain (a null pointer) and corrupted
+ *   memory.  Such a segment brings nothing new and is now dropped.
+ * - After the board closed first and its FIN was acknowledged, the
+ *   connection is closed, and the peer's FIN (also one in the segment
+ *   that acknowledged ours, which was dropped) got a RST.  A FIN that
+ *   exactly follows what was received, acknowledging our FIN, now gets an
+ *   ACK (ack_late_FIN, create_reply), as from TIME-WAIT.
+ * - tcp_fd_read: RCV.UP stayed where the last urgent data ended (or at
+ *   IRS); after 2G of data it compared as ahead of RCV.LO and every read
+ *   returned EURG.  It now follows RCV.LO while there is no urgent data.
  */
 /*
 tcp_recv.c
@@ -26,6 +42,10 @@ Copyright 1995 Philip Homburg
 THIS_FILE
 
 FORWARD void create_RST ARGS(( tcp_conn_t *tcp_conn,
+	ip_hdr_t *ip_hdr, tcp_hdr_t *tcp_hdr, int data_len ));
+FORWARD void create_reply ARGS(( tcp_conn_t *tcp_conn,	/* rosco */
+	ip_hdr_t *ip_hdr, tcp_hdr_t *tcp_hdr, int data_len, int fin_ack ));
+FORWARD int ack_late_FIN ARGS(( tcp_conn_t *tcp_conn,	/* rosco */
 	ip_hdr_t *ip_hdr, tcp_hdr_t *tcp_hdr, int data_len ));
 FORWARD void process_data ARGS(( tcp_conn_t *tcp_conn,
 	tcp_hdr_t *tcp_hdr, acc_t *tcp_data, int data_len ));
@@ -74,7 +94,9 @@ CLOSED:
 
 		if (!(tcp_hdr_flags & THF_RST))
 		{
-			create_RST(tcp_conn, ip_hdr, tcp_hdr, data_len);
+			/* rosco: ACK the FIN of a connection we closed */
+			if (!ack_late_FIN(tcp_conn, ip_hdr, tcp_hdr, data_len))
+				create_RST(tcp_conn, ip_hdr, tcp_hdr, data_len);
 			tcp_conn_write(tcp_conn, 1);
 		}
 		break;
@@ -636,7 +658,17 @@ TIME-WAIT:
 		{
 			tcp_release_retrans(tcp_conn, seg_ack, seg_wnd);
 			if (tcp_conn->tc_state == TCS_CLOSED)
+			{
+				/* rosco: the ACK of our FIN closed the
+				 * connection; ACK a FIN in the same segment.
+				 */
+				if (ack_late_FIN(tcp_conn, ip_hdr, tcp_hdr,
+					data_len))
+				{
+					tcp_conn_write(tcp_conn, 1);
+				}
 				break;
+			}
 		}
 		else if (tcp_Gmod4G(seg_ack,
 			tcp_conn->tc_SND_NXT))
@@ -806,6 +838,14 @@ int data_len;
 		DBLOCK(0x10,
 			printf("segment is a retransmission\n"));
 		offset= tcp_conn->tc_RCV_NXT-lo_seq;
+		if (offset >= data_len)
+		{
+			/* rosco: nothing new (cut at the urgent pointer);
+			 * bf_delhead would run off the end of the data.
+			 */
+			bf_afree(tcp_data);
+			return;
+		}
 		tcp_data= bf_delhead(tcp_data, offset);
 		lo_seq += offset;
 		data_len -= offset;
@@ -1014,6 +1054,58 @@ ip_hdr_t *ip_hdr;
 tcp_hdr_t *tcp_hdr;
 int data_len;
 {
+	create_reply(tcp_conn, ip_hdr, tcp_hdr, data_len, FALSE);
+}
+
+/*
+ack_late_FIN
+
+rosco: a connection that the board closed first is closed (TCS_CLOSED) as
+soon as its FIN is acknowledged; there is no FIN-WAIT-2 or TIME-WAIT.  If
+the segment is the peer's FIN that exactly follows what was received
+(SEQ == RCV.NXT, no data) and acknowledges our FIN (ACK == SND.NXT), of a
+connection closed that way (ENOTCONN), queue an ACK for it instead of a
+RST, and return TRUE.
+*/
+
+PRIVATE int ack_late_FIN(tcp_conn, ip_hdr, tcp_hdr, data_len)
+tcp_conn_t *tcp_conn;
+ip_hdr_t *ip_hdr;
+tcp_hdr_t *tcp_hdr;
+int data_len;
+{
+	if (tcp_conn->tc_state != TCS_CLOSED ||
+		tcp_conn->tc_error != ENOTCONN || data_len != 0)
+	{
+		return FALSE;
+	}
+	if ((tcp_hdr->th_flags & (THF_FIN|THF_ACK|THF_SYN|THF_RST)) !=
+		(THF_FIN|THF_ACK))
+	{
+		return FALSE;
+	}
+	if (ntohl(tcp_hdr->th_seq_nr) != tcp_conn->tc_RCV_NXT ||
+		ntohl(tcp_hdr->th_ack_nr) != tcp_conn->tc_SND_NXT)
+	{
+		return FALSE;
+	}
+	create_reply(tcp_conn, ip_hdr, tcp_hdr, data_len, TRUE);
+	return TRUE;
+}
+
+/*
+create_reply
+
+rosco: create_RST, with fin_ack: an ACK of the peer's FIN instead.
+*/
+
+PRIVATE void create_reply(tcp_conn, ip_hdr, tcp_hdr, data_len, fin_ack)
+tcp_conn_t *tcp_conn;
+ip_hdr_t *ip_hdr;
+tcp_hdr_t *tcp_hdr;
+int data_len;
+int fin_ack;
+{
 	acc_t *tmp_ipopt, *tmp_tcpopt, *tcp_pack;
 	ip_hdropt_t ip_hdropt;
 	tcp_hdropt_t tcp_hdropt;
@@ -1072,7 +1164,14 @@ int data_len;
 
 	RST_tcp_hdr->th_srcport= tcp_hdr->th_dstport;
 	RST_tcp_hdr->th_dstport= tcp_hdr->th_srcport;
-	if (tcp_hdr->th_flags & THF_ACK)
+	if (fin_ack)
+	{
+		/* rosco: <SEQ=SEG.ACK><ACK=SEG.SEQ+1><CTL=ACK> */
+		RST_tcp_hdr->th_seq_nr= tcp_hdr->th_ack_nr;
+		RST_tcp_hdr->th_ack_nr= htonl(ntohl(tcp_hdr->th_seq_nr)+1);
+		RST_tcp_hdr->th_flags= THF_ACK;
+	}
+	else if (tcp_hdr->th_flags & THF_ACK)
 	{
 		RST_tcp_hdr->th_seq_nr= tcp_hdr->th_ack_nr;
 		RST_tcp_hdr->th_flags= THF_RST;
@@ -1135,6 +1234,13 @@ int enq;					/* Enqueue writes. */
 	}
 
 	urg= tcp_Gmod4G(tcp_conn->tc_RCV_UP, tcp_conn->tc_RCV_LO);
+	if (!urg)
+	{
+		/* rosco: keep the urgent pointer up with the data; 2G
+		 * behind, it looked ahead and every read failed (EURG).
+		 */
+		tcp_conn->tc_RCV_UP= tcp_conn->tc_RCV_LO;
+	}
 	push= (tcp_conn->tc_flags & TCF_RCV_PUSH);
 	fin_recv= (tcp_conn->tc_flags & TCF_FIN_RECV);
 
