@@ -218,8 +218,47 @@ got_types:
 buserr:
 	move.b	#2,vectnum
 	tst.b	proctyp
-	bne	gentrp
+	bne	berr010
 	add.l	#8,sp		/* remove extra context on 68000 processor */
+	bra	gentrp
+
+/* rosco: a bus error that belongs to the user process although it is
+ * taken in supervisor mode.  MAME's 68010 (Musashi) raises BERR one
+ * instruction late: an opcode fetch from nonexistent memory (a user
+ * program jumping through a smashed return address) reads 0x00FF, which
+ * traps as an illegal instruction, and the bus error then arrives at the
+ * first instruction of illtrp, before anything is saved.  A data access
+ * fault just before a trap #0 or an interrupt does the same.  trap() saw
+ * a supervisor mode fault and panicked ("kernel trap: pc=<illtrp> ...
+ * trap via vector 2").  Recognize exactly this shape: a format 8 frame
+ * from supervisor mode whose pc is the handler of the format 0 frame right
+ * above it, which came from user mode.  Then drop the bus error frame and
+ * the other exception (its handler has not run) and report a bus error of
+ * the user process with the user frame.  A real 68010 takes the bus error
+ * at once, so this never matches there; all other supervisor mode bus
+ * errors still panic in trap().
+ */
+berr010:
+	btst	#5,(sp)		/* fault in user mode: the normal case */
+	beq	gentrp
+	movem.l	d0/a0,-(sp)
+	move.w	8+6(sp),d0	/* format/offset of the bus error frame */
+	and.w	#0xF000,d0
+	cmp.w	#0x8000,d0	/* 68010 long bus error frame (58 bytes)? */
+	bne	1f
+	btst	#5,8+58(sp)	/* frame above it from user mode? */
+	bne	1f
+	move.w	8+58+6(sp),d0	/* its format/offset */
+	cmp.w	#0x0FFF,d0	/* format 0 */
+	bhi	1f
+	move.w	d0,a0		/* its vector (VBR is 0) */
+	move.l	(a0),d0
+	cmp.l	8+2(sp),d0	/* bus error at that handler's entry? */
+	bne	1f
+	movem.l	(sp)+,d0/a0
+	add.l	#58,sp		/* yes: drop the bus error frame */
+	bra	gentrp		/* the user's bus error, with its frame */
+1:	movem.l	(sp)+,d0/a0
 	bra	gentrp
 adrerr:
 	move.b	#3,vectnum
