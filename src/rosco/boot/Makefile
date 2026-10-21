@@ -115,6 +115,20 @@ inetobj/generic/ip_read.o:	inetfix/generic/ip_read.c
 	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
 		-I$s/inet/generic -c -o $@ $<
 
+# Fixed copies (UDP/ICMP review): UDP length < 8, IP header < 20 bytes,
+# bad RWDATALL write headers, redirects to off-link gateways and an
+# overflowing router advertisement size check no longer reach an assert;
+# no echo replies to broadcasts, no ICMP errors about broadcasts
+inetobj/generic/udp.o:	inetfix/generic/udp.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
+inetobj/generic/icmp.o:	inetfix/generic/icmp.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
 # Fixed copy: every request from FS gets an answer (an error returned by
 # a protocol, e.g. EFAULT for a bad ioctl address, was never answered and
 # FS, and so the whole system, hung)
