@@ -79,6 +79,19 @@ inetobj/inetrosco.o:	inetrosco.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# Fixed copies: a listen cancelled after answering a SYN keeps the half
+# open connection for the next listen (was closed without a RST, the
+# client hung)
+inetobj/generic/tcp.o:	inetfix/generic/tcp.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
+inetobj/generic/tcp_recv.o:	inetfix/generic/tcp_recv.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-I$s/inet/generic -c -o $@ $<
+
 # TCP_DEF_MSS 256: the TCP segment size INET announces, for the classic
 # SLIP MTU of 296 (this INET cannot set an MTU; set 296 at the other end)
 inetobj/%.o:	$s/inet/%.c

@@ -43,40 +43,22 @@
  		) {
  		    exit(1);
  		}
-@@ -249,14 +259,21 @@
- 	    }
- 	}
- 
-+	/* rosco: collect the servers that are done; SIGCHLD stays blocked
-+	 * during the listen.  A SIGCHLD that interrupted it while a client's
-+	 * SYN had just been answered made INET drop that half open
-+	 * connection without a RST: the client was "connected" to nothing
-+	 * and hung (every other connection when they came quickly).  The
-+	 * price: a finished server stays a zombie until the next connection.
-+	 */
-+	sigchld(SIGCHLD);
-+
- 	while (nchildren >= max_children) {
- 	    /* Too many clients, wait for one to die off. */
+@@ -254,7 +264,13 @@
  	    sigsuspend(&chldunmask);
  	}
  
- 	/* Wait for a new connection. */
--	sigprocmask(SIG_UNBLOCK, &chldmask, NULL);
--
- 	tcplistenopt.nwtcl_flags= 0;
- 	while (ioctl(tcp_fd, NWIOTCPLISTEN, &tcplistenopt) < 0) {
- 	    if (errno != EINTR) {
-@@ -266,7 +283,7 @@
- 		goto bad;
- 	    }
- 	}
--	sigprocmask(SIG_BLOCK, &chldmask, NULL);
-+	sigchld(SIGCHLD);	/* rosco: see above */
+-	/* Wait for a new connection. */
++	/* Wait for a new connection.  rosco: SIGCHLD may interrupt the listen
++	 * (a finished server is reaped at once): INET keeps a connection whose
++	 * SYN the interrupted listen had answered for the next listen.  Before
++	 * that INET fix (boot/inetfix/generic/tcp.c) such a client hung, and
++	 * SIGCHLD was kept blocked here, leaving zombies until the next
++	 * connection.
++	 */
+ 	sigprocmask(SIG_UNBLOCK, &chldmask, NULL);
  
- 	/* We got a connection. */
- 	client_fd= tcp_fd;
-@@ -295,7 +312,11 @@
+ 	tcplistenopt.nwtcl_flags= 0;
+@@ -295,7 +311,11 @@
  		    stall, stall == 1 ? "" : "s");
  	    }
  	    sleep(stall);
