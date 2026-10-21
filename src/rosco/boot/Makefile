@@ -115,13 +115,24 @@ inetobj/generic/ip_read.o:	inetfix/generic/ip_read.c
 	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
 		-I$s/inet/generic -c -o $@ $<
 
-# BUF512_NR 120 (the CRAMPED default is 32): 120 buffers of 512 bytes and
-# 180 accessors, 60 of them spare for packets in hand (see the
-# ip_read.c fix); 120 keeps the buffer array under 64k
-inetobj/buf.o:	$s/inet/buf.c
+# Fixed copy: every request from FS gets an answer (an error returned by
+# a protocol, e.g. EFAULT for a bad ioctl address, was never answered and
+# FS, and so the whole system, hung)
+inetobj/sr.o:	inetfix/sr.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
-		-DBUF512_NR=120 -c -o $@ $<
+		-c -o $@ $<
+
+# BUF512_NR 120 (the CRAMPED default is 32): 120 buffers of 512 bytes
+# (120 keeps the buffer array under 64k); ACC_NR 360 (was 3/2 of the
+# buffers, 180): 240 accessors spare for the copies of packets in hand,
+# enough for UDP and IP to cut a 32767-byte write three times (with 60
+# spare a 16000-byte UDP write panicked INET, out of accessors).  Fixed
+# copy: ACC_NR settable, bf_memreq(0) safe
+inetobj/buf.o:	inetfix/buf.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_MINIX -D_POSIX_SOURCE -DTCP_DEF_MSS=256 -I$s/inet \
+		-DBUF512_NR=120 -DACC_NR=360 -c -o $@ $<
 
 # TCP_DEF_MSS 256: the TCP segment size INET announces, for the classic
 # SLIP MTU of 296 (this INET cannot set an MTU; set 296 at the other end)
