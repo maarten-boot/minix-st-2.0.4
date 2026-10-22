@@ -1,0 +1,28 @@
+--- a/simple/time.c
++++ b/simple/time.c
+@@ -12,6 +12,7 @@
+ #include <sys/wait.h>
+ #include <minix/minlib.h>
+ #include <stdio.h>
++#include <errno.h>
+ 
+ /* -DNEW prints time to 0.01 sec. */
+ #ifdef NEW		
+@@ -98,7 +99,8 @@
+   print_time(post_buf.tms_cstime - pre_buf.tms_cstime);
+   std_err(" sys\n");
+ #endif
+-  return((status & 0377) ? -1 : (status >> 8));
++  /* rosco: killed by a signal: 128 + the signal, not 255 */
++  return((status & 0377) ? 128 + (status & 0177) : (status >> 8));
+ }
+ 
+ void print_time(t)
+@@ -156,5 +158,6 @@
+   std_err("Cannot execute ");
+   std_err(name);
+   std_err("\n");
+-  exit(-1);
++  /* rosco: 127 not found, 126 not executable (POSIX), it was 255 */
++  exit(errno == ENOENT ? 127 : 126);
+ }

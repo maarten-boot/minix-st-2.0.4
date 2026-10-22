@@ -1,0 +1,756 @@
+--- a/simple/printf.c
++++ b/simple/printf.c
+@@ -31,375 +31,387 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++
++/* rosco: the conversion loop and the escapes are rewritten (POSIX):
++ * - integers were 16 bits (strtoul() passed to "%d"; printfint.h made it
++ *   an unsigned int): now long, so %d 40000 and %u -1 are right, and
++ *   %ld no longer takes a 16-bit int as a long;
++ * - "%%" printed "%" and then scanned on for a conversion character
++ *   ("%%d" gave "%%d", "100%%\n" lost the newline), and a "%" at the end
++ *   of the format or an unknown conversion ("%i") ran past the end of the
++ *   format into the next argument;
++ * - %i and %b (escapes in the argument, \c ends the output) added; %c of
++ *   "" prints nothing; %s prints its argument as it is (only %b does
++ *   escapes, POSIX);
++ * - a missing argument is "" or 0, and the format is used again for the
++ *   remaining arguments (it stopped with "Not enough args" and ignored
++ *   extra arguments);
++ * - an invalid number ("12x", "abc") or one out of range gets a message
++ *   and exit status 1 (it was taken as 0 or cut, status 0); 'c and "c
++ *   give the code of c;
++ * - \0 in the format cut the format, \x at its end read past it, an
++ *   unknown escape lost its backslash;
++ * - a conversion specification of more than BUFSIZ characters overran
++ *   conv_buf[]; a precision over 512 for a number would overrun the 1K
++ *   buffer of the libc _doprnt(), a width over 32767 wrapped;
++ * - an unknown conversion character is an error, exit status 1; so is a
++ *   write error.
++ */
++#include <errno.h>
++#include <limits.h>
+ #define EX_OK		0
+ #define EX_USAGE	1
++#define MAXPREC		512
++#define MAXWIDTH	32767
+ 
+-int ctrl(char *s);
++char *ctor(long x);
+ 
+-#define atoi(a)		strtoul((a), NULL, 0)
++static char **argp, **ep;	/* next argument, end of the arguments */
++static int status = EX_OK;
++static int stop = 0;		/* \c seen in a %b argument */
+ 
+-/****************************************************************************/
++static char *nextarg(void)
++{
++  return argp < ep ? *argp++ : "";
++}
+ 
+-int main(int argc, char *argv[])
++static int isdig(int c)
+ {
+-register char *cp, *conv_spec, **argp, **ep;
+-char *ctor(int x);
++  return c >= '0' && c <= '9';
++}
+ 
+-if (argc < 2) {
+-	fprintf(stderr,
+-		"printf: Usage: printf <format-string> [ arg1 . . . ]\n");
+-	exit(EX_USAGE);
+-	}
++static int isodig(int c)
++{
++  return c >= '0' && c <= '7';
++}
+ 
+-argp = &argv[2];	/* Point at first arg (if any) beyond format string. */
+-ep = &argv[argc];	/* Point beyond last arg. */
++static int hexval(int c)
++{
++  if (c >= '0' && c <= '9') return c - '0';
++  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
++  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
++  return -1;
++}
+ 
+-ctrl(argv[1]);	/* Change backslash notation to control chars in fmt string. */
++/* One escape sequence; s points just past the backslash.  The character
++ * goes to *chp (-1 for \c in %b), the result points to the last character
++ * used.  An unknown escape gives the backslash, the next character is then
++ * read as an ordinary one.
++ */
++static char *escape(char *s, int *chp, int bflag)
++{
++  int val, digits;
+ 
+-/* Scan format string for conversion specifications, and do appropriate
+-   conversion on the corresponding argument. */
+-for (cp = argv[1]; *cp; cp++) {
+-register int dynamic_count;
+-
+-	/* Look for next conversion spec. */
+-	while (*cp && *cp != '%') {
+-		putchar(*cp++);
+-		}
++  switch (*s) {
++  case '\\':	*chp = '\\';	return s;
++  case 'a':	*chp = '\7';	return s;
++  case 'b':	*chp = '\b';	return s;
++  case 'f':	*chp = '\f';	return s;
++  case 'n':	*chp = '\n';	return s;
++  case 'r':	*chp = '\r';	return s;
++  case 't':	*chp = '\t';	return s;
++  case 'v':	*chp = '\13';	return s;
++  case 'c':
++	if (!bflag) break;
++	*chp = -1;
++	return s;
++  case '0': case '1': case '2': case '3':
++  case '4': case '5': case '6': case '7':
++	/* \ddd; in %b also \0ddd */
++	digits = (bflag && *s == '0') ? 4 : 3;
++	val = 0;
++	while (digits-- > 0 && isodig(*s)) val = val * 8 + (*s++ - '0');
++	*chp = val & 0377;
++	return s - 1;
++  case 'x':
++	if (hexval(s[1]) < 0) break;
++	s++;
++	val = 0;
++	for (digits = 2; digits > 0 && hexval(*s) >= 0; digits--)
++		val = val * 16 + hexval(*s++);
++	*chp = val;
++	return s - 1;
++  }
++  *chp = '\\';
++  return s - 1;
++}
+ 
+-	if (!*cp)	/* End of format string */
+-		break;
+-		
+-	dynamic_count = 0;	/* Begin counting dynamic field width specs. */
+-	conv_spec = cp++;	/* Remember where this conversion begins. */
+-
+-	for (;*cp; cp++) {	/* Scan until conversion character. */
+-		char conv_buf[BUFSIZ];	/* Save conversion string here. */
+-		register int conv_len;	/* Length of ``conv_buf''. */
+-
+-		switch (*cp) {	/* Field-width spec.: Keep scanning. */
+-			case '.': case '0': case '1': case '2': case '3':
+-			case '4': case '5': case '6': case '7': case '8':
+-			case '9':
+-				continue;
+-
+-			case '*':	/* Dynamic field-width spec */
+-				dynamic_count++;
+-				continue;
+-
+-			case 's':	/* String */
+-				if (&argp[dynamic_count] >= ep) {
+-					fprintf(stderr,
+-					"printf: Not enough args for format.\n"
+-						);
+-					exit(EX_USAGE);
+-					}
+-
+-				(void) strncpy(conv_buf, conv_spec,
+-					conv_len = cp - conv_spec + 1);
+-				conv_buf[conv_len] = '\0';
+-
+-				switch (dynamic_count) {
+-					case 0:
+-						ctrl(*argp);
+-						printf(conv_buf, *argp++);
+-						break;
+-
+-					case 1:
+-						{
+-						register int a1;
+-
+-						a1 = atoi(*argp++);
+-						ctrl(*argp);
+-						printf(conv_buf, a1, *argp++);
+-						}
+-						break;
+-
+-					case 2:
+-						{
+-						register int a1, a2;
+-
+-						a1 = atoi(*argp++);
+-						a2 = atoi(*argp++);
+-						ctrl(*argp);
+-						printf(conv_buf, a1, a2, *argp++);
+-						}
+-						break;
+-
+-					}
+-				goto out;
+-
+-			case 'c':	/* Char */
+-				if (&argp[dynamic_count] >= ep) {
+-					fprintf(stderr,
+-					"printf: Not enough args for format.\n"
+-						);
+-					exit(EX_USAGE);
+-					}
+-
+-				(void) strncpy(conv_buf, conv_spec,
+-					conv_len = cp - conv_spec + 1);
+-				conv_buf[conv_len] = '\0';
+-
+-				switch (dynamic_count) {
+-					case 0:
+-						ctrl(*argp);
+-						printf(conv_buf, **argp++);
+-						break;
+-
+-					case 1:
+-						{
+-						register int a1;
+-
+-						a1 = atoi(*argp++);
+-						ctrl(*argp);
+-						printf(conv_buf, a1, **argp++);
+-						}
+-						break;
+-
+-					case 2:
+-						{
+-						register int a1, a2;
+-
+-						a1 = atoi(*argp++);
+-						a2 = atoi(*argp++);
+-						ctrl(*argp);
+-						printf(conv_buf, a1, a2, **argp++);
+-						}
+-						break;
+-					}
+-				goto out;
+-
+-			case 'd':	/* Integer */
+-			case 'o':
+-			case 'x':
+-			case 'X':
+-			case 'u':
+-				if (&argp[dynamic_count] >= ep) {
+-					fprintf(stderr,
+-					"printf: Not enough args for format.\n"
+-						);
+-					exit(EX_USAGE);
+-					}
+-
+-				(void) strncpy(conv_buf, conv_spec,
+-					conv_len = cp - conv_spec + 1);
+-				conv_buf[conv_len] = '\0';
+-
+-				switch (dynamic_count) {
+-					case 0:
+-						printf(conv_buf, atoi(*argp++));
+-						break;
+-
+-					case 1:
+-						{
+-						register int a1;
+-
+-						a1 = atoi(*argp++);
+-						printf(conv_buf, a1, atoi(*argp++));
+-						}
+-						break;
+-
+-					case 2:
+-						{
+-						register int a1, a2;
+-
+-						a1 = atoi(*argp++);
+-						a2 = atoi(*argp++);
+-						printf(conv_buf, a1, a2, atoi(*argp++));
+-						}
+-						break;
+-
+-					}
+-				goto out;
+-
+-			case 'f':	/* Real */
+-			case 'e':
+-			case 'g':
+-				if (&argp[dynamic_count] >= ep) {
+-					fprintf(stderr,
+-					"printf: Not enough args for format.\n"
+-						);
+-					exit(EX_USAGE);
+-					}
+-
+-				(void) strncpy(conv_buf, conv_spec,
+-					conv_len = cp - conv_spec + 1);
+-				conv_buf[conv_len] = '\0';
+-
+-				switch (dynamic_count) {
+-					case 0:
+-						printf(conv_buf, atof(*argp++));
+-						break;
+-
+-					case 1:
+-						{
+-						register int a1;
+-
+-						a1 = atoi(*argp++);
+-						printf(conv_buf, a1, atof(*argp++));
+-						}
+-						break;
+-
+-					case 2:
+-						{
+-						register int a1, a2;
+-
+-						a1 = atoi(*argp++);
+-						a2 = atoi(*argp++);
+-						printf(conv_buf, a1, a2, atof(*argp++));
+-						}
+-						break;
+-
+-					}
+-				goto out;
+-
+-			case 'r':	/* Roman (Well, why not?) */
+-				if (&argp[dynamic_count] >= ep) {
+-					fprintf(stderr,
+-					"printf: Not enough args for format.\n"
+-						);
+-					exit(EX_USAGE);
+-					}
+-
+-				(void) strncpy(conv_buf, conv_spec,
+-					conv_len = cp - conv_spec + 1);
+-				conv_buf[conv_len] = '\0';
+-				conv_buf[conv_len - 1] = 's';
+-
+-				switch (dynamic_count) {
+-					case 0:
+-						printf(conv_buf,
+-							ctor(atoi(*argp++)));
+-						break;
+-
+-					case 1:
+-						{
+-						register int a1;
+-
+-						a1 = atoi(*argp++);
+-						printf(conv_buf, a1,
+-							ctor(atoi(*argp++)));
+-						}
+-						break;
+-
+-					case 2:
+-						{
+-						register int a1, a2;
+-
+-						a1 = atoi(*argp++);
+-						a2 = atoi(*argp++);
+-						printf(conv_buf, a1, a2,
+-							ctor(atoi(*argp++)));
+-						}
+-						break;
+-
+-					}
+-				goto out;
+-
+-			case '%':	/* Boring */
+-				putchar('%');
+-				break;
+-
+-			default:	/* Probably an error, but let user
+-					   have his way. */
+-				continue;
+-			}
+-		}
+-	out: ;
+-	}
++static void bad(char *what, char *arg)
++{
++  fflush(stdout);
++  fprintf(stderr, "printf: %s: %s\n", arg, what);
++  status = EX_USAGE;
++}
++
++/* An error in the conversion specification from spec up to end. */
++static void badspec(char *what, char *spec, char *end)
++{
++  char c = *end;
+ 
+-exit(EX_OK);
++  *end = '\0';
++  bad(what, spec);
++  *end = c;
+ }
+ 
+-/****************************************************************************/
++/* A number argument: decimal, 0octal, 0xhex, or 'c / "c for the code of c. */
++static long getnum(char *s, int is_unsigned)
++{
++  char *end;
++  long l;
+ 
+-/* Convert backslash notation to control characters, in place. */
++  if (*s == '\'' || *s == '"') return (unsigned char) s[1];
++  if (*s == '\0') return 0;
++  errno = 0;
++  if (is_unsigned)
++	l = (long) strtoul(s, &end, 0);
++  else
++	l = strtol(s, &end, 0);
++  if (end == s || *end != '\0')
++	bad("invalid number", s);
++  else if (errno == ERANGE)
++	bad("out of range", s);
++  return l;
++}
+ 
+-int ctrl(char *s)
++static double getdouble(char *s)
+ {
+-register char *op;
+-static int val;
++  char *end;
++  double d;
+ 
+-for (op = s; *s; s++)
+-	if (*s == '\\')
+-		switch (*++s) {
+-			case '\0':	/* End-of-string: user goofed */
+-				goto out;
+-
+-			case '\\':	/* Backslash */
+-				*op++ = '\\';
+-				break;
+-
+-			case 'n':	/* newline */
+-				*op++ = '\n';
+-				break;
+-
+-			case 't':	/* horizontal tab */
+-				*op++ = '\t';
+-				break;
+-
+-			case 'r':	/* carriage-return */
+-				*op++ = '\r';
+-				break;
+-
+-			case 'f':	/* form-feed */
+-				*op++ = '\f';
+-				break;
+-
+-			case 'b':	/* backspace */
+-				*op++ = '\b';
+-				break;
+-
+-			case 'v':	/* vertical tab */
+-				*op++ = '\13';
+-				break;
+-
+-			case 'a':	/* WARNING! DANGER! DANGER! DANGER! */
+-				*op++ = '\7';
+-				break;
+-
+-			case '0': case '1': case '2': case '3':
+-			case '4': case '5': case '6': case '7':
+-				{	/* octal constant */
+-				register int digits;
+-
+-				val = 0;
+-				(void) sscanf(s, "%3o", &val);
+-				*op++ = val;
+-				for (digits = 3; s[1] &&
+-					strchr("01234567", s[1])
+-					&& --digits > 0;
+-						s++);
+-				}
+-				break;
++  if (*s == '\'' || *s == '"') return (unsigned char) s[1];
++  if (*s == '\0') return 0;
++  errno = 0;
++  d = strtod(s, &end);
++  if (end == s || *end != '\0')
++	bad("invalid number", s);
++  else if (errno == ERANGE)
++	bad("out of range", s);
++  return d;
++}
++
++/* A width or precision from an argument (*), within an int. */
++static int getstar(void)
++{
++  char *s = nextarg();
++  long l = getnum(s, 0);
+ 
+-			case 'x':	/* hex constant */
+-			case 'X':
+-				s++;
+-				{
+-				register int digits;
+-
+-				val = 0;
+-				(void) sscanf(s, "%3x", &val);
+-				*op++ = val;
+-				for (digits = 3; *s && s[1] &&
+-					strchr("0123456789abcdefABCDEF",
+-									s[1])
+-					&& --digits > 0;
+-						s++);
++  if (l > MAXWIDTH || l < -MAXWIDTH) {
++	bad("out of range", s);
++	l = l < 0 ? -MAXWIDTH : MAXWIDTH;
++  }
++  return (int) l;
++}
++
++/* The escapes of a %b argument, in place; returns the length. */
++static int bescapes(char *s)
++{
++  char *start = s, *op = s;
++  int ch;
++
++  for (; *s != '\0'; s++) {
++	if (*s != '\\') {
++		*op++ = *s;
++		continue;
++	}
++	s = escape(s + 1, &ch, 1);
++	if (ch == -1) {
++		stop = 1;
++		break;
++	}
++	*op++ = ch;
++  }
++  *op = '\0';
++  return op - start;
++}
++
++int main(int argc, char *argv[])
++{
++  char *fmt, *cp, *spec, *arg;
++  char **round;
++  char conv[16], *convp, cbuf[2];
++  int ch, width, prec, hasprec, plain, n;
++  long l;
++  double d;
++
++  if (argc < 2) {
++	fprintf(stderr,
++		"printf: Usage: printf <format-string> [ arg1 . . . ]\n");
++	exit(EX_USAGE);
++  }
++
++  fmt = argv[1];
++  argp = &argv[2];	/* first argument after the format */
++  ep = &argv[argc];	/* the end of the arguments */
++
++#define PR(v)	(hasprec ? printf(conv, width, prec, v) : printf(conv, width, v))
++
++  do {
++	round = argp;
++	for (cp = fmt; *cp != '\0' && !stop; cp++) {
++		if (*cp == '\\') {
++			cp = escape(cp + 1, &ch, 0);
++			putchar(ch);
++			continue;
++		}
++		if (*cp != '%') {
++			putchar(*cp);
++			continue;
++		}
++		if (cp[1] == '%') {
++			putchar('%');
++			cp++;
++			continue;
++		}
++
++		/* A conversion: flags, width, precision, length, character.
++		 * Rebuilt in conv[] as "%<flags>*[.*]<conversion>".
++		 */
++		spec = cp++;
++		convp = conv;
++		*convp++ = '%';
++		plain = 1;
++		while (*cp != '\0' && strchr("-+ #0", *cp) != NULL) {
++			if (memchr(conv + 1, *cp, convp - (conv + 1)) == NULL)
++				*convp++ = *cp;
++			cp++;
++			plain = 0;
++		}
++		width = 0;
++		if (*cp == '*') {
++			width = getstar();
++			cp++;
++			plain = 0;
++		} else {
++			while (isdig(*cp)) {
++				if (width <= MAXWIDTH)
++					width = width * 10 + (*cp - '0');
++				cp++;
++				plain = 0;
++			}
++			if (width > MAXWIDTH) {
++				badspec("field width too large", spec, cp);
++				width = MAXWIDTH;
++			}
++		}
++		*convp++ = '*';
++		hasprec = 0;
++		prec = 0;
++		if (*cp == '.') {
++			cp++;
++			hasprec = 1;
++			plain = 0;
++			if (*cp == '*') {
++				prec = getstar();
++				cp++;
++			} else {
++				while (isdig(*cp)) {
++					if (prec <= MAXWIDTH)
++						prec = prec * 10 + (*cp - '0');
++					cp++;
+ 				}
+-				break;
++				if (prec > MAXWIDTH) prec = MAXWIDTH;
++			}
++			*convp++ = '.';
++			*convp++ = '*';
++		}
++		while (*cp == 'l' || *cp == 'h' || *cp == 'L') cp++;
+ 
++		switch (*cp) {
++		case 'd': case 'i':
++		case 'o': case 'u': case 'x': case 'X':
++		case 'e': case 'E': case 'f': case 'g': case 'G':
++			if (hasprec && prec > MAXPREC) {
++				badspec("precision too large", spec, cp + 1);
++				prec = MAXPREC;
+ 			}
+-	else
+-		*op++ = *s;
++		}
+ 
+-out:
++		switch (*cp) {
++		case 'd':
++		case 'i':
++			*convp++ = 'l';
++			*convp++ = 'd';
++			*convp = '\0';
++			l = getnum(nextarg(), 0);
++			PR(l);
++			break;
++
++		case 'o':
++		case 'u':
++		case 'x':
++		case 'X':
++			*convp++ = 'l';
++			*convp++ = *cp;
++			*convp = '\0';
++			l = getnum(nextarg(), 1);
++			PR((unsigned long) l);
++			break;
++
++		case 'e':
++		case 'E':
++		case 'f':
++		case 'g':
++		case 'G':
++			*convp++ = *cp;
++			*convp = '\0';
++			d = getdouble(nextarg());
++			PR(d);
++			break;
++
++		case 'c':
++			*convp++ = 's';
++			*convp = '\0';
++			cbuf[0] = *nextarg();
++			cbuf[1] = '\0';
++			PR(cbuf);
++			break;
++
++		case 's':
++			*convp++ = 's';
++			*convp = '\0';
++			PR(nextarg());
++			break;
++
++		case 'b':
++			*convp++ = 's';
++			*convp = '\0';
++			arg = nextarg();
++			n = bescapes(arg);
++			if (plain)
++				fwrite(arg, 1, n, stdout);  /* may hold \0 */
++			else
++				PR(arg);
++			break;
++
++		case 'r':	/* Roman (Well, why not?) */
++			*convp++ = 's';
++			*convp = '\0';
++			PR(ctor(getnum(nextarg(), 0)));
++			break;
++
++		case '\0':
++			bad("missing conversion character", spec);
++			fflush(stdout);
++			exit(EX_USAGE);
++
++		default:
++			cp[1] = '\0';
++			bad("invalid conversion", spec);
++			fflush(stdout);
++			exit(EX_USAGE);
++		}
++	}
++  } while (argp > round && argp < ep && !stop);
+ 
+-*op = '\0';
++  if (fflush(stdout) == EOF || ferror(stdout)) {
++	fprintf(stderr, "printf: write error\n");
++	status = EX_USAGE;
++  }
++  exit(status);
+ }
+ 
+ /****************************************************************************/
++/****************************************************************************/
+ 
+ /* Convert integer to Roman Numerals. (Have have you survived without it?) */
+ 
+@@ -413,7 +425,7 @@
+ 		{    1, 'I', 'V',  },
+ 		};
+ 
+-char *ctor(int x)
++char *ctor(long x)	/* rosco: long, as the other numbers */
+ {
+ register struct roman *mp;
+ static char buf[BUFSIZ];
+@@ -421,13 +433,14 @@
+ 
+ /* I've never actually seen a roman numeral with a minus-sign.
+    Probably ought to print out some appropriate latin phrase instead. */
++if (x < -LONG_MAX) return "???";
+ if (x < 0) {
+ 	*cp++ = '-';
+ 	x = -x;
+ 	}
+ 
+ for (mp = roman; x; mp++) {
+-	register unsigned units;
++	register long units;
+ 
+ 	units = x / mp->r_mag;
+ 	x = x % mp->r_mag;

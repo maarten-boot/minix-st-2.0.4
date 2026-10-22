@@ -656,7 +656,9 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/basename.c simple/pwd.c simple/mount.c simple/umount.c \
 	  simple/split.c simple/fold.c simple/expand.c simple/unexpand.c \
 	  simple/rev.c simple/tee.c simple/tsort.c simple/od.c simple/strings.c \
-	  simple/sum.c simple/prep.c simple/pr.c
+	  simple/sum.c simple/prep.c simple/pr.c \
+	  simple/printf.c simple/expr.c simple/test.c simple/sleep.c \
+	  simple/time.c simple/echo.c simple/kill.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -727,6 +729,9 @@ obj/split.o obj/fold.o obj/expand.o obj/unexpand.o obj/rev.o obj/tee.o \
 obj/tsort.o obj/od.o obj/strings.o obj/sum.o obj/prep.o obj/pr.o: \
 		obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+obj/printf.o obj/expr.o obj/test.o obj/sleep.o obj/time.o obj/echo.o \
+obj/kill.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h
 	$(CC) $(CFLAGS) -DUSG -DDEFAULT_SKELETON_FILE='"/usr/lib/flex/flex.skel"' \
@@ -753,9 +758,14 @@ obj/asktime.o:	asktime.c
 obj/finger.o:	obj/fix/simple/finger.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# printf.c passes strtoul() results to printf("%d"), see printfint.h
-obj/printf.o:	CFLAGS += -include printfint.h
-obj/printf.o:	printfint.h
+# printf: the fixed copy (Source fixes) takes its numbers as long (the
+# original passed strtoul() to "%d", printfint.h made that an int), and
+# %e/%f/%g need the floating point printf (libc's says "cannot print
+# floating point" and exits 1)
+bin/printf:	obj/printf.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py stacks.mk
+	@mkdir -p bin
+	$(CC) $(LDFLAGS) -o obj/printf.elf $L/crtso.o obj/printf.o $(FPLIBS)
+	$(MKMINIX) -S $(or $(STACK_printf),4kw) obj/printf.elf $@
 
 # the curses programs
 bin/life bin/gomoku:	LIBS = $L/libcurses.a $L/libc.a

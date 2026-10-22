@@ -1,0 +1,40 @@
+--- a/simple/echo.c
++++ b/simple/echo.c
+@@ -7,6 +7,7 @@
+ #define SIZE 1024
+ char buf[SIZE];
+ int count;
++int werr;
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void collect, (char *s));
+@@ -18,7 +19,8 @@
+   register int i, nflag;
+ 
+   nflag = 0;
+-  if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'n') {
++  /* rosco: only "-n" itself, "-nx" was taken as -n and not printed */
++  if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'n' && argv[1][2] == 0) {
+ 	nflag++;
+ 	argc--;
+ 	argv++;
+@@ -31,8 +33,8 @@
+   if (nflag == 0) collect("\n");
+ 
+   /* Print accumulated output. */
+-  if (count > 0) write(1, buf, count);
+-  return(0);
++  if (count > 0 && write(1, buf, count) != count) werr = 1;
++  return(werr);	/* rosco: 1 after a write error, it was always 0 */
+ }
+ 
+ void collect(s)
+@@ -43,7 +45,7 @@
+ 
+   while ((c = *s++) != 0) {
+ 	if (count == SIZE) {
+-		write(1, buf, count);
++		if (write(1, buf, count) != count) werr = 1;
+ 		count = 0;
+ 	}
+ 	buf[count++] = c;

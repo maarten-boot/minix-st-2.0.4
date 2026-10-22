@@ -1,0 +1,261 @@
+--- a/simple/test.c
++++ b/simple/test.c
+@@ -79,6 +79,14 @@
+ #define FILIB	26
+ #define FILIP	27
+ #define FILIL	28
++/* rosco: -e, -u, -g, -k, -nt, -ot and -ef */
++#define FILEX	29
++#define FILSU	30
++#define FILSG	31
++#define FILSK	32
++#define FILNT	33
++#define FILOT	34
++#define FILEF	35
+ 
+ #define UNOP	1
+ #define BINOP	2
+@@ -118,6 +126,13 @@
+   {	"-p",	FILIP,	UNOP	},
+   {	"-h",	FILIL,	UNOP	},
+   {	"-L",	FILIL,	UNOP	},
++  {	"-e",	FILEX,	UNOP	},
++  {	"-u",	FILSU,	UNOP	},
++  {	"-g",	FILSG,	UNOP	},
++  {	"-k",	FILSK,	UNOP	},
++  {	"-nt",	FILNT,	BINOP	},
++  {	"-ot",	FILOT,	BINOP	},
++  {	"-ef",	FILEF,	BINOP	},
+   {	0,	0,	0	}
+ };
+ 
+@@ -135,12 +150,16 @@
+ _PROTOTYPE(int primary, (int n));
+ _PROTOTYPE(int bexpr, (int n));
+ _PROTOTYPE(int expr, (int n));
++_PROTOTYPE(int unary, (int n, char *opnd));
++_PROTOTYPE(int binary, (int n, char *opnd1, char *opnd2));
++_PROTOTYPE(int posix, (char **a, int n));
+ 
+ void syntax()
+ {
++  /* rosco: exit 2, not 1 (false): POSIX, an error is > 1 */
+   write(2, prog, strlen(prog));
+   write(2, ": syntax error\n", 15);
+-  exit(1);
++  exit(2);
+ }
+ 
+ 
+@@ -156,6 +175,8 @@
+ 	sign = -1;
+ 	s++;
+   }
++  /* rosco: at least one digit ("-" was 0) */
++  if (*s < '0' || *s > '9') syntax();
+   while (*s >= '0' && *s <= '9') l = l * 10 + *s++ - '0';
+   while (*s == ' ' || *s == '\t') ++s;
+   if (*s != '\0') syntax();
+@@ -192,6 +213,14 @@
+ 	return(stat(nm, &s) == 0 && S_ISFIFO(s.st_mode));
+       case FILIL:
+ 	return(lstat(nm, &s) == 0 && S_ISLNK(s.st_mode));
++      case FILEX:
++	return(stat(nm, &s) == 0);
++      case FILSU:
++	return(stat(nm, &s) == 0 && (s.st_mode & S_ISUID));
++      case FILSG:
++	return(stat(nm, &s) == 0 && (s.st_mode & S_ISGID));
++      case FILSK:
++	return(stat(nm, &s) == 0 && (s.st_mode & S_ISVTX));
+   }
+   return(0);
+ }
+@@ -209,6 +238,29 @@
+ }
+ 
+ 
++/* rosco: f1 -nt f2 (f1 newer, or only f1 exists), -ot (the reverse), -ef
++ * (the same file).
++ */
++int newer2(fil1, fil2, mode)
++char *fil1, *fil2;
++int mode;
++{
++  struct stat s1, s2;
++  int r1 = stat(fil1, &s1), r2 = stat(fil2, &s2);
++
++  switch (mode) {
++      case FILNT:
++	return r1 == 0 && (r2 != 0 || s1.st_mtime > s2.st_mtime);
++      case FILOT:
++	return r2 == 0 && (r1 != 0 || s1.st_mtime < s2.st_mtime);
++      case FILEF:
++	return r1 == 0 && r2 == 0 && s1.st_dev == s2.st_dev
++		&& s1.st_ino == s2.st_ino;
++  }
++  return 0;
++}
++
++
+ int lex(s)
+ register char *s;
+ {
+@@ -248,26 +300,7 @@
+ 
+ 		if ((opnd2 = *++ip) == (char *) 0) syntax();
+ 
+-		switch (op->op_num) {
+-		    case STEQL:
+-			return(strcmp(opnd1, opnd2) == 0);
+-		    case STNEQ:
+-			return(strcmp(opnd1, opnd2) != 0);
+-		    case INTEQ:
+-			return(num(opnd1) == num(opnd2));
+-		    case INTNE:
+-			return(num(opnd1) != num(opnd2));
+-		    case INTGE:
+-			return(num(opnd1) >= num(opnd2));
+-		    case INTGT:
+-			return(num(opnd1) > num(opnd2));
+-		    case INTLE:
+-			return(num(opnd1) <= num(opnd2));
+-		    case INTLT:
+-			return(num(opnd1) < num(opnd2));
+-		    case FILNW:
+-			return(newer(opnd1, opnd2));
+-		}
++		return(binary(op->op_num, opnd1, opnd2));
+ 	}
+ 	ip--;
+ 	return(strlen(opnd1) > 0);
+@@ -275,9 +308,49 @@
+ 
+   /* Unary expression */
+   if (ip_op->op_type != UNOP || *++ip == 0) syntax();
+-  if (n == STZER) return (strlen(*ip) == 0);
+-  if (n == STNZE) return (strlen(*ip) != 0);
+-  return(filstat(*ip, n));
++  return(unary(n, *ip));
++}
++
++
++int unary(n, opnd)
++int n;
++char *opnd;
++{
++  if (n == STZER) return (strlen(opnd) == 0);
++  if (n == STNZE) return (strlen(opnd) != 0);
++  return(filstat(opnd, n));
++}
++
++
++int binary(n, opnd1, opnd2)
++int n;
++char *opnd1, *opnd2;
++{
++  switch (n) {
++      case STEQL:
++	return(strcmp(opnd1, opnd2) == 0);
++      case STNEQ:
++	return(strcmp(opnd1, opnd2) != 0);
++      case INTEQ:
++	return(num(opnd1) == num(opnd2));
++      case INTNE:
++	return(num(opnd1) != num(opnd2));
++      case INTGE:
++	return(num(opnd1) >= num(opnd2));
++      case INTGT:
++	return(num(opnd1) > num(opnd2));
++      case INTLE:
++	return(num(opnd1) <= num(opnd2));
++      case INTLT:
++	return(num(opnd1) < num(opnd2));
++      case FILNW:
++	return(newer(opnd1, opnd2));
++      case FILNT:
++      case FILOT:
++      case FILEF:
++	return(newer2(opnd1, opnd2, n));
++  }
++  return 0;
+ }
+ 
+ 
+@@ -307,18 +380,70 @@
+ }
+ 
+ 
++/* rosco: up to 4 arguments are taken by their number, as POSIX says: an
++ * operand that looks like an operator is an operand ("test -n", "[ "$x" ]"
++ * with x=-f, "test ! = !", "test -n = y" were syntax errors or wrong).
++ */
++int posix(a, n)
++char **a;
++int n;
++{
++  int op;
++
++  switch (n) {
++      case 0:
++	return 0;
++      case 1:
++	return a[0][0] != '\0';
++      case 2:
++	if (strcmp(a[0], "!") == 0) return !posix(a + 1, 1);
++	if (lex(a[0]) != OPERAND && ip_op->op_type == UNOP)
++		return unary(ip_op->op_num, a[1]);
++	break;
++      case 3:
++	op = lex(a[1]);
++	if (op != OPERAND && ip_op->op_type == BINOP)
++		return binary(op, a[0], a[2]);
++	if (op == BAND) return a[0][0] != '\0' && a[2][0] != '\0';
++	if (op == BOR) return a[0][0] != '\0' || a[2][0] != '\0';
++	if (strcmp(a[0], "!") == 0) return !posix(a + 1, 2);
++	if (strcmp(a[0], "(") == 0 && strcmp(a[2], ")") == 0)
++		return posix(a + 1, 1);
++	break;
++      case 4:
++	if (strcmp(a[0], "!") == 0) return !posix(a + 1, 3);
++	if (strcmp(a[0], "(") == 0 && strcmp(a[3], ")") == 0)
++		return posix(a + 1, 2);
++	return -1;
++  }
++  syntax();
++  return 0;
++}
++
++
+ int main(argc, argv)
+ int argc;
+ char **argv;
+ {
+-  if (argv[0][0] == '[' && argv[argc - 1][0] != ']') {
+-	write(2, "test: ] missing\n", 16);
+-	exit(1);
++  int res;
++  char *base;
++
++  /* rosco: also as /bin/[ (the last part of the name), the "]" whole */
++  base = strrchr(argv[0], '/');
++  base = base == 0 ? argv[0] : base + 1;
++  if (strcmp(base, "[") == 0) {
++	if (strcmp(argv[argc - 1], "]") != 0) {
++		write(2, "[: ] missing\n", 13);
++		exit(2);	/* rosco: an error, not false */
++	}
++	argv[--argc] = 0;
+   }
+-  if (argv[0][0] == '[') argc--;
+ 
+-  if (argc == 1) exit(1);
+   prog = argv[0];
++  if (argc - 1 <= 4 && (res = posix(&argv[1], argc - 1)) >= 0)
++	return(!res);
+   ip = &argv[1];
+-  return(!expr(lex(*ip)));
++  res = expr(lex(*ip));
++  if (*++ip != 0) syntax();	/* rosco: arguments left over */
++  return(!res);
+ }

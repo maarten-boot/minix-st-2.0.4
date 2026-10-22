@@ -1,0 +1,120 @@
+--- a/simple/kill.c
++++ b/simple/kill.c
+@@ -9,6 +9,8 @@
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void usage, (void));
++_PROTOTYPE(int signum, (char *s));
++_PROTOTYPE(void list, (char *s));
+ 
+ /* Table of signal names. */
+ struct signames {
+@@ -52,27 +54,32 @@
+   int ex = 0, sig = SIGTERM;
+   char *end;
+   long l;
+-  unsigned long ul;
+   struct sigaction sa;
+   int i, doit;
+-  struct signames *snp;
+ 
+-  if (argc > 1 && argv[1][0] == '-') {
+-	sig = -1;
+-	for (snp = signames; snp->name != NULL; snp++) {	/* symbolic? */
+-		if (strcmp(snp->name, argv[1] + 1) == 0) {
+-			sig = snp->sig;
+-			break;
+-		}
+-	}
+-	if (sig < 0) {						/* numeric? */
+-		ul = strtoul(argv[1] + 1, &end, 10);
+-		if (end == argv[1] + 1 || *end != 0 || ul > _NSIG) usage();
+-		sig = ul;
+-	}
++  /* rosco: also -s sig, -l [status], "--", names with "SIG"; no process
++   * is a usage error (it did nothing, status 0).
++   */
++  if (argc > 1 && strcmp(argv[1], "-l") == 0) {
++	if (argc > 3) usage();
++	list(argv[2]);
++	return(0);
++  }
++  if (argc > 2 && strcmp(argv[1], "-s") == 0) {
++	sig = signum(argv[2]);
++	argv += 2;
++	argc -= 2;
++  } else
++  if (argc > 1 && argv[1][0] == '-' && strcmp(argv[1], "--") != 0) {
++	sig = signum(argv[1] + 1);
+ 	argv++;
+ 	argc--;
+   }
++  if (argc > 1 && strcmp(argv[1], "--") == 0) {
++	argv++;
++	argc--;
++  }
++  if (argc < 2) usage();
+   sa.sa_flags = 0;
+   sigemptyset(&sa.sa_mask);
+   sa.sa_handler = SIG_IGN;		/* try not to kill yourself */
+@@ -95,6 +102,59 @@
+ 
+ void usage()
+ {
+-  fprintf(stderr, "Usage: kill [-sig] pid\n");
++  fprintf(stderr, "Usage: kill [-sig | -s sig] pid ...\n       kill -l [status]\n");
++  exit(1);
++}
++
++/* A signal name (HUP, SIGHUP) or number. */
++int signum(s)
++char *s;
++{
++  struct signames *snp;
++  unsigned long ul;
++  char *end;
++
++  if (strncmp(s, "SIG", 3) == 0) s += 3;
++  for (snp = signames; snp->name != NULL; snp++) {	/* symbolic? */
++	if (strcmp(snp->name, s) == 0) return(snp->sig);
++  }
++  ul = strtoul(s, &end, 10);				/* numeric? */
++  if (end == s || *end != 0 || ul > _NSIG) usage();
++  return((int) ul);
++}
++
++/* kill -l: the signal names, or the name of one (a number or an exit
++ * status of 128 + the signal).
++ */
++void list(s)
++char *s;
++{
++  struct signames *snp;
++  unsigned long ul;
++  char *end;
++  int sig, n = 0;
++
++  if (s == NULL) {
++	for (sig = 1; sig <= _NSIG; sig++) {
++		for (snp = signames; snp->name != NULL; snp++) {
++			if (snp->sig == sig) {
++				printf("%s%s", n++ == 0 ? "" : " ", snp->name);
++				break;
++			}
++		}
++	}
++	printf("\n");
++	return;
++  }
++  ul = strtoul(s, &end, 10);
++  if (end == s || *end != 0) usage();
++  if (ul > 128) ul -= 128;
++  for (snp = signames; snp->name != NULL; snp++) {
++	if (snp->sig == ul) {
++		printf("%s\n", snp->name);
++		return;
++	}
++  }
++  fprintf(stderr, "kill: %s: unknown signal\n", s);
+   exit(1);
+ }

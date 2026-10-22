@@ -1,0 +1,48 @@
+--- a/simple/sleep.c
++++ b/simple/sleep.c
+@@ -4,6 +4,7 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ #include <minix/minlib.h>
++#include <limits.h>
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ 
+@@ -11,17 +12,22 @@
+ int argc;
+ char *argv[];
+ {
+-  register seconds;
++  /* rosco: the seconds were an int (16 bits): "sleep 70000" slept 4464
++   * seconds, and sleep() takes an unsigned (16 bits) too, so sleep in
++   * steps; "sleep ''" was taken as 0.
++   */
++  unsigned long seconds;
++  unsigned n;
+   register char c;
+ 
+   seconds = 0;
+ 
+-  if (argc != 2) {
++  if (argc != 2 || argv[1][0] == '\0') {
+ 	std_err("Usage: sleep time\n");
+ 	exit(1);
+   }
+   while (c = *(argv[1])++) {
+-	if (c < '0' || c > '9') {
++	if (c < '0' || c > '9' || seconds > (ULONG_MAX - 9) / 10) {
+ 		std_err("sleep: bad arg\n");
+ 		exit(1);
+ 	}
+@@ -29,6 +35,10 @@
+   }
+ 
+   /* Now sleep. */
+-  sleep(seconds);
++  while (seconds > 0) {
++	n = seconds > 30000 ? 30000 : (unsigned) seconds;
++	sleep(n);
++	seconds -= n;
++  }
+   return(0);
+ }

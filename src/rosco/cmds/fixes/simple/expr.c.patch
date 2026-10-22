@@ -1,0 +1,75 @@
+--- a/simple/expr.c
++++ b/simple/expr.c
+@@ -4,6 +4,7 @@
+ #include <ctype.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <limits.h>
+ 
+ struct value {
+   long numval;			/* numeric value */
+@@ -215,7 +216,9 @@
+   else if (strcmp(*argp, "(") == 0) {
+ 	++argp;
+ 	expr1(valp);
+-	if (strcmp(*argp++, ")") != 0) invalid("unbalanced parentheses");
++	/* rosco: "( 1" passed a null pointer to strcmp() */
++	if (*argp == NULL || strcmp(*argp++, ")") != 0)
++		invalid("unbalanced parentheses");
+   } else {
+ 	valp->nf_valid = 0;
+ 	valp->strval = *argp++;
+@@ -240,7 +243,7 @@
+ {
+   register char *p;
+   int sign = 0, digits = 0;
+-  unsigned long num = 0;
++  unsigned long num = 0, limit;
+ 
+   if (valp->nf_valid) return 1;
+ 
+@@ -250,7 +253,10 @@
+ 	++p;
+ 	sign = 1;
+   }
++  /* rosco: a number past the range of a long is not a number (it wrapped) */
++  limit = sign ? (unsigned long) LONG_MAX + 1 : LONG_MAX;
+   while (isdigit(*p)) {
++	if (num > (limit - (*p - '0')) / 10) return 0;
+ 	num = num * 10 + (*p++ - '0');
+ 	digits = 1;
+   }
+@@ -355,6 +361,12 @@
+ void docolon(match, pattern)
+ struct value *match, *pattern;
+ {
++  int i;
++
++  /* rosco: a fresh state for each ':' (the flags and \( count stayed) */
++  rflags = RABEGIN;
++  rlevel = 0;
++  for (i = 0; i < 10; i++) rbegins[i] = rends[i] = NULL;
+   rcomp(strvalue(pattern));
+ 
+   rmatch(strvalue(match));
+@@ -389,7 +401,7 @@
+   rpc = &rprogram[0];
+   starable = NULL;
+ 
+-  for (i = 1; i < 10; ++i) pclosed[i] = 0;
++  for (i = 0; i < 10; ++i) pclosed[i] = 0;	/* rosco: \0 too */
+ 
+   if (*regexp == '^') {
+ 	rflags |= RABEGIN;	/* not needed, as it turns out */
+@@ -546,7 +558,10 @@
+ {
+   char *nstr;
+ 
+-  while (*str && **pcp != REND) {
++  /* rosco: also at the end of the string: what is left may match nothing
++   * (x*, .*, \(...\)); "expr abc : 'abc.*'" gave 0
++   */
++  while (**pcp != REND) {
+ 	if ((nstr = tryone(str, pcp)) == NULL) return NULL;
+ 	str = nstr;
+   }
