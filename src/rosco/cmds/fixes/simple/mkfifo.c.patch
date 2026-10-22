@@ -1,0 +1,69 @@
+--- orig/simple/mkfifo.c
++++ new/simple/mkfifo.c
+@@ -39,6 +39,12 @@
+ {
+   mode_t who, mask, newmode, tmpmask;
+   char action;
++  char *end;
++  unsigned long octalmode;
++
++  /* rosco: octal modes (as mkdir and chmod); "-m 600" gave a usage error */
++  octalmode = strtoul(symbolic, &end, 010);
++  if (octalmode <= ALL_MODES && *end == 0 && end != symbolic) return octalmode;
+ 
+   newmode = oldmode & ALL_MODES;
+   while (*symbolic) {
+@@ -74,9 +80,13 @@
+ 		}
+ 		mask = 0;
+ 		for (; *symbolic; symbolic++) {
++			/* rosco: the copies of u and o were shifted the wrong
++			 * way: "g=u" set the set-gid bit (and bits beyond the
++			 * mode), "g=o" nothing.
++			 */
+ 			if (*symbolic == 'u') {
+ 				tmpmask = newmode & S_IRWXU;
+-				mask |= tmpmask | (tmpmask << 3) | (tmpmask << 6);
++				mask |= tmpmask | (tmpmask >> 3) | (tmpmask >> 6);
+ 				symbolic++;
+ 				break;
+ 			}
+@@ -88,7 +98,7 @@
+ 			}
+ 			if (*symbolic == 'o') {
+ 				tmpmask = newmode & S_IRWXO;
+-				mask |= tmpmask | (tmpmask >> 3) | (tmpmask >> 6);
++				mask |= tmpmask | (tmpmask << 3) | (tmpmask << 6);
+ 				symbolic++;
+ 				break;
+ 			}
+@@ -156,8 +166,11 @@
+ {
+   int errors = 0;
+   char *symbolic;
++  mode_t mode;
+ 
+-  if (argc > 2 && *argv[1] == '-' && strcmp(argv[1], "-m") != 0) usage();
++  /* rosco: strncmp, "-m600" was refused */
++  if (argc > 2 && *argv[1] == '-' && strncmp(argv[1], "-m", (size_t) 2) != 0)
++	usage();
+   argc--;
+   argv++;
+   if (argc && strncmp(*argv, "-m", (size_t) 2) == 0) {
+@@ -175,11 +188,15 @@
+ 	symbolic = (char *) 0;
+ 
+   if (!argc) usage();
++  /* rosco: the mode is checked before the first fifo is made (a bad mode
++   * left it behind)
++   */
++  if (symbolic) mode = parsemode(symbolic, DEFAULT_MODE);
+   for (; argc--; argv++)
+ 	if (mkfifo(*argv, DEFAULT_MODE)) {
+ 		perror(*argv);
+ 		errors = 1;
+-	} else if (symbolic && chmod(*argv, parsemode(symbolic, DEFAULT_MODE))) {
++	} else if (symbolic && chmod(*argv, mode)) {
+ 		unlink(*argv);
+ 		perror(*argv);
+ 		errors = 1;

@@ -1,0 +1,12 @@
+--- orig/simple/ls.c
++++ new/simple/ls.c
+@@ -731,7 +731,8 @@
+ 
+ 	if (field & L_INODE) {
+ 		if (doit) {
+-			printf("%*d ", f1width[W_INO], f->ino);
++			/* rosco: %u, i-numbers over 32767 came out negative */
++			printf("%*u ", f1width[W_INO], (unsigned) f->ino);
+ 		} else {
+ 			maxise(&f1width[W_INO], numwidth(f->ino));
+ 			width++;

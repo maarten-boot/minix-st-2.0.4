@@ -1,0 +1,95 @@
+--- orig/simple/find.c
++++ new/simple/find.c
+@@ -182,6 +182,7 @@
+ int prune_here;			/* This is Baaaad! Don't ever do this again!     */
+ int um;				/* current umask()                               */
+ int needprint = 1;		/* implicit -print needed?                       */
++int excode = 0;			/* rosco: exit status, 1 after an error          */
+ 
+ 
+ /* The prototypes: */
+@@ -264,7 +265,7 @@
+ 	if ((last = strrchr(path, '/')) == NULL) last = path; else last++;
+ 	find(path, pred, last);
+   }
+-  return 0;
++  return excode;	/* rosco: was 0 after errors too */
+ }
+ 
+ void find(path, pred, last)
+@@ -277,6 +278,13 @@
+   DIR *dp;
+   struct dirent *de;
+ 
++  /* rosco: path and the names below it were copied into spath[] without a
++   * length check: a deep tree (or a long argument) overran the stack.
++   */
++  if (strlen(path) >= PATH_MAX) {
++	nonfatal("path name too long: ", path);
++	return;
++  }
+   if (path[1] == '\0' && *path == '/') {
+ 	*send++ = '/';
+ 	*send = '\0';
+@@ -313,6 +321,12 @@
+ 			if ((de->d_name[0] != '.') || ((de->d_name[1])
+ 					  && ((de->d_name[1] != '.')
+ 					      || (de->d_name[2])))) {
++				if (send - spath + strlen(de->d_name) >=
++								PATH_MAX) {
++					send[0] = '\0';
++					nonfatal("path name too long: ", spath);
++					continue;
++				}
+ 				strcpy(send, de->d_name);
+ 				find(spath, pred, send);
+ 			}
+@@ -366,12 +380,15 @@
+ 	return ichk((long) st->st_size, n);
+     case OP_INUM:
+ 	return ichk((long) (st->st_ino), n);
++    /* rosco: the age in whole days, as POSIX; this compared the time with
++     * now - n days to the second, so "-mtime 0" or "-mtime 2" never matched
++     */
+     case OP_ATIME:
+-	return ichk(st->st_atime, n);
++	return ichk((current_time - st->st_atime) / SECS_PER_DAY, n);
+     case OP_CTIME:
+-	return ichk(st->st_ctime, n);
++	return ichk((current_time - st->st_ctime) / SECS_PER_DAY, n);
+     case OP_MTIME:
+-	return ichk(st->st_mtime, n);
++	return ichk((current_time - st->st_mtime) / SECS_PER_DAY, n);
+     case OP_EXEC:
+     case OP_OK:
+ 	return execute(n->n_type, n->n_info.n_exec, path);
+@@ -731,10 +748,8 @@
+     case OP_CTIME:
+     case OP_MTIME:
+ 	checkarg(*++ipp);
+-	number(*ipp, 10, &l, &(p->n_info.n_int.n_sign));
+-	p->n_info.n_int.n_val = current_time - l * SECS_PER_DAY;
+-	/* More than n days old means less than the absolute time */
+-	p->n_info.n_int.n_sign *= -1;
++	number(*ipp, 10, &(p->n_info.n_int.n_val),
++	       &(p->n_info.n_int.n_sign));
+ 	break;
+     case OP_EXEC:
+     case OP_OK:
+@@ -748,6 +763,8 @@
+ 			e->e_vec[e->e_cnt] = 0;
+ 			break;
+ 		}
++		if (e->e_cnt >= MAXARG - 1)	/* rosco: was not checked */
++			fatal("-exec/-ok: too many arguments", "");
+ 		e->e_vec[(e->e_cnt)++] =
+ 			(**ipp == '{' && (*ipp)[1] == '}'
+ 		       && (*ipp)[2] == '\0') ? (char *) (-1) : *ipp;
+@@ -791,6 +808,7 @@
+ char *s1, *s2;
+ {
+   fprintf(stderr, "%s: %s%s\n", prog, s1, s2);
++  excode = 1;
+ }
+ 
+ void fatal(s1, s2)

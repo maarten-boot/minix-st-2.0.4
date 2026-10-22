@@ -58,8 +58,20 @@ all:	$(addprefix bin/,$(CMDS))
 
 -include stacks.mk
 # cp (also mv, rm, ln) copies through a 31744 byte buffer on the stack; the
-# ACK build's 16kw only just held it, gcc's frames need more.
-STACK_cp = 24kw
+# ACK build's 16kw only just held it, gcc's frames need more.  -r keeps the
+# names of a directory on the heap (about 24 bytes each): with 24kw, "cp -r"
+# of a directory of 1000 files died ("Stack low", "Memory fault"); 64kw
+# holds 2000 (not 3000).
+STACK_cp = 64kw
+# ls keeps a directory's entries on the heap (about 60 bytes each): with the
+# ACK build's 20kw "ls" of a directory of 1000 files died ("Memory fault");
+# 64kw holds 2000 (not 3000).
+STACK_ls = 64kw
+# chmod -R and chown -R: opendir() mallocs about 2.1K per directory level;
+# with the ACK build's 4kw "Not enough core" at the third level.  24kw
+# holds the 17 levels the open file limit allows.
+STACK_chmod = 24kw
+STACK_chown = 24kw
 # at keeps three stdio buffers (stdin, stdout, the job file) on its heap; in
 # the ACK build's 4kw the stack ran into them ("Memory fault").
 STACK_at = 8kw
@@ -627,6 +639,8 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  ftp/ftp.c ftp/local.c ftp/file.c ftp/net.c \
 	  simple/rcp.c simple/rsh.c simple/finger.c urlget/urlget.c \
 	  telnet/ttn.c rlogind/rlogind.c rlogind/setup.c simple/rlogin.c \
+	  simple/dd.c simple/ls.c simple/mkdir.c simple/chmod.c simple/chown.c \
+	  simple/mknod.c simple/mkfifo.c simple/find.c simple/touch.c \
 	  simple/tr.c simple/sed.c simple/sort.c simple/uniq.c simple/cut.c \
 	  simple/head.c simple/tail.c simple/wc.c simple/comm.c \
 	  simple/fgrep.c simple/paste.c simple/join.c
@@ -686,6 +700,9 @@ obj/ping.o:	obj/fix/simple/ping.c
 obj/hostaddr.o:	obj/fix/simple/hostaddr.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/rlogin.o:	obj/fix/simple/rlogin.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/dd.o obj/ls.o obj/mkdir.o obj/chmod.o obj/chown.o obj/mknod.o \
+obj/mkfifo.o obj/find.o obj/touch.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/tr.o obj/sed.o obj/sort.o obj/uniq.o obj/cut.o obj/head.o obj/tail.o \
 obj/wc.o obj/comm.o obj/fgrep.o obj/paste.o obj/join.o:	obj/%.o:	obj/fix/simple/%.c

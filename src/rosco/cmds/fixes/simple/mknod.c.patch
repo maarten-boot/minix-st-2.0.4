@@ -1,0 +1,20 @@
+--- orig/simple/mknod.c
++++ new/simple/mknod.c
+@@ -33,7 +33,8 @@
+ 	mode = (*argv[2] == 'b' ? 060666 : 020666);
+ 	major = atoi(argv[3]);
+ 	minor = atoi(argv[4]);
+-	if (major - 1 > 0xFE || minor > 0xFF) badcomm();
++	/* rosco: negative numbers were taken (a wrong device number) */
++	if (major < 0 || major > 0xFF || minor < 0 || minor > 0xFF) badcomm();
+ 	dev = (major << 8) | minor;
+   }
+   if (mknod(argv[1], mode, dev) < 0) {
+@@ -41,6 +42,7 @@
+ 	std_err("mknod: ");
+ 	errno = err;
+ 	perror(argv[1]);
++	return(1);	/* rosco: a failure exited with 0 */
+   }
+   return(0);
+ }

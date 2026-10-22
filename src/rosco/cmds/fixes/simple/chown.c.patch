@@ -1,0 +1,34 @@
+--- orig/simple/chown.c
++++ new/simple/chown.c
+@@ -142,13 +142,30 @@
+ 		error = 1;
+ 		return;
+ 	}
+-	if (path != file) strcpy(path, file);
++	/* rosco: path[] (PATH_MAX + 1) was filled without a length check */
++	if (path != file) {
++		if (strlen(file) >= PATH_MAX) {
++			errno = ENAMETOOLONG;
++			perror(file);
++			error = 1;
++			closedir(dirp);
++			return;
++		}
++		strcpy(path, file);
++	}
+ 	namp = path + strlen(path);
+ 	*namp++ = '/';
+ 	while (entp = readdir(dirp))
+ 		if (entp->d_name[0] != '.' ||
+ 		    (entp->d_name[1] &&
+ 		     (entp->d_name[1] != '.' || entp->d_name[2]))) {
++			if (namp - path + strlen(entp->d_name) > PATH_MAX) {
++				*namp = '\0';
++				errno = ENAMETOOLONG;
++				perror(path);
++				error = 1;
++				continue;
++			}
+ 			strcpy(namp, entp->d_name);
+ 			do_chown(path);
+ 		}

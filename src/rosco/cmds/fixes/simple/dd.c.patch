@@ -1,0 +1,61 @@
+--- orig/simple/dd.c
++++ new/simple/dd.c
+@@ -27,6 +27,7 @@
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(BOOLEAN is, (char *pc));
+ _PROTOTYPE(NUMBER num, (void));
++_PROTOTYPE(unsigned bsize, (void));
+ _PROTOTYPE(void puto, (void));
+ _PROTOTYPE(void statistics, (void));
+ _PROTOTYPE(int ulcase, (int c));
+@@ -79,9 +80,29 @@
+ 			exit(1);
+ 		}
+ 		return((NUMBER) ans);
++	    default:
++		/* rosco: other characters were skipped, "bs=1M" was bs=1 */
++		fprintf(stderr, "dd: bad number: %s\n", errorp);
++		exit(1);
+ 	}
+ }
+ 
++/* rosco: a block size in a 16-bit unsigned was cut (bs=64k was 0, and
++ * bs=100k 34464), and a read() or write() of more than 32767 bytes fails
++ * here (its count comes back in a 16-bit int), as does sbrk() of more.
++ */
++unsigned bsize()
++{
++  NUMBER n = num();
++
++  if (n > 32767) {
++	fprintf(stderr, "dd: argument %s out of range (at most 32767)\n",
++		errorp);
++	exit(1);
++  }
++  return((unsigned) n);
++}
++
+ #define SWAB 0x0001
+ #define LCASE 0x0002
+ #define UCASE 0x0004
+@@ -163,17 +184,17 @@
+ 	pch = *(argv++);
+ 	if (is("ibs=")) {
+ 		errorp = pch;
+-		ibs = num();
++		ibs = bsize();
+ 		continue;
+ 	}
+ 	if (is("obs=")) {
+ 		errorp = pch;
+-		obs = num();
++		obs = bsize();
+ 		continue;
+ 	}
+ 	if (is("bs=")) {
+ 		errorp = pch;
+-		bs = num();
++		bs = bsize();
+ 		continue;
+ 	}
+ 	if (is("if=")) {

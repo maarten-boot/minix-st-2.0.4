@@ -1,0 +1,67 @@
+--- orig/simple/chmod.c
++++ new/simple/chmod.c
+@@ -86,9 +86,13 @@
+ 		}
+ 		mask = 0;
+ 		for (; *symbolic; symbolic++) {
++			/* rosco: the copies of u and o were shifted the wrong
++			 * way: "g=u" set the set-gid bit (and bits beyond the
++			 * mode), "g=o" nothing.
++			 */
+ 			if (*symbolic == 'u') {
+ 				tmpmask = newmode & S_IRWXU;
+-				mask |= tmpmask | (tmpmask << 3) | (tmpmask << 6);
++				mask |= tmpmask | (tmpmask >> 3) | (tmpmask >> 6);
+ 				symbolic++;
+ 				break;
+ 			}
+@@ -100,7 +104,7 @@
+ 			}
+ 			if (*symbolic == 'o') {
+ 				tmpmask = newmode & S_IRWXO;
+-				mask |= tmpmask | (tmpmask >> 3) | (tmpmask >> 6);
++				mask |= tmpmask | (tmpmask << 3) | (tmpmask << 6);
+ 				symbolic++;
+ 				break;
+ 			}
+@@ -210,6 +214,9 @@
+   DIR *dirp;
+   struct dirent *entp;
+   char *namp;
++  int errors;	/* rosco: was the global, which each subdirectory call
++		 * reset: "chmod -R" lost earlier errors (exit status 0)
++		 */
+ 
+   if (lstat(name, &st)) {
+ 	perror(name);
+@@ -231,13 +238,29 @@
+ 		perror(name);
+ 		return(1);
+ 	}
+-	if (name != path) strcpy(path, name);
++	/* rosco: path[] (PATH_MAX + 1) was filled without a length check */
++	if (name != path) {
++		if (strlen(name) >= PATH_MAX) {
++			errno = ENAMETOOLONG;
++			perror(name);
++			closedir(dirp);
++			return(1);
++		}
++		strcpy(path, name);
++	}
+ 	namp = path + strlen(path);
+ 	*namp++ = '/';
+ 	while (entp = readdir(dirp))
+ 		if (entp->d_name[0] != '.' ||
+ 		    (entp->d_name[1] &&
+ 		     (entp->d_name[1] != '.' || entp->d_name[2]))) {
++			if (namp - path + strlen(entp->d_name) > PATH_MAX) {
++				*namp = '\0';
++				errno = ENAMETOOLONG;
++				perror(path);
++				errors = 1;
++				continue;
++			}
+ 			strcpy(namp, entp->d_name);
+ 			errors |= do_change(path);
+ 		}

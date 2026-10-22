@@ -1,0 +1,16 @@
+--- orig/simple/touch.c
++++ new/simple/touch.c
+@@ -218,7 +218,12 @@
+   if (errno != ENOENT) return 1;
+   if (no_creat == 1) return 0;
+   if ((fd = creat(name, 0666)) >= 0) {
+-	if (fstat(fd, &sb) != -1) {
++	/* rosco: only with -a or -m (as above); a new file got the time of
++	 * its creation as modification time ("touch -t" or "-r" did nothing).
++	 */
++	if (to_change == (ATIME | MTIME)) {
++		/* both times from tvp */
++	} else if (fstat(fd, &sb) != -1) {
+ 		if (!(to_change & ATIME)) {
+ 			tvp.actime = sb.st_atime;
+ 		} else {

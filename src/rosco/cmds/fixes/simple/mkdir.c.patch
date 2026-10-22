@@ -1,0 +1,105 @@
+--- orig/simple/mkdir.c
++++ new/simple/mkdir.c
+@@ -54,7 +54,8 @@
+   unsigned long octalmode;
+ 
+   octalmode = strtoul(symbolic, &end, 010);
+-  if (octalmode < ALL_MODES && *end == 0 && end != symbolic) return octalmode;
++  /* rosco: <= (07777 itself was refused) */
++  if (octalmode <= ALL_MODES && *end == 0 && end != symbolic) return octalmode;
+ 
+   newmode = oldmode & ALL_MODES;
+   while (*symbolic) {
+@@ -90,9 +91,13 @@
+ 		}
+ 		mask = 0;
+ 		for (; *symbolic; symbolic++) {
++			/* rosco: the copies of u and o were shifted the wrong
++			 * way: "g=u" set the set-gid bit (and bits beyond the
++			 * mode), "g=o" nothing.
++			 */
+ 			if (*symbolic == 'u') {
+ 				tmpmask = newmode & S_IRWXU;
+-				mask |= tmpmask | (tmpmask << 3) | (tmpmask << 6);
++				mask |= tmpmask | (tmpmask >> 3) | (tmpmask >> 6);
+ 				symbolic++;
+ 				break;
+ 			}
+@@ -104,7 +109,7 @@
+ 			}
+ 			if (*symbolic == 'o') {
+ 				tmpmask = newmode & S_IRWXO;
+-				mask |= tmpmask | (tmpmask >> 3) | (tmpmask >> 6);
++				mask |= tmpmask | (tmpmask << 3) | (tmpmask << 6);
+ 				symbolic++;
+ 				break;
+ 			}
+@@ -191,14 +196,38 @@
+ /* P1003.2 requires that missing intermediate pathname components should be
+  *	created if the -p option is specified (4.40.3).
+  */
++/* rosco: parent[] was a PATH_MAX + 1 byte array on the stack of every
++ * level, filled by an unchecked strcpy(): a longer argument overran it, and
++ * "mkdir -p a/a/a/..." (up to 127 levels) needed some 35K of stack, with
++ * 8K there.  Now one static buffer, cut at the last '/' by makepath() and
++ * put back on return; makeparent() does the work on it.
++ */
++static char parent[PATH_MAX + 1];
++_PROTOTYPE(int makeparent, (void));
++
+ int makepath(fordir)
+ char *fordir;
+ {
+-  char parent[PATH_MAX + 1], *end;
++  char *end;
++  int r;
+ 
+-  strcpy(parent, fordir);
++  if (fordir != parent) {
++	if (strlen(fordir) > PATH_MAX) {
++		errno = ENAMETOOLONG;
++		perror(fordir);
++		return(1);
++	}
++	strcpy(parent, fordir);
++  }
+   if (!(end = strrchr(parent, '/'))) return(0);
+   *end = '\0';
++  r = makeparent();
++  *end = '/';
++  return(r);
++}
++
++int makeparent()
++{
+   if (!parent[0]) return(0);
+ 
+   if (!stat(parent, &st)) {
+@@ -218,8 +247,11 @@
+ /* P1003.2 states that, regardless of umask() value, intermediate paths
+  *	should have at least write and search (x) permissions (4.40.10).
+  */
++  /* rosco: the "& DEFAULT_MODE" was applied to chmod()'s result, so the
++   * directory got the set-uid, set-gid and sticky bits of ~u_mask.
++   */
+   if ((u_mask & USER_WX) &&
+-      chmod(parent, ((~u_mask) | USER_WX)) & DEFAULT_MODE) {
++      chmod(parent, ((~u_mask) | USER_WX) & DEFAULT_MODE)) {
+ 	perror(parent);
+ 	return(1);
+   }
+@@ -231,6 +263,14 @@
+ int makedir(dirname)
+ char *dirname;
+ {
++  char *end;
++
++  /* rosco: drop trailing slashes; "mkdir -p dir/" made dir, then failed
++   * with "File exists" on "dir/"
++   */
++  end = dirname + strlen(dirname);
++  while (end > dirname + 1 && end[-1] == '/') *--end = '\0';
++
+   if (mkdir(dirname, DEFAULT_MODE)) {
+ 	if (!pflag) {
+ 		perror(dirname);
