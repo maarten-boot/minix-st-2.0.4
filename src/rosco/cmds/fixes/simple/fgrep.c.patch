@@ -1,0 +1,63 @@
+--- orig/simple/fgrep.c	2026-10-21 14:32:14.218207744 +0200
++++ new/simple/fgrep.c	2026-10-21 14:35:54.967399671 +0200
+@@ -48,7 +48,8 @@
+ test_str *strings;
+ char *prog_name;
+ int cflag, hflag, lflag, nflag, sflag, vflag;
+-unsigned line_num;		/* line number in current file */
++long line_num;			/* line number in current file (rosco: long,
++				 * -n numbers wrapped at 65536) */
+ 
+ int fd_in, eof_seen;		/* file descriptor for input and eof status */
+ char input_buffer[BUF_SIZE + 2];/* buffer + sentinel margin */
+@@ -83,8 +84,10 @@
+ {
+   char *line;
+   int c;
+-  unsigned count;		/* number of matching lines in current file */
+-  unsigned found_one = 0;	/* was there any match in any file at all ? */
++  long count;			/* number of matching lines in current file */
++  int found_one = 0;		/* was there any match in any file at all ? */
++				/* rosco: count long (-c wrapped at 65536,
++				 * and exactly 65536 matches gave exit 1) */
+ 
+ #ifdef noperprintf
+   noperprintf(stdout);
+@@ -134,16 +137,16 @@
+ 		}
+ 		if (cflag) continue;
+ 		if (hflag == 0) printf("%s:", optarg);
+-		if (nflag) printf("%u:", line_num);
++		if (nflag) printf("%ld:", line_num);
+ 		do {
+ 			putchar(*line);
+ 		} while (++line < input);
+ 		fflush(stdout);
+ 	}
+-	found_one |= count;
++	if (count) found_one = 1;
+ 	if (cflag) {
+ 		if (hflag == 0) printf("%s: ", optarg);
+-		printf("%u\n", count);
++		printf("%ld\n", count);
+ 		fflush(stdout);
+ 	}
+ 	close(fd_in);
+@@ -165,7 +168,7 @@
+ char *mesg;
+ {
+   fprintf(stderr, "%s: %s\n", prog_name, mesg);
+-  exit(1);
++  exit(2);			/* rosco: 2 (trouble), not 1 (no match) */
+ }
+ 
+ /* Add a string to search for to the global linked list `strings'. */
+@@ -201,7 +204,7 @@
+ 	optarg = "stdin";
+   } else if ((fd_in = open(optarg, O_RDONLY)) == -1) {
+ 	fprintf(stderr, "%s: can't open %s\n", prog_name, optarg);
+-	exit(1);
++	exit(2);		/* rosco: 2 (trouble), 1 means "no match" */
+   }
+   input = max_input = buf_end = buffer;
+   buffer[-1] = '\n';		/* sentinel */

@@ -1,0 +1,142 @@
+--- orig/simple/tr.c	2026-10-21 14:32:14.184909157 +0200
++++ new/simple/tr.c	2026-10-21 14:33:05.463346181 +0200
+@@ -66,6 +66,11 @@
+ 	if (argv[index] != NIL_PTR) map(input, output);
+ 	for (ptr = input; *ptr; ptr++) invec[*ptr] = TRUE;
+ 	for (ptr = output; *ptr; ptr++) outvec[*ptr] = TRUE;
++	/* rosco: -s with string1 alone squeezes the characters of string1
++	 * (outvec stayed empty: nothing was squeezed)
++	 */
++	if (sq_fl && !del_fl && argv[index] == NIL_PTR)
++		for (i = 0; i <= ASCII; i++) outvec[i] = invec[i];
+   }
+   convert();
+   return(0);
+@@ -80,8 +85,11 @@
+   for (;;) {
+ 	if (in_index == read_chars) {
+ 		if ((read_chars = read(0, (char *)input, BUFFER_SIZE)) <= 0) {
+-			if (write(1, (char *)output, out_index) != out_index)
++			/* rosco: exit 1 after a failed write */
++			if (write(1, (char *)output, out_index) != out_index) {
+ 				write(2, "Bad write\n", 10);
++				exit(1);
++			}
+ 			exit(0);
+ 		}
+ 		in_index = 0;
+@@ -108,6 +116,8 @@
+ {
+   unsigned char last;
+ 
++  /* rosco: an empty string2 mapped everything to an uninitialized char */
++  if (*string2 == '\0') return;
+   while (*string1) {
+ 	if (*string2 == '\0')
+ 		vector[*string1] = last;
+@@ -117,38 +127,80 @@
+   }
+ }
+ 
++/* rosco: one character of a string, with the escapes \ooo, \\, \n, \t,
++ * \r, \b, \f, \a, \v (the old code gave "n" for \n) as a value 0-255.
++ */
++static int getch(argp)
++char **argp;
++{
++  register char *arg = *argp;
++  int c, i;
++
++  if (*arg != '\\' || arg[1] == '\0') {
++	c = *arg++ & 0377;
++  } else if (*++arg >= '0' && *arg <= '7') {
++	c = i = 0;
++	do {
++		c = (c << 3) + *arg++ - '0';
++	} while (++i < 3 && *arg >= '0' && *arg <= '7');
++	c &= 0377;
++  } else {
++	switch (c = *arg++ & 0377) {
++	    case 'n':	c = '\n';	break;
++	    case 't':	c = '\t';	break;
++	    case 'r':	c = '\r';	break;
++	    case 'b':	c = '\b';	break;
++	    case 'f':	c = '\f';	break;
++	    case 'a':	c = '\007';	break;
++	    case 'v':	c = '\v';	break;
++	}
++  }
++  *argp = arg;
++  return c;
++}
++
++/* rosco: POSIX ranges a-z next to the old [a-z] ("tr a-z A-Z" changed
++ * only a and z), ranges with characters 128-255 (signed char), escapes in
++ * ranges, a '[' or '-' at the end of the argument (ran past its end), and
++ * the end of the 1024 byte buffer is checked.
++ */
+ void expand(arg, buffer)
+-register char *arg;
++char *arg;
+ register unsigned char *buffer;
+ {
+-  int i, ac;
++  unsigned char *end = buffer + BUFFER_SIZE - 1;
++  char *p;
++  int c1, c2;
+ 
+   while (*arg) {
+-	if (*arg == '\\') {
+-		arg++;
+-		i = ac = 0;
+-		if (*arg >= '0' && *arg <= '7') {
+-			do {
+-				ac = (ac << 3) + *arg++ - '0';
+-				i++;
+-			} while (i < 4 && *arg >= '0' && *arg <= '7');
+-			*buffer++ = ac;
+-		} else if (*arg != '\0')
+-			*buffer++ = *arg++;
+-	} else if (*arg == '[') {
+-		arg++;
+-		i = *arg++;
+-		if (*arg++ != '-') {
+-			*buffer++ = '[';
+-			arg -= 2;
+-			continue;
++	c1 = -1;
++	if (*arg == '[') {		/* [a-z] */
++		p = arg + 1;
++		if (*p != '\0') c1 = getch(&p);
++		if (c1 >= 0 && *p == '-' && p[1] != '\0') {
++			p++;
++			c2 = getch(&p);
++			if (*p == ']') arg = p + 1;
++			else c1 = -1;
++		} else
++			c1 = -1;
++	}
++	if (c1 < 0) {			/* a-z or a single character */
++		c1 = c2 = getch(&arg);
++		if (*arg == '-' && arg[1] != '\0') {
++			arg++;
++			c2 = getch(&arg);
+ 		}
+-		ac = *arg++;
+-		while (i <= ac) *buffer++ = i++;
+-		arg++;		/* Skip ']' */
+-	} else
+-		*buffer++ = *arg++;
++	}
++	for (; c1 <= c2; c1++) {
++		if (buffer == end) {
++			write(2, "tr: string too long\n", 20);
++			exit(1);
++		}
++		*buffer++ = c1;
++	}
+   }
++  *buffer = '\0';
+ }
+ 
+ void complement(buffer)

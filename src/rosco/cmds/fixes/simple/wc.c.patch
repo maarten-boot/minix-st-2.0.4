@@ -1,0 +1,38 @@
+--- orig/simple/wc.c	2026-10-21 14:32:14.207631085 +0200
++++ new/simple/wc.c	2026-10-21 14:33:22.990605139 +0200
+@@ -49,7 +49,7 @@
+ {
+   int k;
+   char *cp;
+-  int tflag, files;
++  int tflag, files, status = 0;
+ 
+   /* Get flags. */
+   files = argc - 1;
+@@ -96,6 +96,7 @@
+ 
+ 	if ((f = fopen(argv[k], "r")) == NULL) {
+ 		fprintf(stderr, "wc: cannot open %s\n", argv[k]);
++		status = 1;	/* rosco: exit 1 when a file was missing */
+ 	} else {
+ 		count(f);
+ 		if (lflag) printf(" %6ld", lcount);
+@@ -114,7 +115,7 @@
+ 	printf(" total\n");
+   }
+   fflush(stdout);
+-  return(0);
++  return(status);
+ }
+ 
+ void count(f)
+@@ -137,7 +138,8 @@
+ 		word = 1;
+ 	}
+ 
+-	if (c == '\n' || c == '\f') lcount++;
++	/* rosco: only newlines are lines (POSIX); form feeds counted too */
++	if (c == '\n') lcount++;
+   }
+   ltotal += lcount;
+   wtotal += wcount;

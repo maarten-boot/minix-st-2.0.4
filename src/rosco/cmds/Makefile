@@ -82,6 +82,10 @@ STACK_mail = 8kw
 # "malloc(): Not enough core" after about 90 cached answers.  32k, as 8kw
 # was on Minix i386.
 STACK_nonamed = 16kw
+# cut: malloc() rounds the heap up to 4k (stdin and stdout buffers), which
+# left 4kw about 3.5k of stack; every "cut -f" (printf, _doprnt's 1k
+# buffer) died with "Memory fault" (stack fault)
+STACK_cut = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -622,7 +626,10 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/tcpd.c ftpd/ftpd.c ftpd/access.c ftpd/file.c ftpd/net.c \
 	  ftp/ftp.c ftp/local.c ftp/file.c ftp/net.c \
 	  simple/rcp.c simple/rsh.c simple/finger.c urlget/urlget.c \
-	  telnet/ttn.c rlogind/rlogind.c rlogind/setup.c simple/rlogin.c
+	  telnet/ttn.c rlogind/rlogind.c rlogind/setup.c simple/rlogin.c \
+	  simple/tr.c simple/sed.c simple/sort.c simple/uniq.c simple/cut.c \
+	  simple/head.c simple/tail.c simple/wc.c simple/comm.c \
+	  simple/fgrep.c simple/paste.c simple/join.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -679,6 +686,9 @@ obj/ping.o:	obj/fix/simple/ping.c
 obj/hostaddr.o:	obj/fix/simple/hostaddr.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/rlogin.o:	obj/fix/simple/rlogin.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/tr.o obj/sed.o obj/sort.o obj/uniq.o obj/cut.o obj/head.o obj/tail.o \
+obj/wc.o obj/comm.o obj/fgrep.o obj/paste.o obj/join.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h

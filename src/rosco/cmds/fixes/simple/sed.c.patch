@@ -1,0 +1,295 @@
+--- orig/simple/sed.c	2026-10-21 14:32:14.187909125 +0200
++++ new/simple/sed.c	2026-10-21 14:39:50.338883814 +0200
+@@ -151,7 +151,8 @@
+ 
+ #define POOLSIZE	20000	/* size of string-pool space */
+ #define WFILES		10	/* max # w output files that can be compiled */
+-#define RELIMIT		256	/* max chars in compiled RE */
++#define RELIMIT		512	/* max chars in compiled RE */
++				/* rosco: 512, classes now take 33 bytes */
+ #define MAXDEPTH	20	/* maximum {}-nesting level */
+ #define MAXLABS		50	/* max # of labels that can be handled */
+ 
+@@ -180,6 +181,7 @@
+ static char REITL[] = "sed: RE too long: %s\n";
+ static char TMLNR[] = "sed: too many line numbers\n";
+ static char TRAIL[] = "sed: command \"%s\" has trailing garbage\n";
++static char TLONG[] = "sed: command line too long\n";
+ 
+ typedef struct {		/* represent a command label */
+   char *name;			/* the label name */
+@@ -535,12 +537,17 @@
+ {
+   register char *p = cp;	/* strictly for speed */
+ 
++  /* rosco: an escaped character stays \c; it was marked c | 0x80, so a
++   * character 128-255 (0xB1 is \1) was taken for one, and all of them
++   * lost their top bit.  A \ at the end ran on behind the string.
++   */
+   for (;;)
+ 	if ((*rhsp = *p++) == '\\') {	/* copy; if it's a \, */
+-		*rhsp = *p++;	/* copy escaped char */
++		rhsp++;
++		if ((*rhsp = *p++) == '\0') return(BAD);
+ 		/* Check validity of pattern tag */
+ 		if (*rhsp > bcount + '0' && *rhsp <= '9') return(BAD);
+-		*rhsp++ |= 0x80;/* mark the good ones */
++		rhsp++;
+ 		continue;
+ 	} else if (*rhsp == delim) {	/* found RE end, hooray... */
+ 		*rhsp++ = '\0';	/* cap the expression string */
+@@ -644,16 +651,20 @@
+ 		continue;
+ 
+ 	    case '[':		/* begin character set pattern */
+-		if (ep + 17 >= expbuf + RELIMIT) ABORT(REITL);
++		/* rosco: 256 bits (32 bytes), not 128: a character 128-255
++		 * (signed char) set bits before the class, and in matching
++		 * it was taken as the one 128 below
++		 */
++		if (ep + 33 >= expbuf + RELIMIT) ABORT(REITL);
+ 		*ep++ = CCL;	/* insert class mark */
+-		if (negclass = ((c = *sp++) == '^')) c = *sp++;
++		if (negclass = ((c = *sp++ & 0377) == '^')) c = *sp++ & 0377;
+ 		svclass = sp;	/* save ptr to class start */
+ 		do {
+ 			if (c == '\0') ABORT(CGMSG);
+ 
+ 			/* Handle character ranges */
+ 			if (c == '-' && sp > svclass && *sp != ']')
+-				for (c = sp[-2]; c < *sp; c++)
++				for (c = sp[-2] & 0377; c < (*sp & 0377); c++)
+ 					ep[c >> 3] |= bits[c & 7];
+ 
+ 			/* Handle escape sequences in sets */
+@@ -668,13 +679,13 @@
+ 			/* Enter (possibly translated) char in set */
+ 			ep[c >> 3] |= bits[c & 7];
+ 		} while
+-			((c = *sp++) != ']');
++			((c = *sp++ & 0377) != ']');
+ 
+ 		/* Invert the bitmask if all-but was specified */
+-		if (negclass) for (classct = 0; classct < 16; classct++)
++		if (negclass) for (classct = 0; classct < 32; classct++)
+ 				ep[classct] ^= 0xFF;
+ 		ep[0] &= 0xFE;	/* never match ASCII 0 */
+-		ep += 16;	/* advance ep past set mask */
++		ep += 32;	/* advance ep past set mask */
+ 		continue;
+ 
+   defchar:			/* match literal character */
+@@ -704,7 +715,8 @@
+ 
+ 		/* Else transcribe next e argument into cbuf */
+ 		p = *++eargv;
+-		while (*++cbuf = *p++)
++		/* rosco: the length is checked (ran over linebuf[]) */
++		while (cbuf < linebuf + MAXBUF - 2 && (*++cbuf = *p++))
+ 			if (*cbuf == '\\') {
+ 				if ((*++cbuf = *p++) == '\0')
+ 					return(savep = NULL, -1);
+@@ -717,13 +729,17 @@
+ 			}
+ 
+ 		/* Found end-of-string; can advance to next argument */
++		if (cbuf >= linebuf + MAXBUF - 2) ABORT(TLONG);
+ 		return(savep = NULL, 1);
+ 	}
+ 	if ((p = savep) == NULL) return(-1);
+ 
+-	while (*++cbuf = *p++)
++	while (cbuf < linebuf + MAXBUF - 2 && (*++cbuf = *p++))
+ 		if (*cbuf == '\\') {
+-			if ((*++cbuf = *p++) == '0')
++			/* rosco: '\0', was '0': "\0" ended the script
++			 * and a \ at the end ran on behind the argument
++			 */
++			if ((*++cbuf = *p++) == '\0')
+ 				return(savep = NULL, -1);
+ 			else
+ 				continue;
+@@ -731,12 +747,15 @@
+ 			*cbuf = '\0';
+ 			return(savep = p, 1);
+ 		}
++	if (cbuf >= linebuf + MAXBUF - 2) ABORT(TLONG);
+ 	return(savep = NULL, 1);
+   }
+ 
+   /* If no -e flag read from command file descriptor */
+   while ((inc = getc(cmdf)) != EOF)	/* get next char */
+-	if ((*++cbuf = inc) == '\\')	/* if it's escape */
++	if (cbuf >= linebuf + MAXBUF - 2)	/* rosco: was not checked */
++		ABORT(TLONG);
++	else if ((*++cbuf = inc) == '\\')	/* if it's escape */
+ 		*++cbuf = inc = getc(cmdf);	/* get next char */
+ 	else if (*cbuf == '\n')	/* end on newline */
+ 		return(*cbuf = '\0', 1);	/* cap the string */
+@@ -849,7 +868,10 @@
+ 			 * section */
+ 
+   /* Now rescan the 'from' section */
+-  while ((c = *sp++ & 0x7F) != delim) {
++  /* rosco: a table of 256, not 128: characters 128-255 were mapped as the
++   * one 128 below (and indexed before the table when executed)
++   */
++  while ((c = *sp++ & 0377) != (delim & 0377)) {
+ 	if (c == '\\' && *sp == 'n') {
+ 		sp++;
+ 		c = '\n';
+@@ -866,10 +888,10 @@
+ 
+   cp = ++tp;			/* point compile ptr past translit */
+ 
+-  for (c = 0; c < 128; c++)	/* fill in self-map entries in table */
++  for (c = 0; c < 256; c++)	/* fill in self-map entries in table */
+ 	if (ep[c] == 0) ep[c] = c;
+ 
+-  return(ep + 0x80);		/* return first free location past table end */
++  return(ep + 0x100);		/* return first free location past table end */
+ }
+ 
+ void quit(n)
+@@ -917,7 +939,8 @@
+ /***** end of imported stuff *****/
+ 
+ #define MAXHOLD	 MAXBUF		/* size of the hold space */
+-#define GENSIZ	 MAXBUF		/* maximum genbuf size */
++#define GENSIZ	 (MAXBUF + 1)	/* maximum genbuf size (rosco: + 1, x copied
++				 * a full line and its null) */
+ 
+ #define TRUE	 1
+ #define FALSE	 0
+@@ -1095,6 +1118,7 @@
+ {
+   register char *curlp;		/* save ptr for closures */
+   char c;			/* scratch character holder */
++  int cc;			/* rosco: a character 0-255 for the classes */
+   char *bbeg;
+   int ct;
+ 
+@@ -1120,9 +1144,9 @@
+ 		return(TRUE);	/* return true */
+ 
+ 	    case CCL:		/* a closure */
+-		c = *lp++ & 0177;
+-		if (ep[c >> 3] & bits[c & 07]) {	/* is char in set? */
+-			ep += 16;	/* then skip rest of bitmask */
++		cc = *lp++ & 0377;
++		if (ep[cc >> 3] & bits[cc & 07]) {	/* is char in set? */
++			ep += 32;	/* then skip rest of bitmask */
+ 			continue;	/* and keep going */
+ 		}
+ 		return(FALSE);	/* else return false */
+@@ -1148,6 +1172,8 @@
+ 	    case CBACK | STAR:
+ 		bbeg = brastart[*ep];
+ 		ct = bracend[*ep++] - bbeg;
++		/* rosco: an empty \(\)* tag looped forever */
++		if (ct <= 0) continue;
+ 		curlp = lp;
+ 		while (Memcmp(bbeg, lp, ct)) lp += ct;
+ 
+@@ -1172,10 +1198,10 @@
+ 	    case CCL | STAR:	/* match [...]* */
+ 		curlp = lp;	/* save closure start loc */
+ 		do {
+-			c = *lp++ & 0x7F;	/* match any in set */
++			cc = *lp++ & 0377;	/* match any in set */
+ 		} while
+-			(ep[c >> 3] & bits[c & 07]);
+-		ep += 16;	/* skip past the set */
++			(ep[cc >> 3] & bits[cc & 07]);
++		ep += 32;	/* skip past the set */
+ 		goto star;	/* match followers */
+ 
+   star:				/* the recursion part of a * or + match */
+@@ -1244,6 +1270,10 @@
+   register char *lp, *sp, *rp;
+   int c;
+ 
++  /* rosco: a result longer than MAXBUF was only reported (for each
++   * character) and written on behind genbuf[]; now it is cut off.  The
++   * escapes are \c (see rhscomp()).
++   */
+   /* Copy linebuf to genbuf up to location  1 */
+   lp = linebuf;
+   sp = genbuf;
+@@ -1253,17 +1283,20 @@
+ 	if (c == '&') {
+ 		sp = place(sp, loc1, loc2);
+ 		continue;
+-	} else if (c & 0200 && (c &= 0177) >= '1' && c < MAXTAGS + '1') {
++	} else if (c == '\\' && (c = *rp++) >= '1' && c < MAXTAGS + '1') {
+ 		sp = place(sp, brastart[c - '1'], bracend[c - '1']);
+ 		continue;
+ 	}
+-	*sp++ = c & 0177;
+-	if (sp >= genbuf + MAXBUF) fprintf(stderr, LTLMSG);
++	if (sp < genbuf + MAXBUF)
++		*sp++ = c;
++	else
++		truncated(0);
+   }
+   lp = loc2;
+   loc2 = sp - genbuf + linebuf;
+-  while (*sp++ = *lp++)
+-	if (sp >= genbuf + MAXBUF) fprintf(stderr, LTLMSG);
++  while (sp < genbuf + MAXBUF && (*sp = *lp++)) sp++;
++  if (sp >= genbuf + MAXBUF && *lp) truncated(0);
++  *sp = '\0';
+   lp = linebuf;
+   sp = genbuf;
+   while (*lp++ = *sp++);
+@@ -1275,8 +1308,11 @@
+ register char *asp, *al1, *al2;
+ {
+   while (al1 < al2) {
++	if (asp >= genbuf + MAXBUF) {	/* rosco: cut off, see dosub() */
++		truncated(0);
++		break;
++	}
+ 	*asp++ = *al1++;
+-	if (asp >= genbuf + MAXBUF) fprintf(stderr, LTLMSG);
+   }
+   return(asp);
+ }
+@@ -1340,10 +1376,12 @@
+ 
+   switch (ipc->command) {
+       case ACMD:		/* append */
+-	*aptr++ = ipc;
+-	if (aptr >= appends + MAXAPPENDS) fprintf(stderr,
++	/* rosco: the 20th went on writing behind appends[] */
++	if (aptr >= appends + MAXAPPENDS - 1) fprintf(stderr,
+ 			"sed: too many appends after line %ld\n",
+ 			lnum);
++	else
++		*aptr++ = ipc;
+ 	*aptr = 0;
+ 	break;
+ 
+@@ -1465,10 +1503,11 @@
+ 	quit(0);
+ 
+       case RCMD:		/* read a file into the stream */
+-	*aptr++ = ipc;
+-	if (aptr >= appends + MAXAPPENDS) fprintf(stderr,
++	if (aptr >= appends + MAXAPPENDS - 1) fprintf(stderr,
+ 			"sed: too many reads after line %ld\n",
+ 			lnum);
++	else
++		*aptr++ = ipc;
+ 	*aptr = 0;
+ 	break;
+ 
+@@ -1518,7 +1557,7 @@
+       case YCMD:
+ 	p1 = linebuf;
+ 	p2 = ipc->u.lhs;
+-	while (*p1 = p2[*p1]) p1++;
++	while (*p1 = p2[*p1 & 0377]) p1++;	/* rosco: & 0377, see ycomp() */
+ 	break;
+   }
+ }

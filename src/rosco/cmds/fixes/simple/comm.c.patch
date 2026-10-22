@@ -1,0 +1,27 @@
+--- orig/simple/comm.c	2026-10-21 14:32:14.215227106 +0200
++++ new/simple/comm.c	2026-10-21 14:34:35.501655498 +0200
+@@ -136,15 +136,22 @@
+  */
+   register struct file *file = &files[fno];
+   char *buf = lines[fno];
++  char *end = buf + LINMAX - 2;
+ 
++  /* rosco: lines of more than 598 characters ran over lines[] (into the
++   * other file's line and beyond); the rest of a long line is now
++   * skipped, comparisons use the first 598 characters.
++   */
+   if (file->next == file->endp && getbuf(file)) return(0);
+-  while ((*buf++ = *file->next++) != '\n')
++  while ((*buf = *file->next++) != '\n') {
++	if (buf < end) buf++;
+ 	if (file->next == file->endp && getbuf(file)) {
+ 		*buf++ = '\n';
+ 		*buf = '\0';
+ 		return(1);
+ 	}
+-  *buf = '\0';
++  }
++  *++buf = '\0';
+   return(1);
+ }
+ 

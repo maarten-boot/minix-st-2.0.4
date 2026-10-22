@@ -1,0 +1,123 @@
+--- orig/simple/uniq.c	2026-10-21 14:32:14.195681931 +0200
++++ new/simple/uniq.c	2026-10-21 16:11:08.137371759 +0200
+@@ -28,7 +28,7 @@
+ _PROTOTYPE(FILE *xfopen, (char *fn, char *mode));
+ _PROTOTYPE(char *skip, (char *s));
+ _PROTOTYPE(int equal, (char *s1, char *s2));
+-_PROTOTYPE(void show, (char *line, int count));
++_PROTOTYPE(void show, (char *line, long count, int cont));
+ _PROTOTYPE(int uniq, (void));
+ _PROTOTYPE(void usage, (void));
+ _PROTOTYPE(int getline, (char *buf, int count));
+@@ -128,51 +128,69 @@
+   return !strcmp(skip(s1), skip(s2));
+ }
+ 
+-void show(line, count)
++void show(line, count, cont)
+ char *line;
+-int count;
++long count;			/* rosco: long, -c counts wrapped at 32768 */
++int cont;			/* rosco: rest of a long line, see getline() */
+ {
++  static int shown;
++
++  if (cont) {
++	if (shown) printf("%s", line);
++	return;
++  }
++  shown = cflag || (uflag && count == 1) || (dflag && count != 1);
+   if (cflag)
+-	printf("%4d %s", count, line);
++	printf("%4ld %s", count, line);
+   else {
+-	if ((uflag && count == 1) || (dflag && count != 1))
++	if (shown)
+ 		printf("%s", line);
+   }
+ }
+ 
+ /* The meat of the whole affair */
+ char *nowline, *prevline, buf1[1024], buf2[1024];
++int piece, cont;		/* rosco: set by getline() */
+ 
+ int uniq()
+ {
+   char *p;
+-  int seen;
++  long seen;
++  int prevpiece, prevcont;
+ 
+   /* Setup */
+   prevline = buf1;
+   if (getline(prevline, 1024) < 0) return(0);
++  prevpiece = piece;
++  prevcont = cont;
+   seen = 1;
+   nowline = buf2;
+ 
+   /* Get nowline and compare if not equal, dump prevline and swap
+    * pointers else continue, bumping seen count */
++  /* rosco: pieces of long lines are never equal (equal pieces were
++   * dropped from the middle of long lines)
++   */
+   while (getline(nowline, 1024) > 0) {
+-	if (!equal(prevline, nowline)) {
+-		show(prevline, seen);
++	if (prevpiece || piece || !equal(prevline, nowline)) {
++		show(prevline, seen, prevcont);
+ 		seen = 1;
+ 		p = nowline;
+ 		nowline = prevline;
+ 		prevline = p;
++		prevpiece = piece;
++		prevcont = cont;
+ 	} else
+ 		seen += 1;
+   }
+-  show(prevline, seen);
++  show(prevline, seen, prevcont);
+   return 0;
+ }
+ 
+ void usage()
+ {
+   fprintf(stderr, "Usage: uniq [-udc] [+n] [-n] [input [output]]\n");
++  exit(1);			/* rosco: went on after a bad option */
+ }
+ 
+ int getline(buf, count)
+@@ -181,15 +199,27 @@
+ {
+   int c;
+   int ct = 0;
++  static int midline;		/* rosco: the last piece had no newline */
+ 
+-  while (ct++ < count) {
++  /* rosco: a line of 1024 characters put its null behind the buffer, a
++   * longer one was not terminated at all (strcmp() and printf() ran on
++   * past it); now at most count-2 characters and always a null (longer
++   * lines come in pieces).  A last line without a newline was lost; it
++   * gets one.
++   */
++  while (ct < count - 2) {
+ 	c = getc(stdin);
+-	if (c < 0) return(-1);
+-	*buf++ = c;
+-	if (c == '\n') {
+-		*buf++ = 0;
+-		return(ct);
++	if (c == EOF) {
++		if (ct == 0) return(-1);
++		buf[ct++] = '\n';
++		break;
+ 	}
++	buf[ct++] = c;
++	if (c == '\n') break;
+   }
++  buf[ct] = 0;
++  cont = midline;		/* this piece continues a line */
++  midline = (buf[ct - 1] != '\n');
++  piece = cont || midline;
+   return(ct);
+ }

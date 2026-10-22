@@ -1,0 +1,106 @@
+--- orig/simple/paste.c	2026-10-21 14:32:14.221284607 +0200
++++ new/simple/paste.c	2026-10-21 14:36:11.660294726 +0200
+@@ -86,7 +86,8 @@
+ char *cmdnam;
+ 
+ short int sflag;
+-static char default_delims[] = {TAB};	/* default delimiter string	 */
++/* rosco: was {TAB}, without the null the code looks for */
++static char default_delims[] = "\t";	/* default delimiter string	 */
+ char *delims;			/* the pointer to the delimiters        */
+ int number_of_delims = 1;	/* number of delimiters to use	 	 */
+ 
+@@ -122,11 +123,17 @@
+ 			switch (argv[0][1]) {
+ 			    case 'd':
+ 				/* Delimiter character(s) */
+-				if (*(++argv) == '\0')
++				/* rosco: also -dLIST (took the next
++				 * argument, a file, as the list)
++				 */
++				if (argv[0][2] != '\0')
++					delimbuild(&argv[0][2]);
++				else if (*(++argv) == NULL)
+ 					prerr(NODELIM, "");
+-				else
++				else {
+ 					delimbuild(*(argv));
+-				argc--;
++					argc--;
++				}
+ 				break;
+ 
+ 			    case 's':	sflag++;	break;
+@@ -190,7 +197,7 @@
+ 
+   for (filecnt = 0; (nfiles > 0); fnamptr++) {
+ 	if ((fnamptr[0][0] == '-') && (fnamptr[0][1] != '\0')) {
+-		if (fnamptr[0][1] == 'd') fnamptr++;
++		if (fnamptr[0][1] == 'd' && fnamptr[0][2] == '\0') fnamptr++;
+ 	} else {
+ 		nfiles--;
+ 		if (fnamptr[0][0] == '-') {
+@@ -233,7 +240,19 @@
+ 					fileptr[index]) != NULL) {
+ 				strend = strlen(iobuff);/* Did the buf fill? */
+ 
+-				if (strend == (_MAXSZ - 1)) {
++				/* rosco: fgets() gives at most _MAXSZ-2
++				 * characters, so this never matched: the
++				 * last character of each piece of a long
++				 * line became a delimiter.  And a last line
++				 * without a newline lost its last character
++				 * (to the delimiter); it gets a newline.
++				 */
++				if (iobuff[strend - 1] != NL &&
++				    strend < _MAXSZ - 2) {
++					iobuff[strend++] = NL;
++					iobuff[strend] = '\0';
++				}
++				if (iobuff[strend - 1] != NL) {
+ 					/* Gosh, what a long line. */
+ 					fputs(iobuff, stdout);
+ 					strend = 0;
+@@ -329,7 +348,7 @@
+ 
+   for (; nfiles != 0; fnamptr++) {
+ 	if ((fnamptr[0][0] == '-') && (fnamptr[0][1] != '\0')) {
+-		if (fnamptr[0][1] == 'd') fnamptr++;
++		if (fnamptr[0][1] == 'd' && fnamptr[0][2] == '\0') fnamptr++;
+ 	} else {
+ 		if (fnamptr[0][0] == '-') {
+ 			fileptr = stdin;
+@@ -353,6 +372,11 @@
+ 			/* Empty file! */
+ 			putc(NL, stdout);
+ 			fflush(stdout);
++			/* rosco: nfiles was not counted down here: an
++			 * empty file made the loop run off the end of argv
++			 */
++			if (fileptr != stdin) fclose(fileptr);
++			nfiles--;
+ 			continue;	/* Go on to the next file */
+ 		}
+ 
+@@ -377,6 +401,8 @@
+ 		putc(charold, stdout);
+ 		if ((char) charold != NL) putc(NL, stdout);
+ 		fflush(stdout);
++		/* rosco: close it; after 20 files fopen() failed */
++		if (fileptr != stdin) fclose(fileptr);
+ 		nfiles--;
+ 	}
+   }
+@@ -398,6 +424,12 @@
+   delims = strptr;		/* delims now points to argv[...]	 */
+   strout = strptr;		/* Start at the same place, anyway */
+ 
++  /* rosco: an empty list ran past its end; it means no delimiter */
++  if (*strptr == '\0') {
++	delims = "\177";
++	return;
++  }
++
+   while (*strptr) {
+ 	if (*strptr != '\\')	/* Is it an escape character? */
+ 		*strout++ = *strptr++;	/* No, just transfer it */

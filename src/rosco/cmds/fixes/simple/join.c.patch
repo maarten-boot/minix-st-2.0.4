@@ -1,0 +1,96 @@
+--- orig/simple/join.c	2026-10-21 14:32:14.224359703 +0200
++++ new/simple/join.c	2026-10-21 14:36:39.379567296 +0200
+@@ -63,7 +63,7 @@
+ char **argv;
+ {
+   register char *s;
+-  int c, i, j;
++  int c, i, j, attached;
+ 
+   cmd = argv[0];
+   outfun = output;		/* default output form */
+@@ -76,10 +76,15 @@
+ 		--argc;
+ 		break;		/* -- */
+ 	}
+-	if (*++s == '\0') {
++	attached = (*++s != '\0');
++	if (!attached) {
+ 		s = *++argv;
+ 		--argc;
+ 	}
++	/* rosco: a missing option argument was used through the null
++	 * pointer behind argv
++	 */
++	if (s == (char *) 0) usage();
+ 	switch (c) {
+ 	    case 'a':		/* add unpairable line to output */
+ 		vflag = 0;
+@@ -95,15 +100,21 @@
+ 		break;
+ 
+ 	    case 'j':		/* key field (obsolute) */
+-		c = *s++;
+-		if (*s == '\0') {
++		/* rosco: only -j1 f and -j2 f name a file; "-j f" took
++		 * the first digit of f as file and a file name as field
++		 */
++		if (attached && (*s == '1' || *s == '2') && s[1] == '\0') {
++			c = *s;
+ 			s = *++argv;
+ 			--argc;
++			if (s == (char *) 0) usage();
+ 		}
+ 
+ 	    case '1':		/* key field of file1 */
+ 	    case '2':		/* key field of file2 */
+ 		i = atoi(s) - 1;
++		/* rosco: field 0 or a big one indexed outside fld[] */
++		if (i < 0 || i >= MAXFLD) usage();
+ 
+ 		switch (c) {
+ 		    case '1':	kpos[0] = i;	break;
+@@ -118,6 +129,7 @@
+ 			i = j = 0;
+ 			sscanf(s, "%d.%d", &i, &j);
+ 			if (i < 1 || j < 1 || i > 2) usage();
++			if (nout == MAXFLD) usage();	/* rosco: olist[] */
+ 			olist[nout].o_file = i - 1;
+ 			olist[nout].o_field = j - 1;
+ 			nout++;
+@@ -207,7 +219,8 @@
+   nfld[1] = get2(0);		/* check key order */
+   if (nfld[1] == 0 || strcmp(fld[0][kpos[0]], fld[1][kpos[1]])) {
+ 	nfld[0] = get1();
+-	if (strcmp(fld[0][kpos[0]], oldkey) == 0) {
++	/* rosco: at the end of file1 its key was a null pointer */
++	if (nfld[0] && strcmp(fld[0][kpos[0]], oldkey) == 0) {
+ 		fseek(fp[1], head, 0);	/* re-do from head */
+ 		nfld[1] = get2(1);	/* don't check key order */
+ 	} else
+@@ -282,6 +295,8 @@
+   }
+   r = getrec(0);
+ 
++  /* rosco: the key of a line without it was a null or stale pointer */
++  if (r && r <= kpos[0]) error("missing key field in file1", (char *) 0);
+   if (r) {
+         if (strcmp(oldkey1, fld[0][kpos[0]]) > 0)
+ 	      error("file1 is not sorted", (char *) 0);
+@@ -297,6 +312,7 @@
+ 
+   r = getrec(1);
+ 
++  if (r && r <= kpos[1]) error("missing key field in file2", (char *) 0);
+   if (r) {
+         if (!back && strcmp(oldkey2, fld[1][kpos[1]]) > 0)
+ 	      error("file2 is not sorted", (char *) 0);
+@@ -310,7 +326,7 @@
+   if (fgets(buf[file], BUFSIZ, fp[file]) == (char *) 0)
+ 	*buf[file] = '\0';
+   else if (*buf[file] == '\n' || *buf[file] == '\r')
+-	error("null line in file%s", file ? "1" : "0");
++	error("null line in file%s", file ? "2" : "1");	/* rosco: was 1/0 */
+ 
+   return split(file);
+ }

@@ -1,0 +1,154 @@
+--- orig/simple/cut.c	2026-10-21 14:32:14.197909018 +0200
++++ new/simple/cut.c	2026-10-21 14:35:31.873718900 +0200
+@@ -77,6 +77,7 @@
+ _PROTOTYPE(void cuterror, (int err));
+ _PROTOTYPE(void get_args, (void));
+ _PROTOTYPE(void cut, (void));
++_PROTOTYPE(char *optval, (char **argv, int *ip));
+ 
+ void warn(warn_number, option)
+ int warn_number;
+@@ -86,6 +87,11 @@
+ 			   "%s: Option -d allowed only with -f\n",
+ 			   "%s: -%s overrides earlier option\n",
+ 			   "%s: -%s not allowed in current mode\n",
++			   /* rosco: this message was missing: an unknown
++			    * option said "Cannot open", and a missing file
++			    * used a pointer behind the table as format.
++			    */
++			   "%s: unknown option -%s\n",
+ 			   "%s: Cannot open %s\n"
+   };
+ 
+@@ -140,6 +146,13 @@
+ 			i++;
+ 			flag = 0;
+ 		}
++		/* rosco: any other character (-c 1x) looped forever, and
++		 * 1-2-3 wrote behind this pair (behind args[] at the end)
++		 */
++		if (arg_ptr > num_args * 2 + 2 ||
++		    (line[i] != ',' && line[i] != 0 && line[i] != '-'
++		     && !isdigit(line[i])))
++			cuterror(SYNTAX_ERROR);
+ 	}
+ 	if (flag && arg_ptr & 1) args[arg_ptr] = args[arg_ptr - 1];
+ 	if (args[num_args * 2] > args[num_args * 2 + 1])
+@@ -153,12 +166,16 @@
+ 
+ void cut()
+ {
+-  int i, j, length, maxcol;
+-  char *columns[MAX_FIELD];
++  int i, j, length, maxcol, first;
++  /* rosco: one per character: MAX_FIELD can no longer be exceeded */
++  static char *columns[BUFSIZ];
+ 
+   while (fgets(line, BUFSIZ, fd)) {
+-	length = strlen(line) - 1;
+-	*(line + length) = 0;
++	/* rosco: only a newline is cut off (the last character of a last
++	 * line without one, or of a piece of a long line, was lost)
++	 */
++	length = strlen(line);
++	if (length > 0 && line[length - 1] == '\n') line[--length] = 0;
+ 	switch (mode) {
+ 	    case DUMP_STDIN:	printf("%s", line);	break;
+ 	    case OPTIONF:
+@@ -167,7 +184,7 @@
+ 		for (i = 0; i < length; i++) {
+ 			if (*(line + i) == delim) {
+ 				*(line + i) = 0;
+-				if (maxcol == MAX_FIELD)
++				if (maxcol == BUFSIZ)
+ 					cuterror(MAX_FIELDS_EXEEDED_ERROR);
+ 				columns[maxcol] = line + i + 1;
+ 				while (*(line + i + 1) == delim && flag_i) {
+@@ -180,12 +197,17 @@
+ 		if (maxcol == 1) {
+ 			if (flag_s != SET) printf("%s", line);
+ 		} else {
++			/* rosco: the delimiter goes between the fields
++			 * printed; "-f 2-" or a field behind the last one
++			 * ended the line with a delimiter.
++			 */
++			first = 1;
+ 			for (i = 0; i < num_args; i++) {
+ 				for (j = args[i * 2]; j <= args[i * 2 + 1]; j++)
+ 					if (j <= maxcol) {
++						if (!first) putchar(delim);
+ 						printf("%s", columns[j - 1]);
+-						if (i != num_args - 1 || j != args[i * 2 + 1])
+-							putchar(delim);
++						first = 0;
+ 					}
+ 			}
+ 		}
+@@ -204,6 +226,19 @@
+ }
+ 
+ 
++/* rosco: the value of -c, -b, -f or -d, also attached (-c1-3, -d:); a
++ * missing one read through the null pointer behind argv.  argv[*ip - 1]
++ * is the option.
++ */
++char *optval(argv, ip)
++char **argv;
++int *ip;
++{
++  if (argv[*ip - 1][2] != '\0') return &argv[*ip - 1][2];
++  if (argv[*ip] == NULL) cuterror(USAGE);
++  return argv[(*ip)++];
++}
++
+ int main(argc, argv)
+ int argc;
+ char *argv[];
+@@ -220,22 +255,22 @@
+ 		    case 'd':
+ 			if (mode == OPTIONC || mode == OPTIONB)
+ 				warn(DELIMITER_NOT_APPLICABLE, "d");
+-			delim = argv[i++][0];
++			delim = optval(argv, &i)[0];
+ 			break;
+ 		    case 'f':
+-			sprintf(line, "%s", argv[i++]);
++			sprintf(line, "%.*s", BUFSIZ - 1, optval(argv, &i));
+ 			if (mode == OPTIONC || mode == OPTIONB)
+ 				warn(OVERRIDING_PREVIOUS_MODE, "f");
+ 			mode = OPTIONF;
+ 			break;
+ 		    case 'b':
+-			sprintf(line, "%s", argv[i++]);
++			sprintf(line, "%.*s", BUFSIZ - 1, optval(argv, &i));
+ 			if (mode == OPTIONF || mode == OPTIONC)
+ 				warn(OVERRIDING_PREVIOUS_MODE, "b");
+ 			mode = OPTIONB;
+ 			break;
+ 		    case 'c':
+-			sprintf(line, "%s", argv[i++]);
++			sprintf(line, "%.*s", BUFSIZ - 1, optval(argv, &i));
+ 			if (mode == OPTIONF || mode == OPTIONB)
+ 				warn(OVERRIDING_PREVIOUS_MODE, "c");
+ 			mode = OPTIONC;
+@@ -268,8 +303,9 @@
+   }
+ 
+ /* Flag -i is only allowed with -f, otherwise warn and reset flag_i	*/
+-  if (flag_i == SET && mode == OPTIONF) {
+-	warn(OPTION_NOT_APPLICABLE, "s");
++  /* rosco: was "mode == OPTIONF" (-i never worked) and said "-s" */
++  if (flag_i == SET && mode != OPTIONF) {
++	warn(OPTION_NOT_APPLICABLE, "i");
+ 	flag_i = NOTSET;
+   }
+   get_args();
+@@ -281,7 +317,7 @@
+ 			    case 'f':
+ 			    case 'c':
+ 			    case 'b':
+-			    case 'd':	i += 2;	break;
++			    case 'd':	i += argv[i][2] ? 1 : 2;	break;
+ 			    case 'n':
+ 			    case 'i':
+ 			    case 's':	i++;	break;
