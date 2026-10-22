@@ -1,0 +1,190 @@
+--- orig/simple/cgrep.c
++++ new/simple/cgrep.c
+@@ -47,6 +47,7 @@
+ #include <regexp.h>		/* should have this                - dro */
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <string.h>		/* rosco: strlen() */
+ #endif /* OS_UNIX */
+ 
+ 
+@@ -73,7 +74,9 @@
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void dosrch, (char *ifnm));
+-_PROTOTYPE(void shwlin, (char *fnm, int linnum, char *line));
++_PROTOTYPE(void shwlin, (char *fnm, long linnum, char *line));
++_PROTOTYPE(int optnum, (char *aptr, int min, int max));
++_PROTOTYPE(void *xcalloc, (size_t n, size_t size));
+ _PROTOTYPE(int matlin, (char *line));
+ _PROTOTYPE(void regerror, (char *s));
+ 
+@@ -145,15 +148,19 @@
+ 			n = i + 1;
+ 			aptr = argv[n];
+ 		}
++		/* rosco: an option without its number was atoi(NULL); negative
++		 * or huge numbers gave a negative or wrapped (16-bit size_t)
++		 * calloc() size and a NULL line table.
++		 */
+ 		switch (c) {	/* Process the option */
+ 		    case 'a':	/* Lines after */
+-			Waft = atoi(aptr);
++			Waft = optnum(aptr, 0, 32767);
+ 			Lines = NULL;
+ 			i = n;
+ 			break;
+ 
+ 		    case 'b':	/* Lines before */
+-			Wbef = atoi(aptr);
++			Wbef = optnum(aptr, 0, 4000);
+ 			Lines = NULL;
+ 			i = n;
+ 			break;
+@@ -167,7 +174,7 @@
+ 			break;
+ 
+ 		    case 'l':	/* Line length */
+-			Linlen = atoi(aptr);
++			Linlen = optnum(aptr, 2, 32000);
+ 			Lines = NULL;
+ 			i = n;
+ 			break;
+@@ -177,7 +184,7 @@
+ 			break;
+ 
+ 		    case 'w':	/* Window: lines before and after */
+-			Waft = Wbef = atoi(aptr);
++			Waft = Wbef = optnum(aptr, 0, 4000);
+ 			Lines = NULL;
+ 			i = n;
+ 			break;
+@@ -199,6 +206,39 @@
+   return(0);
+ }
+ 
++/* rosco: the number argument of an option */
++int optnum(aptr, min, max)
++char *aptr;
++int min, max;
++{
++  long n;
++  char *end;
++
++  if (aptr == NULL) {
++	fprintf(stderr, "cgrep: option needs a number\n");
++	exit(1);
++  }
++  n = strtol(aptr, &end, 10);
++  if (end == aptr || *end != NUL || n < min || n > max) {
++	fprintf(stderr, "cgrep: bad number %s (%d to %d)\n", aptr, min, max);
++	exit(1);
++  }
++  return (int) n;
++}
++
++/* rosco: calloc() results were not checked */
++void *xcalloc(n, size)
++size_t n, size;
++{
++  void *p;
++
++  if ((p = calloc(n, size)) == NULL) {
++	fprintf(stderr, "cgrep: out of memory\n");
++	exit(1);
++  }
++  return p;
++}
++
+  /* Dosrch (ifnm) Perform the search 
+   * Accepts :
+   * 
+@@ -217,8 +257,14 @@
+   FILE *ifp;			/* Input fp */
+   char *lptr;			/* Line pointer */
+   int i;			/* Scratch */
+-  int prtaft;			/* Print-after count */
+-  int linnum;			/* Line number */
++  long prtaft;			/* Print-after count */
++  long linnum;			/* Line number */
++  /* rosco: both long: line numbers past 32767 printed negative, and
++   * prtaft, decremented on every line that does not match, wrapped to
++   * +32767 after 32768 such lines and printed the next 32767 lines as
++   * "after" context.
++   */
++  int c;
+   int nlb;			/* Number of lines buffered */
+ 
+   if (ifnm != NULL) {		/* If file name given */
+@@ -232,15 +278,15 @@
+ 
+   if (Lines == NULL) {		/* If no line table allocated.. */
+ 	Wsiz = Wbef + 2;	/* Determine total window size */
+-	Lines = (char **) calloc((size_t)Wsiz, sizeof(char *));
++	Lines = (char **) xcalloc((size_t)Wsiz, sizeof(char *));
+ 	/* Allocate pointer table */
+ 	for (i = 0; i < Wsiz; i++)	/* Allocate line buffers */
+-		Lines[i] = (char *) calloc((size_t)Linlen, sizeof(char));
++		Lines[i] = (char *) xcalloc((size_t)Linlen + 1, sizeof(char));
+   }
+   Lcur = Lone = 0;		/* Setup line pointers */
+   nlb = 0;			/* No lines buffered */
+   linnum = 0;			/* Line number is zero */
+-  prtaft = -(Wbef + 1);		/* Make sure separator given first time */
++  prtaft = -(long) (Wbef + 1);		/* Make sure separator given first time */
+ 
+   for (;;) {			/* Loop through the file */
+ 	lptr = Lines[Lcur];	/* Get pointer to current line */
+@@ -252,6 +298,19 @@
+ 
+ 	if (fgets(lptr, Linlen, ifp) != lptr) break;	/* if end of file */
+ 
++	/* rosco: a line longer than Linlen - 1 was split into several
++	 * "lines" (each counted, and printed without a newline); it is
++	 * truncated as the manual says.  A last line without a newline
++	 * gets one.  The buffers have a byte more for it.
++	 */
++	i = strlen(lptr);
++	if (i == 0 || lptr[i - 1] != '\n') {
++		while ((c = getc(ifp)) != EOF && c != '\n')
++			;
++		lptr[i] = '\n';
++		lptr[i + 1] = NUL;
++	}
++
+ 	linnum++;		/* Count line number */
+ 	if (matlin(lptr)) {	/* If matching line */
+ 		if (prtaft < (-Wbef))	/* Check for separator needed */
+@@ -296,12 +355,12 @@
+ 
+ void shwlin(fnm, linnum, line)
+ char *fnm;			/* File name */
+-int linnum;			/* Line number */
++long linnum;			/* Line number */
+ char *line;			/* Line (with newline at end) to print */
+ 
+ {
+   if (Shwfile && (fnm != NULL)) printf("%s%s", fnm, Shwline ? " " : ":");
+-  if (Shwline) printf("@%05d:", linnum);
++  if (Shwline) printf("@%05ld:", linnum);
+   printf("%s", line);
+ }
+ 
+@@ -339,7 +398,16 @@
+ #endif	/* REGEX */
+ 
+ #ifdef	REGCMP
+-  rtncode = (regexec(Re, line, TRUE) != 0);
++  /* rosco: match without the newline, so that "$" matches at the end of
++   * the line (it never did: '^line 5$' found nothing)
++   */
++  {
++	char *nl = strchr(line, '\n');
++
++	if (nl != NULL) *nl = NUL;
++	rtncode = (regexec(Re, line, TRUE) != 0);
++	if (nl != NULL) *nl = '\n';
++  }
+ #endif /* REGCMP */
+ 
+ #ifdef	NOREGEX			/* Have to do menial comparison.. */

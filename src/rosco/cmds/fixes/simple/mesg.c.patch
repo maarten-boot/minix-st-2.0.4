@@ -1,0 +1,17 @@
+--- orig/simple/mesg.c
++++ new/simple/mesg.c
+@@ -29,7 +29,13 @@
+   struct stat statb;
+   char *tty_name;
+ 
+-  if ((tty_name = ttyname(0)) == NULL) exit(2);
++  /* rosco: ttyname() names any character device, so "mesg n </dev/null"
++   * made /dev/null mode 0600 (unwritable for all but root).
++   */
++  if (!isatty(0) || (tty_name = ttyname(0)) == NULL) {
++	fprintf(stderr, "mesg: standard input is not a terminal\n");
++	exit(2);
++  }
+   if (stat(tty_name, &statb) == -1) exit(2);
+   if (--argc) {
+ 	if (*argv[1] == 'n') statb.st_mode = 0600;

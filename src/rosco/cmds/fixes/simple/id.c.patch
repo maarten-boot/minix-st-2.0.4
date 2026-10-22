@@ -1,0 +1,80 @@
+--- orig/simple/id.c
++++ new/simple/id.c
+@@ -16,6 +16,14 @@
+ 
+ _PROTOTYPE(int main, (void));
+ 
++/* rosco: gid_t is a (signed) char here, so gid 200 printed as -56; print
++ * the group ids as 0..255.  (getgrgid() keeps gr_gid as a char too, so the
++ * group name lookup still matches.)
++ */
++#define GID(g)	((int) (unsigned char) (g))
++/* rosco: and uid_t is a short: uids of 32768 and more as 0..65535 */
++#define UID(u)	((unsigned) (u))
++
+ int main()
+ {
+   struct passwd *pwd;
+@@ -54,38 +62,38 @@
+ #endif
+ 
+   if ((pwd = getpwuid(ruid)) == NULL)
+-	printf("uid=%d", ruid);
++	printf("uid=%u", UID(ruid));
+   else
+-	printf("uid=%d(%s)", ruid, pwd->pw_name);
++	printf("uid=%u(%s)", UID(ruid), pwd->pw_name);
+ 
+   if ((grp = getgrgid(rgid)) == NULL)
+-	printf(" gid=%d", rgid);
++	printf(" gid=%d", GID(rgid));
+   else
+-	printf(" gid=%d(%s)", rgid, grp->gr_name);
++	printf(" gid=%d(%s)", GID(rgid), grp->gr_name);
+ 
+   if (euid != ruid)
+ 	if ((pwd = getpwuid(euid)) != NULL)
+-		printf(" euid=%d(%s)", euid, pwd->pw_name);
++		printf(" euid=%u(%s)", UID(euid), pwd->pw_name);
+ 	else
+-		printf(" euid=%d", euid);
++		printf(" euid=%u", UID(euid));
+ 
+   if (egid != rgid)
+ 	if ((grp = getgrgid(egid)) != NULL)
+-		printf(" egid=%d(%s)", egid, grp->gr_name);
++		printf(" egid=%d(%s)", GID(egid), grp->gr_name);
+ 	else
+-		printf(" egid=%d", egid);
++		printf(" egid=%d", GID(egid));
+ 
+   if (suid != euid)
+ 	if ((pwd = getpwuid(suid)) != NULL)
+-		printf(" suid=%d(%s)", suid, pwd->pw_name);
++		printf(" suid=%u(%s)", UID(suid), pwd->pw_name);
+ 	else
+-		printf(" suid=%d", suid);
++		printf(" suid=%u", UID(suid));
+ 
+   if (sgid != egid)
+ 	if ((grp = getgrgid(sgid)) != NULL)
+-		printf(" sgid=%d(%s)", sgid, grp->gr_name);
++		printf(" sgid=%d(%s)", GID(sgid), grp->gr_name);
+ 	else
+-		printf(" sgid=%d", sgid);
++		printf(" sgid=%d", GID(sgid));
+ 
+   if (isug) {
+ 	printf(" issetugid");
+@@ -96,9 +104,9 @@
+ 	for (g = 0; g < ngroups; g++) {
+ 		if (g > 0) fputc(',', stdout);
+ 		if ((grp = getgrgid(groups[g])) == NULL)
+-			printf("%d", groups[g]);
++			printf("%d", GID(groups[g]));
+ 		else
+-			printf("%d(%s)", groups[g], grp->gr_name);
++			printf("%d(%s)", GID(groups[g]), grp->gr_name);
+ 	}
+   }
+ 

@@ -1,0 +1,76 @@
+--- orig/simple/xargs.c
++++ new/simple/xargs.c
+@@ -106,11 +106,23 @@
+ 		switch(ch) {
+ 		case 'n':
+ 			nflag = 1;
+-			if ((nargs = atoi(optarg)) <= 0)
+-				err("illegal argument count");
++			/* rosco: strtol(), atoi() of 32768 or more wrapped */
++			{
++				long l = strtol(optarg, (char **) NULL, 10);
++				if (l <= 0)
++					err("illegal argument count");
++				nargs = l > 32767 ? 32767 : (int) l;
++			}
+ 			break;
+ 		case 's':
+-			nline = atoi(optarg);
++			/* rosco: atoi() of 32768 or more wrapped (-s 100000
++			 * gave "insufficient space"); a large size is cut
++			 * to what fits below.
++			 */
++			{
++				long l = strtol(optarg, (char **) NULL, 10);
++				nline = l > 32767 ? 32767 : l < 0 ? 0 : (int) l;
++			}
+ 			break;
+ 		case 't':
+ 			tflag = 1;
+@@ -131,6 +143,36 @@
+ 	if (xflag && !nflag)
+ 		usage();
+ 
++#if __minix && !__minix_vmd
++	/*
++	 * rosco: the exec frame (execve() and MM take ARG_MAX, 4096 bytes)
++	 * holds the strings, a 4-byte pointer for each argument and the
++	 * environment as well, which "ARG_MAX - 1K" left out: 200 arguments
++	 * of 14 characters with an ordinary environment gave "Arg list too
++	 * long" (exit 126).  Reserve the environment and the pointers.  A
++	 * large -n also overflowed the 16-bit malloc() size of the pointer
++	 * table below (-n 16384 got 8 bytes), so -n is capped at what can
++	 * fit, and -s at what is left (POSIX: the largest that fits).
++	 */
++	{
++		extern char **environ;
++		char **ep;
++		long room;
++
++		room = ARG_MAX - sizeof(long) - 3 * sizeof(char *);
++		for (ep = environ; ep && *ep; ep++)
++			room -= strlen(*ep) + 1 + sizeof(char *);
++		room -= (argc ? argc : 1) * sizeof(char *);
++		if (room < 2 + sizeof(char *))
++			err("environment too large");
++		if (nargs > room / (2 + sizeof(char *)))
++			nargs = room / (2 + sizeof(char *));
++		room -= (long) nargs * sizeof(char *);
++		if (nline > room)
++			nline = room;
++	}
++#endif
++
+ 	/*
+ 	 * Allocate pointers for the utility name, the utility arguments,
+ 	 * the maximum arguments to be read from stdin and the trailing
+@@ -364,7 +406,8 @@
+ 		_exit(-1);
+ 	}
+ 	close(pfd[1]);
+-	if (read(pfd[0], &noinvoke, sizeof(noinvoke)) < sizeof(noinvoke))
++	/* rosco: -1 compared as unsigned (16-bit size_t) was not less */
++	if (read(pfd[0], &noinvoke, sizeof(noinvoke)) != sizeof(noinvoke))
+ 		noinvoke = 0;
+ 	close(pfd[0]);
+ 

@@ -1,0 +1,150 @@
+--- orig/simple/ifdef.c
++++ new/simple/ifdef.c
+@@ -29,6 +29,9 @@
+ #define MUTABLE   1		/* Symbol can change defined <-> undefined */
+ #define IMMUTABLE 2		/* Symbol can't change as above            */
+ 
++/* rosco: the size of the word buffers (80: a longer word overran them) */
++#define WORDLEN	512
++
+ /* Processing modes */
+ #define NO	0		/* Don't process */
+ #define YES	1		/* Process */
+@@ -77,21 +80,34 @@
+   int ch;			/* args left in file.                */
+   int i;
+ 
++  /* rosco: a word was copied into the 80-byte buffers without a bound,
++   * and at end of file (a last line "#endif" without newline) the copy
++   * loop never ended: it wrote EOF bytes up the stack.  Words are now cut
++   * at WORDLEN - 1 (with a message), and end of file ends a line: '\n' is
++   * returned instead of EOF, which was printed as a 0xFF byte.
++   */
+   i = 0;
+   cbuf[i] = 0;
+ 
+   while (((ch = fgetc(stream)) == ' ') || (ch == '\t') || (ch == '\n'))
+ 	if (ch == '\n') return(ch);	/* Bypass leading */
+ 					/* Whitespace     */
+-  if (feof(stream)) return(EOF);
++  if (ch == EOF) return('\n');
+ 
+   cbuf[i++] = ch;
+ 
+-  while (((ch = fgetc(stream)) != ' ') && (ch != '\t') && (ch != '\n'))
+-	cbuf[i++] = ch;			/* Get the argument */
++  while (((ch = fgetc(stream)) != ' ') && (ch != '\t') && (ch != '\n')
++							&& (ch != EOF)) {
++	if (i < WORDLEN - 1)
++		cbuf[i++] = ch;		/* Get the argument */
++	else if (i++ == WORDLEN - 1)
++		(void)fprintf(stderr, "ifdef: line %d: word cut at %d characters\n",
++			line, WORDLEN - 1);
++  }
++  if (i > WORDLEN - 1) i = WORDLEN - 1;
+ 
+   cbuf[i] = 0;
+-  return(ch);
++  return(ch == EOF ? '\n' : ch);
+ }
+ 
+ 
+@@ -240,7 +256,7 @@
+ char getendif()
+ #endif
+ {				/* Find matching endif when ignoring */
+-  char word[80];		/* Buffer for symbols */
++  char word[WORDLEN];	/* Buffer for symbols */
+   int ch;
+   int skip;			/* Number of skipped #ifdefs */
+ 
+@@ -257,7 +273,9 @@
+ 	}
+ 	ch = fgetarg(zin, word);	/* Get the word after the # */
+ 
+-	if (!strcmp(word, "ifdef") || !strcmp(word, "ifndef")) skip++;
++	/* rosco: and #if, which parse() leaves to getendif() too */
++	if (!strcmp(word, "ifdef") || !strcmp(word, "ifndef") ||
++						!strcmp(word, "if")) skip++;
+ 						/* Keep track of ifdefs & */
+ 	if (!strcmp(word, "endif")) skip--;	/* endifs		  */
+ 
+@@ -275,7 +293,7 @@
+ #endif
+ {
+ 
+-  char word[80];		/* Buffer for symbols */
++  char word[WORDLEN];	/* Buffer for symbols */
+   int ch;
+ 
+   while (1) {
+@@ -319,7 +337,7 @@
+ void parse()
+ #endif
+ {				/* Parse & remove ifdefs from C source */
+-  char word[80];		/* Buffer for symbols */
++  char word[WORDLEN];	/* Buffer for symbols */
+   int ch;
+   int proc;			/* Should we be processing this bit?    */
+   int skip;			/* Number of skipped #ifdefs		 */
+@@ -441,7 +459,7 @@
+ #endif
+ {
+   (void)fprintf(stderr, "Usage: ifdef [-t] [-Dsymbol] [-dsymbol] [-Usymbol] [-Isymbol] <file>\n");
+-  exit(0);
++  exit(1);	/* rosco: was 0 */
+ }
+ 
+ 
+@@ -453,7 +471,6 @@
+ char *argv[];
+ #endif
+ {
+-  char sym[80];			/* Temp symbol storage */
+   int c;
+ 
+   if (argc == 1) usage();	/* Catch the curious user	 */
+@@ -464,23 +481,19 @@
+ 		break;
+ 
+ 	    case 'd':
+-		(void)strcpy(sym, optarg);
+-		Define(sym, MUTABLE);
++		Define(optarg, MUTABLE);	/* rosco: was copied to sym[80] */
+ 		break;
+ 
+ 	    case 'D':
+-		(void)strcpy(sym, optarg);
+-		Define(sym, IMMUTABLE);
++		Define(optarg, IMMUTABLE);	/* rosco: was copied to sym[80] */
+ 		break;
+ 
+ 	    case 'U':
+-		(void)strcpy(sym, optarg);
+-		Undefine(sym, IMMUTABLE);
++		Undefine(optarg, IMMUTABLE);	/* rosco: was copied to sym[80] */
+ 		break;
+ 
+ 	    case 'I':
+-		(void)strcpy(sym, optarg);
+-		Ignore(sym, IMMUTABLE);
++		Ignore(optarg, IMMUTABLE);	/* rosco: was copied to sym[80] */
+ 		break;
+ 
+ 	    default:	usage();
+@@ -489,9 +502,13 @@
+ 
+   zin = stdin;		/* If a C file is named */
+ 			/* Open stdin with it */
+-  if (*argv[argc - 1] != '-') {
++  /* rosco: the file is the argument after the options; "ifdef -D X <f"
++   * took the option's argument X as the file.
++   */
++  if (optind < argc - 1) usage();
++  if (optind < argc && strcmp(argv[optind], "-") != 0) {
+ 	(void)fclose(zin);
+-	if ((zin = fopen(argv[argc - 1], "r")) == NULL) {
++	if ((zin = fopen(argv[optind], "r")) == NULL) {
+ 		perror("ifdef");
+ 		exit(1);
+ 	}

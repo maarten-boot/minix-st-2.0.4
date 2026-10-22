@@ -1,0 +1,27 @@
+--- orig/simple/look.c
++++ new/simple/look.c
+@@ -73,6 +73,11 @@
+ 
+ 	n= strlen(word);
+ 
++	/* rosco: a last line without a newline is a word too (it was "too
++	 * long", so every search that reached it failed)
++	 */
++	if (word[n-1] != '\n' && n < sizeof(word) - 1 && feof(f))
++		return word;
+ 	if (word[n-1] != '\n') {
+ 		fprintf(stderr, "look: word from %s is too long\n", wordlist);
+ 		exit(1);
+@@ -84,7 +89,11 @@
+ 
+ void look(void)
+ {
+-	off_t low, mid, high;
++	/* rosco: long, not off_t: off_t is unsigned long here, so when the
++	 * string sorts before the first word "high = mid - 1" became
++	 * 0xFFFFFFFF and the search never ended ("look a words" hung).
++	 */
++	long low, mid, high;
+ 	FILE *f;
+ 	char *word;
+ 	int c;

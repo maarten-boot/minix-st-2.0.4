@@ -1,0 +1,60 @@
+--- orig/simple/which.c
++++ new/simple/which.c
+@@ -17,7 +17,7 @@
+   char *path, *cp;
+   char buf[400];
+   char prog[400];
+-  char patbuf[512];
++  char *patbuf = NULL;
+   int quit, none;
+   int excode = 0;
+ 
+@@ -34,6 +34,12 @@
+ 		fprintf(stderr, "Null path.\n");
+ 		exit(0);
+ 	}
++	/* rosco: a PATH of 512 characters or more overran patbuf[512] */
++	free(patbuf);
++	if ((patbuf = malloc(strlen(path) + 1)) == NULL) {
++		fprintf(stderr, "which: out of memory\n");
++		exit(1);
++	}
+ 	strcpy(patbuf, path);
+ 	path = patbuf;
+ 	cp = path;
+@@ -45,8 +51,16 @@
+ 		else
+ 			*cp = '\0';
+ 
+-		if (strcmp(path, "") == 0 && quit == 0) {
+-			sprintf(buf, "%s./%s", path, *av);
++		/* rosco: a directory and name of 395 characters or more
++		 * overran buf[400] and prog[400]: such a component is skipped
++		 * (an empty buf is not found).  An empty last component
++		 * ("PATH=/bin:") is the current directory too; it was tried
++		 * as "/name".
++		 */
++		if (strlen(path) + strlen(*av) + 6 > sizeof(buf))
++			buf[0] = '\0';
++		else if (strcmp(path, "") == 0) {
++			sprintf(buf, "./%s", *av);
+ 		} else
+ 			sprintf(buf, "%s/%s", path, *av);
+ 
+@@ -54,6 +68,7 @@
+ 
+ 		path = ++cp;
+ 
++		if (buf[0] == '\0') goto next;	/* rosco: too long */
+ 		if (access(buf, 1) == 0) {
+ 			printf("%s\n", buf);
+ 			none = 0;
+@@ -73,7 +88,7 @@
+ 			printf("%s\n", prog);
+ 			none = 0;
+ 		}
+-		if (quit) {
++next:		if (quit) {
+ 			if (none) {
+ 				fprintf(stderr, "No %s in %s\n", *av, getenv("PATH"));
+ 				excode = 1;

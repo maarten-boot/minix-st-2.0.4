@@ -1,0 +1,45 @@
+--- orig/simple/write.c
++++ new/simple/write.c
+@@ -81,7 +81,9 @@
+ 	/* is this the user we are looking for? */
+ 	if (strncmp(utmp.ut_name, user, sizeof(utmp.ut_name))) continue;
+ 
+-	strcpy(utmptty, utmp.ut_line);
++	/* rosco: ut_line[12] need not end in a NUL */
++	strncpy(utmptty, utmp.ut_line, sizeof(utmp.ut_line));
++	utmptty[sizeof(utmp.ut_line)] = '\0';
+ 	/* is he on the terminal we want to write to? */
+ 	if (tty == NULL || !strcmp(utmptty, tty)) {
+ 		break;
+@@ -143,7 +145,8 @@
+   else
+ 	sp = ourtty;
+ 
+-  sprintf(buff, "\nMessage from %s (%s) %-24.24s...\n",
++  /* rosco: bounded names (buff[128]) */
++  sprintf(buff, "\nMessage from %.32s (%.32s) %-24.24s...\n",
+ 	pw->pw_name, sp, ctime(&now));
+ 
+   write(otty, buff, strlen(buff));
+@@ -179,6 +182,11 @@
+   cb_esc = 0;
+ 
+   while ((n = read(0, line, 79)) > 0) {
++	/* rosco: the line was not terminated: escape() ran past it on the
++	 * stack (turning newline bytes into NULs up to the next NUL) and a
++	 * "!cmd" without newline (^D) got the stack garbage as its command.
++	 */
++	line[n] = '\0';
+ 	if (line[0] == '\004') break;	/* EOT */
+ 
+ 	if (cbreak && line[0] == '\n') cb_esc = 1;
+@@ -189,7 +197,8 @@
+ 		if (cbreak && cb_esc) {
+ 			cb_esc = 0;
+ 			tcsetattr(0, TCSANOW, &ttyold);
+-			read(0, line, 79);
++			n = read(0, line, 79);	/* rosco: terminated */
++			line[n > 0 ? n : 0] = '\0';
+ 			escape(line);
+ 			tcsetattr(0, TCSANOW, &ttynew);
+ 		} else if (cbreak)

@@ -106,6 +106,11 @@ STACK_tsort = 64kw
 # grows by 4k and copylink()'s 4k buffer met it ("Stack low", "Memory
 # fault") with the default 4kw
 STACK_install = 8kw
+# ifdef: its word buffers are now 512 bytes (80 overran); with the 4kw of
+# the ACK build the second 4k heap step (stdio buffers, symbol table) did
+# not fit: "ifdef -t file" said "could not malloc", a long -D gave
+# "Memory fault"
+STACK_ifdef = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -657,6 +662,8 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/split.c simple/fold.c simple/expand.c simple/unexpand.c \
 	  simple/rev.c simple/tee.c simple/tsort.c simple/od.c simple/strings.c \
 	  simple/sum.c simple/prep.c simple/pr.c \
+	  simple/id.c simple/tty.c simple/mesg.c simple/write.c simple/which.c \
+	  simple/xargs.c simple/look.c simple/cgrep.c simple/ifdef.c \
 	  simple/printf.c simple/expr.c simple/test.c simple/sleep.c \
 	  simple/time.c simple/echo.c simple/kill.c
 .SECONDEXPANSION:
@@ -731,6 +738,9 @@ obj/tsort.o obj/od.o obj/strings.o obj/sum.o obj/prep.o obj/pr.o: \
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/printf.o obj/expr.o obj/test.o obj/sleep.o obj/time.o obj/echo.o \
 obj/kill.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/id.o obj/tty.o obj/mesg.o obj/write.o obj/which.o obj/xargs.o \
+obj/look.o obj/cgrep.o obj/ifdef.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h
