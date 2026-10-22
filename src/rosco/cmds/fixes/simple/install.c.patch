@@ -1,0 +1,69 @@
+--- orig/simple/install.c
++++ new/simple/install.c
+@@ -211,14 +211,17 @@
+ void copylink(char *source, char *dest, int mode, int owner, int group)
+ {
+ 	struct stat sst, dst;
+-	int sfd, dfd, n;
++	int sfd, dfd, n, w;
+ 	int r, same= 0, change= 0, docopy= 1;
+ 	char buf[4096];
+ #	define hdr ((struct exec *) buf)
+ 	pid_t pid;
+-	int status;
++	int status= 0;
+ #if (MACHINE == ATARI)
+-	long relo_off, relo_size;
++	/* rosco: relo_size was not set for a file that is not an executable;
++	 * its garbage made install append bytes from a garbage offset.
++	 */
++	long relo_off= 0, relo_size= 0;
+ #endif /* MACHINE == ATARI */
+ 
+ 	/* Source must exist as a plain file, dest may exist as a plain file. */
+@@ -342,7 +345,11 @@
+ 			}
+ 			if (count < n) n= count;
+ 
+-			if (write(dfd, buf, n) < 0) {
++			/* rosco: a short write (file system full) went
++			 * unnoticed.
++			 */
++			if ((w= write(dfd, buf, n)) != n) {
++				if (w >= 0) errno= ENOSPC;
+ 				report(dest);
+ 				close(sfd);
+ 				close(dfd);
+@@ -359,7 +366,8 @@
+ 			count = relo_size;
+ 			lseek(sfd, relo_off, SEEK_SET);
+ 			while (count > 0 && (n= read(sfd, buf, sizeof(buf))) > 0) {
+-				if (write(dfd, buf, n) < 0) {
++				if ((w= write(dfd, buf, n)) != n) {
++					if (w >= 0) errno= ENOSPC;
+ 					report(dest);
+ 					close(sfd);
+ 					close(dfd);
+@@ -371,8 +379,11 @@
+ 		}
+ #endif /* MACHINE == ATARI */
+ 		close(sfd);
+-		close(dfd);
+-		if (pid != 0 && waitpid(pid, &status, 0) < 0 || status != 0) {
++		/* rosco: close() errors, and status was looked at without a
++		 * filter (uninitialized: "install" failed at random).
++		 */
++		if (close(dfd) < 0) { report(dest); return; }
++		if (pid != 0 && (waitpid(pid, &status, 0) < 0 || status != 0)) {
+ 			excode= 1;
+ 			return;
+ 		}
+@@ -525,7 +536,7 @@
+ 				} else {
+ 					if ((gr= getgrnam(p)) == nil) {
+ 						fprintf(stderr,
+-						"install: %s: unknown user\n",
++						"install: %s: unknown group\n",
+ 							p);
+ 						exit(1);
+ 					}

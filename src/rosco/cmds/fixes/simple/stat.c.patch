@@ -1,0 +1,47 @@
+--- orig/simple/stat.c
++++ new/simple/stat.c
+@@ -184,13 +184,16 @@
+ 	    while (fgets(buf, sizeof(buf), stdin)) {
+ 	    	char *p= strchr(buf, '\n');
+ 	    	if (p) *p= 0;
+-		if (!sym) err= stat(av[i], &sbuf);
++		/* rosco: the names read were not used, every line did a
++		 * stat of "-" (No such file or directory).
++		 */
++		if (!sym) err= stat(buf, &sbuf);
+ 		if (sym || (err != 0 && errno == ENOENT)) {
+-		    err= lstat(av[i], &sbuf);
++		    err= lstat(buf, &sbuf);
+ 		}
+ 		if (err == -1) {
+ 		    fprintf(stderr, "%s: %s: %s\n",
+-			arg0, av[i], strerror(errno));
++			arg0, buf, strerror(errno));
+ 		    ret= 1;
+ 		}
+ 		else {
+@@ -279,8 +282,8 @@
+ 
+ 	switch (sb->st_mode&S_IFMT) {
+ 	case S_IFDIR:	bit[0]='d';	break;
+-# ifdef S_IFFIFO
+-	case S_IFFIFO:	bit[0]='p';	break;
++# ifdef S_IFIFO
++	case S_IFIFO:	bit[0]='p';	break;	/* rosco: was S_IFFIFO, never set */
+ # endif
+ 	case S_IFCHR:	bit[0]='c';	break;
+ 	case S_IFBLK:	bit[0]='b';	break;
+@@ -300,9 +303,10 @@
+ 	rwx(sb->st_mode, bit+1);
+ 	rwx(sb->st_mode<<3, bit+4);
+ 	rwx(sb->st_mode<<6, bit+7);
+-	if (sb->st_mode&S_ISUID)	bit[3]='s';
+-	if (sb->st_mode&S_ISGID)	bit[6]='s';
+-	if (sb->st_mode&S_ISVTX)	bit[9]='t';
++	/* rosco: '=' without the x bit, as ls (an 's' hid a missing x) */
++	if (sb->st_mode&S_ISUID)	bit[3]= bit[3] == 'x' ? 's' : '=';
++	if (sb->st_mode&S_ISGID)	bit[6]= bit[6] == 'x' ? 's' : '=';
++	if (sb->st_mode&S_ISVTX)	bit[9]= bit[9] == 'x' ? 't' : '=';
+ 	printf("\"%s\"", bit);
+     }
+     /* times in human form, uppercase first letter */

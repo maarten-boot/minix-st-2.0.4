@@ -1,0 +1,22 @@
+--- orig/simple/umount.c
++++ new/simple/umount.c
+@@ -34,6 +34,19 @@
+ 	argv++;
+   }
+   if (argc != 2) usage();
++  /* rosco: umount is setuid root, FS only checks the effective uid: every
++   * user could unmount every file system.  A user other than root needs
++   * read access to the device (as mount); swap is root's only.
++   */
++  if (getuid() != 0 && (sflag || access(argv[1], R_OK) < 0)) {
++	if (sflag) errno = EPERM;
++	std_err("umount: ");
++	std_err(argv[1]);
++	std_err(": ");
++	std_err(strerror(errno));
++	std_err("\n");
++	exit(1);
++  }
+   if ((sflag ? svrctl(MMSWAPOFF, NULL) : umount(argv[1])) < 0) {
+ 	if (errno == EINVAL)
+ 		std_err("Device not mounted\n");

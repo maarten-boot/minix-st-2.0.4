@@ -1,0 +1,15 @@
+--- orig/simple/basename.c
++++ new/simple/basename.c
+@@ -38,10 +38,10 @@
+ 	exit(1);
+   }
+ 
+-  /* Check for all /'s */
++  /* Check for all /'s.  rosco: not for an empty string (gave "/"). */
+   for (temp = argv[1]; *temp == '/'; temp++)	/* Move to next char. */
+ 	;
+-  if (*temp == EOS) {
++  if (*temp == EOS && temp != argv[1]) {
+ 	printf("/\n");
+ 	exit(0);
+   }

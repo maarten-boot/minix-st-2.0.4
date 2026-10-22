@@ -98,6 +98,10 @@ STACK_nonamed = 16kw
 # left 4kw about 3.5k of stack; every "cut -f" (printf, _doprnt's 1k
 # buffer) died with "Memory fault" (stack fault)
 STACK_cut = 8kw
+# install: "install file1 file2 dir" mallocs the target name, the heap
+# grows by 4k and copylink()'s 4k buffer met it ("Stack low", "Memory
+# fault") with the default 4kw
+STACK_install = 8kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -643,7 +647,9 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/mknod.c simple/mkfifo.c simple/find.c simple/touch.c \
 	  simple/tr.c simple/sed.c simple/sort.c simple/uniq.c simple/cut.c \
 	  simple/head.c simple/tail.c simple/wc.c simple/comm.c \
-	  simple/fgrep.c simple/paste.c simple/join.c
+	  simple/fgrep.c simple/paste.c simple/join.c \
+	  simple/du.c simple/df.c simple/stat.c simple/file.c simple/install.c \
+	  simple/basename.c simple/pwd.c simple/mount.c simple/umount.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -706,6 +712,9 @@ obj/mkfifo.o obj/find.o obj/touch.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/tr.o obj/sed.o obj/sort.o obj/uniq.o obj/cut.o obj/head.o obj/tail.o \
 obj/wc.o obj/comm.o obj/fgrep.o obj/paste.o obj/join.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/du.o obj/df.o obj/stat.o obj/file.o obj/install.o obj/basename.o \
+obj/pwd.o obj/mount.o obj/umount.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h

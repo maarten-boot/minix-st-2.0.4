@@ -1,0 +1,76 @@
+--- orig/simple/mount.c
++++ new/simple/mount.c
+@@ -7,6 +7,7 @@
+ #include <string.h>
+ #include <unistd.h>
+ #include <fcntl.h>
++#include <sys/stat.h>
+ #include <minix/config.h>
+ #include <minix/const.h>
+ #include <minix/minlib.h>
+@@ -19,6 +20,7 @@
+ _PROTOTYPE(void usage, (void));
+ _PROTOTYPE(void tell, (char *this));
+ _PROTOTYPE(void swapon, (char *file));
++_PROTOTYPE(void user_check, (char *special, char *dir, int ro));
+ 
+ static u8_t MAGIC[] = { SWAP_MAGIC0, SWAP_MAGIC1, SWAP_MAGIC2, SWAP_MAGIC3 };
+ 
+@@ -53,11 +55,13 @@
+ 
+   if (swap) {
+ 	if (argc != 2) usage();
++	user_check(argv[1], NULL, 0);
+ 	swapon(argv[1]);
+ 	tell(argv[1]);
+ 	tell(" is swapspace\n");
+   } else {
+ 	if (argc != 3) usage();
++	user_check(argv[1], argv[2], ro);
+ 	if (mount(argv[1], argv[2], ro) < 0) {
+ 		err = strerror(errno);
+ 		std_err("mount: Can't mount ");
+@@ -141,6 +145,43 @@
+ }
+ 
+ 
++/* rosco: mount is setuid root, and FS only checks the effective uid, so
++ * every user could mount any partition on any directory (over /etc, a
++ * file system with a setuid shell...).  A user other than root now needs
++ * access to the device (read, and write for read-write) and must own the
++ * directory; swap is root's only.
++ */
++void user_check(special, dir, ro)
++char *special;
++char *dir;
++int ro;
++{
++  struct stat st;
++  char *what, *err;
++
++  if (getuid() == 0) return;
++  if (dir == NULL) {
++	errno = EPERM;
++	what = special;
++  } else if (access(special, ro ? R_OK : R_OK | W_OK) < 0) {
++	what = special;
++  } else if (stat(dir, &st) < 0) {
++	what = dir;
++  } else if (st.st_uid != getuid()) {
++	errno = EPERM;
++	what = dir;
++  } else {
++	return;
++  }
++  err = strerror(errno);
++  std_err("mount: ");
++  std_err(what);
++  std_err(": ");
++  std_err(err);
++  std_err("\n");
++  exit(1);
++}
++
+ void usage()
+ {
+   std_err("Usage: mount [-r] special name\n       mount -s special\n");

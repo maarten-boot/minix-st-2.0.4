@@ -1,0 +1,26 @@
+--- orig/simple/pwd.c
++++ new/simple/pwd.c
+@@ -18,6 +18,7 @@
+ /* External interfaces */
+ #include <sys/types.h>
+ #include <limits.h>
++#include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+@@ -39,6 +40,15 @@
+ 
+   p = getcwd(dir, PATH_MAX);
+   if (p == NULL) {
++	/* rosco: say why (a path over PATH_MAX gave the same message) */
++	if (errno == ERANGE) {
++		errmsg = "pwd: the path is too long\n";
++	} else if (errno != EACCES) {
++		errmsg = strerror(errno);
++		write(STDERR_FILENO, "pwd: ", 5);
++		write(STDERR_FILENO, errmsg, strlen(errmsg));
++		errmsg = "\n";
++	}
+ 	write(STDERR_FILENO, errmsg, strlen(errmsg));
+ 	exit(FAILURE);
+   }

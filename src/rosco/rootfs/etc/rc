@@ -33,6 +33,11 @@ date -u '+%m%d%y%H%M%S' >/etc/stamp
 printroot >/etc/mtab
 sync
 
+# update writes the FS cache to disk every 30 seconds (sync); without it a
+# reset or power off lost every write since the last sync.  It is on the
+# SD root only.
+/bin/update </dev/null >/dev/null 2>&1 &
+
 # The clock daemon: /usr/lib/crontab, crontab(1) and at(1) jobs.  It is on
 # the SD root only (where it is not, the error goes to /dev/null).
 /usr/bin/cron </dev/null >/dev/null 2>&1 &

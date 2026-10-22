@@ -1,0 +1,53 @@
+--- orig/simple/du.c
++++ new/simple/du.c
+@@ -78,6 +78,7 @@
+ int levels = 20000;		/* # of directory levels to print */
+ ALREADY *already[NR_ALREADY];
+ int alc;
++int status = 0;			/* rosco: exit status, 1 after an error */
+ 
+ 
+ /*
+@@ -156,6 +157,7 @@
+   if (LSTAT(d, &s) < 0) {
+ 	fprintf(stderr,
+ 		"%s: %s: %s\n", prog, d, strerror(errno));
++	status = 1;
+     	return 0L;
+   }
+   if (s.st_dev != dev && dev != 0 && crosschk) return 0;
+@@ -166,12 +168,25 @@
+ 	 * directory should not already have been done.
+ 	 */
+ 	maybe_print = !silent;
+-	if ((dp = opendir(d)) == NULL) break;
++	/* rosco: a directory that cannot be read (no permission, too many
++	 * open files, "Not enough core") or a path that is too long was
++	 * skipped without a word, and du exited 0 with a total too small.
++	 */
++	if ((dp = opendir(d)) == NULL) {
++		fprintf(stderr, "%s: %s: %s\n", prog, d, strerror(errno));
++		status = 1;
++		break;
++	}
+ 	while ((entry = readdir(dp)) != NULL) {
+ 		if (strcmp(entry->d_name, ".") == 0 ||
+ 		    strcmp(entry->d_name, "..") == 0)
+ 			continue;
+-		if (!makedname(d, entry->d_name, dent, sizeof(dent))) continue;
++		if (!makedname(d, entry->d_name, dent, sizeof(dent))) {
++			fprintf(stderr, "%s: %s/%s: %s\n", prog, d,
++				entry->d_name, strerror(ENAMETOOLONG));
++			status = 1;
++			continue;
++		}
+ 		total += dodir(dent, thislev - 1, s.st_dev);
+ 	}
+ 	closedir(dp);
+@@ -214,5 +229,5 @@
+ 	alc = 0;
+ 	(void) dodir(startdir, levels, 0);
+   } while (optind < argc);
+-  return(0);
++  return(status);
+ }

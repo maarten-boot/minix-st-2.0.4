@@ -1,0 +1,156 @@
+--- orig/simple/file.c
++++ new/simple/file.c
+@@ -6,6 +6,7 @@
+ #include <fcntl.h>
+ #include <stdlib.h>
+ #include <unistd.h>
++#include <string.h>
+ #include <stdio.h>
+ 
+ #define BLOCK_SIZE	1024
+@@ -16,7 +17,7 @@
+ 
+ struct info {
+   int execflag;			/* 1 == ack executable, 2 == gnu executable,
+-				 * 3 == core */
++				 * 3 == core, 4 == 68000 executable */
+   unsigned char magic[4];	/* First four bytes of the magic number */
+   unsigned char mask[4];	/* Mask to apply when matching */
+   char *description;		/* What it means */
+@@ -25,6 +26,8 @@
+ 	"13-bit compressed file",
+   0x00, 0x1f, 0x9d, 0x90, 0x00,		0xff, 0xff, 0xff, 0x00,
+ 	"16-bit compressed file",
++  0x00, 0x1f, 0x8b, 0x00, 0x00,		0xff, 0xff, 0x00, 0x00,
++	"gzip compressed file",		/* rosco: gzip */
+   0x00, 0x65, 0xff, 0x00, 0x00,		0xff, 0xff, 0x00, 0x00,
+ 	"MINIX-PC bcc archive",
+   0x00, 0x2c, 0xff, 0x00, 0x00,		0xff, 0xff, 0x00, 0x00,
+@@ -37,6 +40,8 @@
+ 	"MINIX-PC gnu archive",
+   0x00, 0x01, 0x02, 0x00, 0x00,		0xff, 0xff, 0x00, 0x00,
+ 	"ACK object file",
++  0x00, 0x02, 0x02, 0x00, 0x00,		0xff, 0xff, 0x00, 0x00,
++	"ACK object file",		/* rosco: cc's (magic 0x0202) */
+   0x00, 0xa3, 0x86, 0x00, 0x00, 	0xff, 0xff, 0x00, 0x00,
+ 	"MINIX-PC bcc object file",
+   0x00, 0x00, 0x00, 0x01, 0x07, 	0xff, 0xff, 0xff, 0xff,
+@@ -47,9 +52,12 @@
+ 	"MINIX-PC 16-bit executable",
+   0x01, 0x01, 0x03, 0x00, 0x10, 	0xff, 0xff, 0x00, 0xff,
+ 	"MINIX-PC 32-bit executable",
+-  0x01, 0x04, 0x10, 0x03, 0x01, 	0xff, 0xff, 0xff, 0xff,
++  0x04, 0x04, 0x10, 0x03, 0x01, 	0xff, 0xff, 0xff, 0xff,
+ 	"MINIX-68k old style executable",
+-  0x01, 0x0b, 0x10, 0x03, 0x01, 	0xff, 0xff, 0xff, 0xff,
++  /* rosco: the executables of this system (the ST layout: cpu, flags, magic;
++   * mkminix.py and cc), any flags; the flags were read from the magic.
++   */
++  0x04, 0x0b, 0x00, 0x03, 0x01, 	0xff, 0x00, 0xff, 0xff,
+ 	"MINIX-68k new style executable",
+   0x02, 0x0b, 0x01, 0x00, 0x00, 	0xff, 0xff, 0xff, 0xff,
+ 	"MINIX-PC 32-bit gnu executable combined I & D space",
+@@ -99,7 +107,8 @@
+ void file(name)
+ char *name;
+ {
+-  int i, fd, n, mode, nonascii, special, funnypct, etaoins;
++  int i, fd, n, mode, nonascii, special, etaoins;
++  long funnypct;
+   int j;
+   long engpct;
+   int c;
+@@ -153,7 +162,11 @@
+ 	return;
+   }
+ 
+-  /* Open the file, stat it, and read in 1 block. */
++  /* Open the file, stat it, and read in 1 block.  rosco: the buffer is
++   * cleared first: a file shorter than 4 (or 32) bytes was compared with
++   * what was left of the file before.
++   */
++  memset(buf, 0, sizeof(buf));
+   fd = open(name, O_RDONLY);
+   if (fd < 0) {
+ 	printf("cannot open\n");
+@@ -173,7 +186,8 @@
+ 
+   for (i = 0; i < tabsize; i++) {
+ 	for (j = 0; j < 4; j++)
+-		if ((buf[j] & table[i].mask[j]) != table[i].magic[j])
++		if ((buf[j] & table[i].mask[j]) != table[i].magic[j]
++					|| (j >= n && table[i].mask[j] != 0))
+ 			break;
+ 	if (j == 4) {
+ 		printf("%s", table[i].description);
+@@ -184,10 +198,9 @@
+   }
+ 
+ 
+-  /* Check to see if file is a shell script. */
+-  if (mode & XBITS) {
+-	/* Not a binary, but executable.  Probably a shell script. */
+-	printf("shell script\n");
++  /* rosco: tar (ustar) archives */
++  if (n >= 262 && memcmp(buf + 257, "ustar", 5) == 0) {
++	printf("tar archive\n");
+ 	close(fd);
+ 	return;
+   }
+@@ -199,6 +212,13 @@
+   for (i = 0; i < n; i++) {
+ 	c = buf[i];
+ 	if (c & 0200) nonascii++;
++	/* rosco: control characters other than white space, backspace and
++	 * escape are not text (a file of zero bytes was "ASCII text").
++	 */
++	if (c < ' ' && c != '\n' && c != '\t' && c != '\r' && c != '\f'
++				&& c != '\b' && c != '\v' && c != '\033')
++		nonascii++;
++	if (c == 0177) nonascii++;
+ 	if (c == ';' || c == '{' || c == '}' || c == '#') special++;
+ 	if (c == '*' || c == '<' || c == '>' || c == '/') special++;
+ 	if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+@@ -206,9 +226,19 @@
+ 	if (c == 'i' || c == 'n' || c == 's') etaoins++;
+   }
+ 
++  /* Check to see if file is a shell script.  rosco: only text or "#!"
++   * (every executable binary that was not in the table was a script).
++   */
++  if ((mode & XBITS) && (nonascii == 0 || (buf[0] == '#' && buf[1] == '!'))) {
++	/* Not a binary, but executable.  Probably a shell script. */
++	printf("shell script\n");
++	close(fd);
++	return;
++  }
++
+   if (nonascii == 0) {
+ 	/* File only contains ASCII characters.  Continue processing. */
+-	funnypct = 100 * special / n;
++	funnypct = 100L * special / n;	/* rosco: 100 * special overflowed */
+ 	engpct = 100L * (long) etaoins / n;
+ 	if (funnypct > 1) {
+ 		printf("C program\n");
+@@ -231,14 +261,16 @@
+ void do_strip(type)
+ int type;
+ {
+-  if (type == 1) {	/* Non-GNU executable */
+-	if (buf[2] & 1)
++  if (type == 1 || type == 4) {	/* Non-GNU executable */
++	int flags = buf[type == 4 ? 1 : 2];	/* rosco: ST layout */
++
++	if (flags & 1)
+ 		printf(", UZP");
+-	if (buf[2] & 2)
++	if (flags & 2)
+ 		printf(", PAL");
+-	if (buf[2] & 4)
++	if (flags & 4)
+ 		printf(", NSYM");
+-	if (buf[2] & 0x20)
++	if (flags & 0x20)
+ 		printf(", sep I&D");
+ 	else
+ 		printf(", comm I&D");
