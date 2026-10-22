@@ -1,0 +1,63 @@
+--- orig/simple/prep.c	2026-10-22 10:29:13.833708928 +0200
++++ new/simple/prep.c	2026-10-22 10:32:49.112042485 +0200
+@@ -9,7 +9,9 @@
+ #define APOSTROPHE	047	/* single quote */
+ #define BACKSLASH       '\\'	/* troff code */
+ 
+-int lfread;			/* set when last char read was lf */
++int lfread = 1;			/* set when last char read was lf */
++				/* rosco: 1, a troff command on the first
++				 * line was not skipped */
+ int lfwritten = 1;		/* set when last char written was lf */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+@@ -27,7 +29,7 @@
+   if (argc > 2) usage();
+   if (argc == 2) {
+ 	if (freopen(argv[1], "r", stdin) == NULL) {
+-		printf("prep: cannot open %s\n", argv[1]);
++		fprintf(stderr, "prep: cannot open %s\n", argv[1]);
+ 		exit(1);
+ 	}
+   }
+@@ -62,15 +64,22 @@
+ 	putchar(EOL);
+ 	lfwritten = 1;
+   }
++  if (fflush(stdout) == EOF || ferror(stdout)) {
++	perror("prep: write error");	/* rosco: was exit 0 */
++	return(1);
++  }
+   return(0);
+ }
+ 
+ 
+ void skipline()
+ {
+-  char c;
++  int c;
+ 
+-  while ((c = getchar()) != EOL);
++  /* rosco: c was a char, so it never became EOF: a troff command on a
++   * last line without newline looped forever */
++  while ((c = getchar()) != EOL && c != EOF);
++  lfread = 1;
+ }
+ 
+ 
+@@ -110,6 +119,7 @@
+ 		c = getchar();
+ 		return(c);
+ 	}
++	return(getchar());	/* rosco: \*x ran on into the \( case */
+ 
+       case '(':			/* troff 4-character escape sequence */
+ 	c1 = getchar();
+@@ -131,6 +141,6 @@
+ 
+ void usage()
+ {
+-  printf("Usage: prep [file]\n");
++  fprintf(stderr, "Usage: prep [file]\n");
+   exit(1);
+ }

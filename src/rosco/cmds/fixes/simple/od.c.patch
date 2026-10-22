@@ -1,0 +1,101 @@
+--- orig/simple/od.c	2026-10-22 10:29:13.818108768 +0200
++++ new/simple/od.c	2026-10-22 10:31:50.320441922 +0200
+@@ -11,9 +11,8 @@
+ int linenr, width, state, ever;
+ int prevwds[8];
+ long off;
+-char buf[512], buffer[BUFSIZ];
+-int next;
+-int bytespresent;
++short wbuf[8];			/* rosco: one line, read whole (see getwords) */
++char buffer[BUFSIZ];
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(long offset, (int argc, char *argv [], int k));
+@@ -89,7 +88,16 @@
+ 	/* Offset present. */
+ 	off = offset(argc, argv, k);
+ 	off = (off / 16L) * 16L;
+-	lseek(0, off, SEEK_SET);
++	if (lseek(0, off, SEEK_SET) == -1) {
++		/* rosco: on a pipe the lseek failed and the dump began at
++		 * byte 0, labelled with the offset; skip by reading */
++		long skip = off;
++		int n;
++		while (skip > 0 && (n = read(0, buffer, skip < BUFSIZ ?
++					(int) skip : BUFSIZ)) > 0)
++			skip -= n;
++		off -= skip;
++	}
+   }
+   dumpfile();
+   addrout(off);
+@@ -120,8 +128,10 @@
+   if (*p == '+') p++;
+   while (*p != 0 && *p != '.') {
+ 	c = *p++;
+-	if (c < '0' || c > '9') {
+-		printf("Bad character in offset: %c\n", c);
++	/* rosco: 8 and 9 were taken in an octal offset; the message went
++	 * to stdout */
++	if (c < '0' || c >= '0' + radix) {
++		fprintf(stderr, "od: bad character in offset: %c\n", c);
+ 		exit(1);
+ 	}
+ 	val = radix * val + c - '0';
+@@ -163,7 +173,6 @@
+ 	if (cflag) bdump((char *)words, k, (int)'c');
+ 	if (bflag) bdump((char *)words, k, (int)'b');
+ 	for (k = 0; k < 8; k++) prevwds[k] = words[k];
+-	for (k = 0; k < 8; k++) words[k] = 0;
+   }
+ }
+ 
+@@ -222,23 +231,28 @@
+ }
+ 
+ 
++/* rosco: the lines were cut at the ends of the read() blocks, so on a pipe
++ * (short reads) the lines lost their 16 byte alignment and duplicates
++ * their '*'; an odd last byte was printed with a stale byte of the
++ * buffer, and the 16 bytes cleared after each line ran past its end.
++ * Now each line is read whole (16 bytes or up to the end of the input).
++ */
+ int getwords(words)
+ short **words;
+ {
+-  int count;
++  static int eof;
++  int count = 0, n;
+ 
+-  if (next >= bytespresent) {
+-	bytespresent = read(0, buf, 512);
+-	next = 0;
+-  }
+-  if (next >= bytespresent) return(0);
+-  *words = (short *) &buf[next];
+-  if (next + 16 <= bytespresent)
+-	count = 16;
+-  else
+-	count = bytespresent - next;
+-
+-  next += count;
++  for (n = 0; n < 8; n++) wbuf[n] = 0;
++  while (!eof && count < 16) {
++	n = read(0, (char *) wbuf + count, 16 - count);
++	if (n <= 0) {
++		if (n < 0) perror("od: read error");
++		eof = 1;
++	} else
++		count += n;
++  }
++  *words = wbuf;
+   return(count);
+ }
+ 
+@@ -311,4 +325,5 @@
+ void usage()
+ {
+   fprintf(stderr, "Usage: od [-bcdhovx] [file] [ [+] offset [.] [b] ]\n");
++  exit(1);			/* rosco: went on with the bad flag */
+ }

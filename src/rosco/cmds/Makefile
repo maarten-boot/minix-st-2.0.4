@@ -98,6 +98,10 @@ STACK_nonamed = 16kw
 # left 4kw about 3.5k of stack; every "cut -f" (printf, _doprnt's 1k
 # buffer) died with "Memory fault" (stack fault)
 STACK_cut = 8kw
+# tsort keeps every name and pair on its heap (about 60 bytes a pair): the
+# ACK build's 4kw ran out of memory ("Out of memory.") at a few dozen
+# names; lorder of a library has hundreds.  64kw holds about 2000 names.
+STACK_tsort = 64kw
 # install: "install file1 file2 dir" mallocs the target name, the heap
 # grows by 4k and copylink()'s 4k buffer met it ("Stack low", "Memory
 # fault") with the default 4kw
@@ -649,7 +653,10 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/head.c simple/tail.c simple/wc.c simple/comm.c \
 	  simple/fgrep.c simple/paste.c simple/join.c \
 	  simple/du.c simple/df.c simple/stat.c simple/file.c simple/install.c \
-	  simple/basename.c simple/pwd.c simple/mount.c simple/umount.c
+	  simple/basename.c simple/pwd.c simple/mount.c simple/umount.c \
+	  simple/split.c simple/fold.c simple/expand.c simple/unexpand.c \
+	  simple/rev.c simple/tee.c simple/tsort.c simple/od.c simple/strings.c \
+	  simple/sum.c simple/prep.c simple/pr.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -715,6 +722,10 @@ obj/wc.o obj/comm.o obj/fgrep.o obj/paste.o obj/join.o:	obj/%.o:	obj/fix/simple/
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/du.o obj/df.o obj/stat.o obj/file.o obj/install.o obj/basename.o \
 obj/pwd.o obj/mount.o obj/umount.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/split.o obj/fold.o obj/expand.o obj/unexpand.o obj/rev.o obj/tee.o \
+obj/tsort.o obj/od.o obj/strings.o obj/sum.o obj/prep.o obj/pr.o: \
+		obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h

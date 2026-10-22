@@ -1,0 +1,63 @@
+--- orig/simple/fold.c	2026-10-22 10:29:13.799978728 +0200
++++ new/simple/fold.c	2026-10-22 10:30:19.185156551 +0200
+@@ -8,21 +8,22 @@
+ #define  TAB		8
+ #define  DEFAULT_WIDTH  80
+ 
+-int column = 0;			/* Current column, retained between files  */
++long column = 0;		/* Current column, retained between files  */
++				/* rosco: long, a 16-bit int wrapped */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+-_PROTOTYPE(void Fold, (FILE *f, int width));
++_PROTOTYPE(void Fold, (FILE *f, long width));
+ 
+ int main(argc, argv)
+ int argc;
+ char *argv[];
+ {
+-  int width = DEFAULT_WIDTH;
+-  int i;
++  long width = DEFAULT_WIDTH;
++  int i, status = 0;
+   FILE *f;
+ 
+   if (argc > 1 && argv[1][0] == '-') {
+-	if ((width = atoi(&argv[1][1])) <= 0) {
++	if ((width = atol(&argv[1][1])) <= 0) {
+ 		fprintf(stderr, "Bad number for fold\n");
+ 		exit(1);
+ 	}
+@@ -35,19 +36,20 @@
+ 	for (i = 1; i < argc; ++i) {
+ 		if ((f = fopen(argv[i], "r")) == NULL) {
+ 			perror(argv[i]);
+-			exit(1);
++			status = 1;	/* rosco: go on, exit 1 */
++			continue;
+ 		}
+ 		Fold(f, width);
+ 		fclose(f);
+ 	}
+   }
+-  return(0);
++  return(status);
+ }
+ 
+ 
+ void Fold(f, width)
+ FILE *f;
+-int width;
++long width;
+ {
+   int c;
+ 
+@@ -67,4 +69,8 @@
+ 	}
+ 	putchar(c);
+   }
++  if (fflush(stdout) == EOF || ferror(stdout)) {
++	perror("fold: write error");	/* rosco: was exit 0 */
++	exit(1);
++  }
+ }

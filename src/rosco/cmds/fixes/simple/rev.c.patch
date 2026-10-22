@@ -1,0 +1,92 @@
+--- orig/simple/rev.c	2026-10-22 10:29:13.809109202 +0200
++++ new/simple/rev.c	2026-10-22 10:30:30.607825121 +0200
+@@ -8,15 +8,20 @@
+ 
+ #define CHUNK_SIZE	4096
+ 
+-#ifndef EOF
+-#define	EOF	((char) -1)
+-#endif
++/* rosco: EOF was ((char) -1), so a byte 0xFF in the input ended the file;
++ * nextchar() now returns -1 as an int.  A line longer than the buffer
++ * ran the unsigned short index from 0 to 65535 and wrote far below the
++ * buffer on the stack; it is now cut with a message.  A file that could
++ * not be opened gave exit 0.
++ */
++#define	REV_EOF	(-1)
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void rev, (void));
+ _PROTOTYPE(int nextchar, (void));
+ 
+ int fd;				/* File descriptor from file being read */
++int status = 0;
+ 
+ int main(argc, argv)
+ int argc;
+@@ -27,19 +32,20 @@
+   if (argc == 1) {		/* If no arguments given, use stdin as input */
+ 	fd = 0;
+ 	rev();
+-	exit(0);
++	exit(status);
+   }
+   for (i = 1; i < argc; i++) {	/* Reverse each line in arguments */
+ 	if ((fd = open(argv[i], O_RDONLY)) < 0) {
+ 		std_err("Cannot open ");
+ 		std_err(argv[i]);
+ 		std_err("\n");
++		status = 1;
+ 		continue;
+ 	}
+ 	rev();
+ 	close(fd);
+   }
+-  return(0);
++  return(status);
+ }
+ 
+ 
+@@ -48,15 +54,28 @@
+ void rev()
+ {
+   char output[CHUNK_SIZE];	/* Contains a reversed line */
+-  register unsigned short i;	/* Index in output array */
++  register int i;		/* Index in output array */
++  int c, cut;
+ 
+   do {
+-	i = CHUNK_SIZE - 1;
+-	while ((output[i] = nextchar()) != '\n' && output[i] != EOF) i--;
+-	write(1, &output[i + 1], CHUNK_SIZE - 1 - i); /* write reversed line */
+-	if (output[i] == '\n')	/* and write a '\n' */
+-		write(1, "\n", 1);
+-  } while (output[i] != EOF);
++	i = CHUNK_SIZE;
++	cut = 0;
++	while ((c = nextchar()) != '\n' && c != REV_EOF) {
++		if (i > 0)
++			output[--i] = c;
++		else
++			cut = 1;
++	}
++	if (cut) {
++		std_err("rev: line too long, cut to 4096 characters\n");
++		status = 1;
++	}
++	if (write(1, &output[i], CHUNK_SIZE - i) != CHUNK_SIZE - i
++	    || (c == '\n' && write(1, "\n", 1) != 1)) {
++		std_err("rev: write error\n");
++		exit(1);
++	}
++  } while (c != REV_EOF);
+ }
+ 
+ 
+@@ -71,5 +90,5 @@
+ 	n = read(fd, buf, CHUNK_SIZE);
+ 	i = 0;			/* Reset index in array */
+   }
+-  return((n <= 0) ? EOF : buf[i++]);	/* Return -1 on EOF */
++  return((n <= 0) ? REV_EOF : buf[i++] & 0377);	/* Return -1 on EOF */
+ }

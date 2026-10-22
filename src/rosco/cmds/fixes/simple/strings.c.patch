@@ -1,0 +1,97 @@
+--- orig/simple/strings.c	2026-10-22 10:29:13.820996745 +0200
++++ new/simple/strings.c	2026-10-22 10:58:05.564329909 +0200
+@@ -36,6 +36,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <stdio.h>
++#include <a.out.h>
+ 
+ /* Minix (8086 version) dependant definitions */
+ #define SMALLMAGIC	0x04100301L	/* small model a.out magic number */
+@@ -61,6 +62,7 @@
+ int strmin = STRLEN;		/* minimum string length */
+ int printoff = 0;		/* print octal offset of each str */
+ int objall = 0;			/* search entire a.out file, not */
++int status = 0;
+ 
+ /* Just initialized data segment */
+ 
+@@ -81,7 +83,7 @@
+ 
+   if (0 == argc) usage();
+   while (argc--) strings(*argv++);
+-  return(0);
++  return(status);
+ }
+ 
+ void strings(filename)
+@@ -90,7 +92,7 @@
+   char buf[STRBUF];		/* the strings buffer */
+   char *bufptr;			/* pointer into the strings buffer */
+   FILE *input;			/* input file */
+-  long header[HDR_LEN];		/* buffer for reading the header */
++  struct exec header;		/* buffer for reading the header */
+   long offset;			/* file offset */
+   long limit;			/* limit, if doing data segment only */
+   int c;			/* input character */
+@@ -98,13 +100,17 @@
+   if (NULL == (input = fopen(filename, "r"))) {
+ 	fprintf(stderr, "strings: ");
+ 	perror(filename);
+-	exit(1);
++	status = 1;		/* rosco: went on with the other files */
++	return;
+   }
+-  if (HDR_LEN == fread(header, sizeof(long), (size_t)HDR_LEN, input)
+-      && (SMALLMAGIC == header[HDR_MAGIC]
+-	||SEPARATEMAGIC == header[HDR_MAGIC]) && !objall) {
+-	offset = header[HDR_HSIZE] + header[HDR_TSIZE];	/* object file */
+-	limit = offset + header[HDR_DSIZE];
++  /* rosco: the header was read as 8086 longs, so a 68000 executable was
++   * never recognized and always searched whole; use <a.out.h>.  gcc keeps
++   * the string constants in the text segment (.rodata), so search text
++   * and data, without the header and the symbol table. */
++  if (1 == fread(&header, A_MINHDR, (size_t) 1, input)
++      && !BADMAG(header) && header.a_hdrlen >= A_MINHDR && !objall) {
++	offset = header.a_hdrlen;			/* object file */
++	limit = offset + header.a_text + header.a_data;
+   } else {
+ 	offset = 0L;
+ 	limit = 0L;
+@@ -114,9 +120,18 @@
+   bufptr = buf;
+ 
+   while (!limit || offset < limit) {
+-	if (EOF == (c = getc(input))) break;
+-	if ((('\0' == c || '\n' == c) && bufptr - buf >= strmin)
+-	    || (bufptr - buf == STRBUF - 1)) {
++	/* rosco: a full buffer was printed in place of the character that
++	 * came next, which was lost; a string at the end of the file or
++	 * data segment was lost; a minimum of 0 printed empty strings */
++	if (EOF == (c = getc(input))) c = '\0';
++	if (bufptr - buf == STRBUF - 1) {
++		*bufptr = '\0';
++		if (printoff) printf("%lo:", offset - (bufptr - buf));
++		puts(buf);
++		bufptr = buf;
++	}
++	if (('\0' == c || '\n' == c) && bufptr - buf >= strmin
++						&& bufptr > buf) {
+ 		*bufptr = '\0';
+ 		if (printoff) printf("%lo:", offset - (bufptr - buf));
+ 		puts(buf);
+@@ -126,8 +141,14 @@
+ 	else
+ 		bufptr = buf;
+ 
++	if (feof(input)) break;
+ 	++offset;
+   }
++  if (bufptr - buf >= strmin && bufptr > buf) {	/* end of data segment */
++	*bufptr = '\0';
++	if (printoff) printf("%lo:", offset - (bufptr - buf));
++	puts(buf);
++  }
+ 
+   fclose(input);
+ }

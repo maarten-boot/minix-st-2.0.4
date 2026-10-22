@@ -1,0 +1,74 @@
+--- orig/simple/split.c	2026-10-22 10:29:13.796700007 +0200
++++ new/simple/split.c	2026-10-22 10:29:55.004174081 +0200
+@@ -5,11 +5,12 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
++#include <limits.h>
+ #include <minix/minlib.h>
+ 
+ #define CHUNK_SIZE	1024
+ 
+-int cut_line = 1000;
++long cut_line = 1000;	/* rosco: long, -70000 was cut to 16 bits */
+ int infile;
+ char out_file[100];
+ char *suffix;
+@@ -33,8 +34,12 @@
+   for (i = 1; i < argc; i++) {
+ 	if (argv[i][0] == '-') {
+ 		if (argv[i][1] >= '0' && argv[i][1] <= '9'
+-		    && cut_line == 1000)
+-			cut_line = atoi(argv[i]);
++		    && cut_line == 1000) {
++			/* rosco: -0 divided by zero, -70000 was cut to
++			 * 16 bits */
++			cut_line = atol(argv[i] + 1);
++			if (cut_line <= 0) usage();
++		}
+ 		else if (argv[i][1] == '\0' && infile == -1)
+ 			infile = 0;
+ 		else
+@@ -44,8 +49,19 @@
+ 			std_err("Cannot open input file.\n");
+ 			exit(1);
+ 		}
+-	} else
++	} else {
++		/* rosco: the name went into out_file[100] unchecked, and a
++		 * name longer than 12 characters lost its suffix to the
++		 * 14 character limit: every piece overwrote the same file */
++		char *base = strrchr(argv[i], '/');
++		base = base ? base + 1 : argv[i];
++		if (strlen(argv[i]) > sizeof(out_file) - 3
++		    || strlen(base) > NAME_MAX - 2) {
++			std_err("split: name too long\n");
++			exit(1);
++		}
+ 		strcpy(out_file, argv[i]);
++	}
+   }
+   if (infile == -1) infile = 0;
+   strcat(out_file, "aa");
+@@ -85,12 +101,21 @@
+ 	if (write(fd, base, (int) (index - base)) != (int) (index - base))
+ 		quit();
+   }
++  if (n < 0) {			/* rosco: read errors were ignored */
++	std_err("split: read error\n");
++	exit(1);
++  }
+ }
+ 
+ int newfile()
+ {
+   int fd;
+ 
++  if (suffix[-1] == 'z' && suffix[0] == 'z') {
++	/* rosco: after "zz" it went on with "{a", "{b", ... */
++	std_err("split: more than 676 files\n");
++	exit(1);
++  }
+   if (++*suffix > 'z') {	/* Increment letter */
+ 	*suffix = 'a';		/* Reset last letter */
+ 	++*(suffix - 1);	/* Previous letter must be incremented */

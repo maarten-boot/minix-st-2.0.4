@@ -1,0 +1,78 @@
+--- orig/simple/expand.c	2026-10-22 10:29:13.803009596 +0200
++++ new/simple/expand.c	2026-10-22 10:30:19.185201453 +0200
+@@ -9,28 +9,36 @@
+ 
+ #define MAX_TABS 32
+ 
+-int column = 0;			/* Current column, retained between files  */
++long column = 0;		/* Current column, retained between files  */
++				/* rosco: long, a 16-bit int wrapped */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+-_PROTOTYPE(void Expand, (FILE *f, int tab_index, int tabs []));
++_PROTOTYPE(void Expand, (FILE *f, int tab_index, long tabs []));
+ 
+ int main(argc, argv)
+ int argc;
+ char *argv[];
+ {
+-  int tabs[MAX_TABS];
++  long tabs[MAX_TABS];
+   int tab_index = 0;		/* Default one tab   */
+-  int i;
++  int i, status = 0;
+   FILE *f;
+ 
+   tabs[0] = 8;			/* Default tab stop  */
+ 
+   if (argc > 1 && argv[1][0] == '-') {
+ 	char *p = argv[1];
+-	int last_tab_stop = 0;
++	long last_tab_stop = 0;
+ 
+-	for (tab_index = 0; tab_index < MAX_TABS; ++tab_index) {
+-		if ((tabs[tab_index] = atoi(p + 1)) <= last_tab_stop) {
++	for (tab_index = 0; ; ++tab_index) {
++		/* rosco: a 33rd tab stop ended the loop with tab_index
++		 * 32, and Expand() read tabs[32] past the array */
++		if (tab_index == MAX_TABS) {
++			fprintf(stderr, "Too many tab stops (at most %d)\n",
++				MAX_TABS);
++			exit(1);
++		}
++		if ((tabs[tab_index] = atol(p + 1)) <= last_tab_stop) {
+ 			fprintf(stderr, "Bad tab stop spec\n");
+ 			exit(1);
+ 		}
+@@ -48,22 +56,27 @@
+ 	for (i = 1; i < argc; ++i) {
+ 		if ((f = fopen(argv[i], "r")) == NULL) {
+ 			perror(argv[i]);
+-			exit(1);
++			status = 1;	/* rosco: go on, exit 1 */
++			continue;
+ 		}
+ 		Expand(f, tab_index, tabs);
+ 		fclose(f);
+ 	}
+ 
+-  return(0);
++  if (fflush(stdout) == EOF || ferror(stdout)) {
++	perror("expand: write error");	/* rosco: was exit 0 */
++	return(1);
++  }
++  return(status);
+ }
+ 
+ 
+ void Expand(f, tab_index, tabs)
+ FILE *f;
+ int tab_index;
+-int tabs[];
++long tabs[];
+ {
+-  int next;
++  long next;
+   int c;
+   int i;
+ 

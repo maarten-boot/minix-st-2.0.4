@@ -1,0 +1,44 @@
+--- orig/simple/unexpand.c	2026-10-22 10:29:13.806022005 +0200
++++ new/simple/unexpand.c	2026-10-22 10:30:19.197858873 +0200
+@@ -9,7 +9,8 @@
+ #define  TAB   8
+ 
+ 
+-int column = 0;			/* Current column, retained between files  */
++long column = 0;		/* Current column, retained between files  */
++				/* rosco: long, a 16-bit int wrapped */
+ int spaces = 0;			/* Spaces since last tab stop  	    */
+ int leading_blank = 1;		/* Only unexpand leading blanks,	    */
+ /* Overruled by -a option	            */
+@@ -23,7 +24,7 @@
+ 
+ {
+   int all = 0;			/* -a flag means unexpand all spaces  */
+-  int i;
++  int i, status = 0;
+   FILE *f;
+ 
+   if (argc > 1 && argv[1][0] == '-') {
+@@ -43,7 +44,8 @@
+ 	for (i = 1; i < argc; ++i) {
+ 		if ((f = fopen(argv[i], "r")) == NULL) {
+ 			perror(argv[i]);
+-			exit(1);
++			status = 1;	/* rosco: go on, exit 1 */
++			continue;
+ 		}
+ 		Unexpand(f, all);
+ 		fclose(f);
+@@ -57,7 +59,11 @@
+ 	--spaces;
+   }
+ 
+-  return(0);
++  if (fflush(stdout) == EOF || ferror(stdout)) {
++	perror("unexpand: write error");	/* rosco: was exit 0 */
++	return(1);
++  }
++  return(status);
+ }
+ 
+ void Unexpand(f, all)

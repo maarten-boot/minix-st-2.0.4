@@ -1,0 +1,268 @@
+--- orig/simple/pr.c	2026-10-22 10:29:13.836778154 +0200
++++ new/simple/pr.c	2026-10-22 10:58:34.162060886 +0200
+@@ -85,21 +85,23 @@
+ BOOL dont_fold = FALSE;		/* original. If the line does not fit eat it. */
+ short columns;
+ short cwidth;
+-short start_page = 1;
++long start_page = 1;		/* rosco: long, as the page numbers */
+ short width = DEF_WIDTH;
+ short length = DEF_LENGTH;
+-short linenr;
++long linenr;			/* rosco: long, -n printed -32768 after 32767 */
+ char *line_buf;			/* used in format for multi-column output */
++char *fname;			/* rosco: the file, for its time in the header */
++int status = 0;
+ 
+ char output[1024];
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(static char *myalloc, (size_t size));
+-_PROTOTYPE(char skip_page, (int lines, int width, FILE * filep));
++_PROTOTYPE(int skip_page, (long lines, int width, FILE * filep));
+ _PROTOTYPE(void format, (FILE * filep));
+-_PROTOTYPE(void print_page, (int pagenr, int maxcol));
++_PROTOTYPE(void print_page, (long pagenr, int maxcol));
+ _PROTOTYPE(void print, (FILE * filep));
+-_PROTOTYPE(void out_header, (int page));
++_PROTOTYPE(void out_header, (long page));
+ _PROTOTYPE(void print_time, (time_t t));
+ 
+ int main(argc, argv)
+@@ -118,7 +120,8 @@
+ 
+ 	ptr = argv[index++];
+ 	if (*ptr == '+') {
+-		start_page = atoi(++ptr);
++		/* rosco: +0 printed a NUL, page numbers are long */
++		if ((start_page = atol(++ptr)) < 1) start_page = 1;
+ 		continue;
+ 	}
+ 	if (*ptr != '-') {	/* no flags */
+@@ -141,6 +144,10 @@
+ 			minix_number = TRUE;
+ 			break;
+ 		    case 'h':
++			if (index >= argc) {	/* rosco: was a NULL header */
++				fprintf(stderr, "pr: -h needs a header\n");
++				exit(1);
++			}
+ 			header = argv[index++];
+ 			ext_header_set = TRUE;
+ 			break;
+@@ -171,10 +178,28 @@
+ 
+ 	if (!no_header) length -= 10;
+ 
++	/* rosco: checked before the allocation, which got a negative size */
++	if (length <= 0) {
++		fprintf(stderr, "Minimal length should be %d\n", no_header ?
++			1 : 11);
++		exit(1);
++	}
++	/* rosco: room for at least one character per line; with -n and
++	 * many columns or a small width no character was ever read, and
++	 * pr printed empty pages forever */
++	if (columns ? width / columns < 2 || width / columns + 1
++			- (number ? NUM_WIDTH : 0) + (columns == 1) < 3
++		    : width - (number ? NUM_WIDTH : 0) < 1) {
++		fprintf(stderr, "Too many columns for page width.\n");
++		exit(1);
++	}
+ 	if (columns) {
+ 		cwidth = width / columns + 1;
+-		if (columns > width) {
+-			fprintf(stderr, "Too many columns for page width.\n");
++		/* rosco: the size and L_BUF() are 16-bit: -l10000 -8
++		 * allocated 320000 % 65536 bytes and wrote past them */
++		if ((long) length * columns > 8000L) {
++			fprintf(stderr, "pr: page too large for -%d\n",
++				columns);
+ 			exit(1);
+ 		}
+ 
+@@ -185,11 +210,6 @@
+ 		for (col = 0; col < columns; col++)
+ 			L_BUF(line, col) = NULL;
+ 
+-	if (length <= 0) {
+-		fprintf(stderr, "Minimal length should be %d\n", no_header ?
+-			1 : 11);
+-		exit(1);
+-	}
+ 	while (index <= argc) {	/* print all files, including stdin */
+ 		if (index < argc && (*argv[index] == '-' || *argv[index] == '+'))
+ 			break;	/* Format change */
+@@ -200,10 +220,15 @@
+ 		} else {
+ 			if ((file = fopen(argv[index], "r")) == (FILE *) 0) {
+ 				fprintf(stderr, "Cannot open %s\n", argv[index++]);
++				status = 1;	/* rosco: was exit 0 */
++				/* rosco: after a last file that could not
++				 * be opened pr went on to read stdin */
++				if (index >= argc) break;
+ 				continue;
+ 			}
+ 			if (!ext_header_set) header = argv[index];
+ 		}
++		fname = argc == index ? NULL : argv[index];
+ 		if (columns)
+ 			format(file);
+ 		else
+@@ -222,15 +247,22 @@
+ 	if (columns) free(line_buf);
+   } while (index <= argc);	/* "pr -l60" should work too */
+ 
+-  (void) fflush(stdout);
+-  return(0);
++  if (fflush(stdout) == EOF || ferror(stdout)) {
++	perror("pr: write error");	/* rosco: was exit 0 */
++	return(1);
++  }
++  return(status);
+ }
+ 
+-char skip_page(lines, width, filep)
+-int lines, width;
++/* rosco: returned a char, so a byte 0xFF was taken as EOF; the character
++ * where a line was folded was read and lost.
++ */
++int skip_page(lines, width, filep)
++long lines;
++int width;
+ FILE *filep;
+ {
+-  short c;
++  int c = '\0';
+   int char_cnt;
+   int w;
+ 
+@@ -242,7 +274,7 @@
+ 			w -= NUM_WIDTH;
+ 
+ 	char_cnt = 0;
+-	while ((c = getc(filep)) != '\n' && c != EOF && char_cnt < w) {
++	while (char_cnt < w && (c = getc(filep)) != '\n' && c != EOF) {
+ 		/* Calculate if this line is longer than "width (w)"
+ 		 * characters */
+ 		if (c == '\b' && back_space) {
+@@ -266,7 +298,7 @@
+   char buf[512];
+   short c = '\0';
+   short index, lines, i;
+-  short page_number = 0;
++  long page_number = 0;
+   short maxcol = columns;
+   short wdth;
+   short line, col;
+@@ -276,7 +308,7 @@
+ 	page_number++;
+ 
+ 	if (page_number < start_page && c != EOF) {
+-		c = (char) skip_page(columns * length, cwidth, filep);
++		c = skip_page((long) columns * length, cwidth, filep);
+ 		continue;
+ 	}
+ 	if (c == EOF) return;
+@@ -299,7 +331,9 @@
+ 		/* Intermidiate colums are shortened by 1 char */
+ 		/* Last column not */
+ 		if (col + 1 == columns) wdth++;
+-		for (i = 0; i < wdth - 1; i++) {
++		/* rosco: backspaces and -w over 511 ran past buf */
++		for (i = 0; i < wdth - 1 && index < sizeof(buf) - TAB_WIDTH - 1;
++									i++) {
+ 			c = getc(filep);
+ 			if (c == '\n' || c == EOF) break;
+ 
+@@ -346,14 +380,15 @@
+ }
+ 
+ void print_page(pagenr, maxcol)
+-short pagenr, maxcol;
++long pagenr;
++short maxcol;
+ {
+   short pad, i, j;
+   short width;
+   char *p;
+ 
+   if (minix_number)
+-	linenr = (pagenr - 1) * length + 1;
++	linenr = (pagenr - 1) * length + 1L;
+   else
+ 	linenr = 1;
+ 
+@@ -363,7 +398,7 @@
+ 	for (j = 0; j < maxcol; j++) {
+ 		width = cwidth;
+ 		if (number && j == 0) {	/* first columns */
+-			printf("%7.7d ", linenr++);	/* 7 == NUM_WIDTH-1 */
++			printf("%7.7ld ", linenr++);	/* 7 == NUM_WIDTH-1 */
+ 			width -= NUM_WIDTH;
+ 		}
+ 		pad = 0;
+@@ -381,7 +416,7 @@
+ FILE *filep;
+ {
+   short c = '\0';
+-  short page_number = 0;
++  long page_number = 0;
+   short lines;
+   short cnt;
+   short w = width;
+@@ -403,7 +438,7 @@
+ 	}
+ 	if (c == EOF) return;
+ 
+-	if (minix_number) linenr = (page_number - 1) * length + 1;
++	if (minix_number) linenr = (page_number - 1) * length + 1L;
+ 
+ 	if (page_number == start_page) c = getc(filep);
+ 
+@@ -413,7 +448,7 @@
+ 		if (lines == length && !no_header) out_header(page_number);
+ 		if (number)
+ 			if (pr_number)
+-				printf("%7.7d ", linenr++);	/* 7 == NUM_WIDTH-1 */
++				printf("%7.7ld ", linenr++);	/* 7 == NUM_WIDTH-1 */
+ 			else
+ 				printf("%7c ", ' ');	/* 7 == NUM_WIDTH-1 */
+ 		pr_number = FALSE;
+@@ -447,8 +482,8 @@
+ 		printf("\n\n\n\n\n");
+   } while (c != EOF);
+ 
+-  /* Fill last page */
+-  if (page_number >= start_page) {
++  /* Fill last page (rosco: not with -t) */
++  if (page_number >= start_page && !no_header) {
+ 	while (lines--) putchar('\n');
+   }
+ }
+@@ -467,18 +502,19 @@
+ }
+ 
+ void out_header(page)
+-short page;
++long page;
+ {
+   time_t t;
+   struct stat buf;
+ 
+-  if (strlen(header)) {
+-	stat(header, &buf);	/* use last modify time for file */
+-	t = buf.st_mtime;
+-  } else
++  /* rosco: the header was stat()ed, so "-h title" printed an uninitialized
++   * time; now the file's time, the current time for stdin */
++  if (fname != NULL && stat(fname, &buf) == 0)
++	t = buf.st_mtime;	/* use last modify time for file */
++  else
+ 	(void) time(&t);	/* use current time for stdin */
+   print_time(t);
+-  printf("  %s   Page %d\n\n\n", header, page);
++  printf("  %s   Page %ld\n\n\n", header, page);
+ }
+ 
+ char *moname[] = {
