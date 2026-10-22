@@ -17,7 +17,14 @@ else
 
 CC	= m68k-elf-gcc
 TOOLS	= ../tools
-MKMINIX	= python3 $(TOOLS)/mkminix.py -q
+# Every command gets at least 8kw (16K) between its bss and the top of its
+# stack (-m).  That gap holds the arguments and environment (up to ARG_MAX,
+# 4K), the heap (malloc grows it in 4K steps, and stdio's buffers come from
+# it) and the stack (gcc's frames are bigger than ACK's; _doprnt alone has
+# a 1K buffer).  The ACK build's 4kw left no room: cut, install, ifdef,
+# who, mail, at, ... died with "Memory fault" one by one, and wc with a
+# 1.2K environment.
+MKMINIX	= python3 $(TOOLS)/mkminix.py -q -m 8kw
 
 c	= ../../commands
 i	= ../../../include

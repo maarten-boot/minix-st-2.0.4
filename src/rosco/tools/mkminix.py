@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Convert an m68k ELF program into a Minix-ST executable.
 
-	mkminix.py [-S stack] [-q] in.elf out
+	mkminix.py [-S stack] [-m minstack] [-q] in.elf out
 
 The ELF file must be linked at 0 with src/rosco/tools/prog.ld and
 --emit-relocs (-q), so the absolute 32-bit relocations survive.  The output
@@ -16,7 +16,8 @@ is what MM's exec (mm/exec.c) loads:
     even, 2..254; 1 means "add 254, no relocation"; 0 ends the list).  A
     long 0 means no relocations.
 
--S gives the stack size (default 8k; as chmem: k = 1024, w = 2 bytes).
+-S gives the stack size (default 8k; as chmem: k = 1024, w = 2 bytes);
+-m a minimum for it (a smaller -S is raised to it).
 -q is quiet.  This is a host program.
 """
 
@@ -89,17 +90,21 @@ class Elf:
 def main():
     args = sys.argv[1:]
     stack = 8 * 1024
+    minstack = 0
     quiet = False
     while args and args[0].startswith("-"):
         a = args.pop(0)
         if a == "-S":
             stack = size_arg(args.pop(0))
+        elif a == "-m":
+            minstack = size_arg(args.pop(0))
         elif a == "-q":
             quiet = True
         else:
             die("unknown option " + a)
     if len(args) != 2:
-        die("usage: mkminix.py [-S stack] [-q] in.elf out")
+        die("usage: mkminix.py [-S stack] [-m minstack] [-q] in.elf out")
+    stack = max(stack, minstack)
     elf = Elf(open(args[0], "rb").read())
 
     ti, text = elf.section(".text")
