@@ -1,0 +1,319 @@
+--- orig/simple/compress.c	2026-10-23 12:58:09.294020067 +0200
++++ new/simple/compress.c	2026-10-23 13:06:41.919913420 +0200
+@@ -76,11 +76,12 @@
+ 
+ /* The default for Minix is -b13, but we can do -b16 if the machine can. */
+ #define DEFAULTBITS 13
+-#if INT_MAX == 32767
+-# define BITS 13
+-#else
+-# define BITS 16
+-#endif
++/* rosco: 16 bits.  With a 16 bit int it was 13: files compressed with the
++ * default -b16 of other systems could not be uncompressed ("compressed
++ * with 16 bits, can only handle 13 bits").  The tables (414K) are static
++ * arrays: malloc() takes a 16 bit size_t.  Codes are long (code_int).
++ */
++#define BITS 16
+ 
+ #ifdef USERMEM
+ # if USERMEM >= (433484+SACREDMEM)
+@@ -173,11 +174,12 @@
+ int n_bits;				/* number of bits/code */
+ int maxbits = DEFAULTBITS;		/* user settable max # bits/code */
+ code_int maxcode;			/* maximum code, given n_bits */
+-code_int maxmaxcode = 1 << BITS;	/* should NEVER generate this code */
++/* rosco: (code_int) 1 << ..., an int shift gave 0 and -1 for 16 bits */
++code_int maxmaxcode = (code_int) 1 << BITS;	/* should NEVER generate this code */
+ #ifdef COMPATIBLE		/* But wrong! */
+-# define MAXCODE(n_bits)	(1 << (n_bits) - 1)
++# define MAXCODE(n_bits)	((code_int) 1 << (n_bits) - 1)
+ #else
+-# define MAXCODE(n_bits)	((1 << (n_bits)) - 1)
++# define MAXCODE(n_bits)	(((code_int) 1 << (n_bits)) - 1)
+ #endif /* COMPATIBLE */
+ 
+ #ifndef AZTEC86
+@@ -186,6 +188,8 @@
+ #else
+ 	count_int *htab;
+ 	unsigned short *codetab;
++	count_int htab_space[HSIZE];		/* rosco: static, see BITS */
++	unsigned short codetab_space[HSIZE];
+ #	define HTABSIZE ((size_t)(HSIZE*sizeof(count_int)))
+ #	define CODETABSIZE ((size_t)(HSIZE*sizeof(unsigned short)))
+ 
+@@ -211,7 +215,7 @@
+ # define de_stack		((char_type *)(htab2))
+ #else	/* Normal machine */
+ # define tab_suffixof(i)	((char_type *)(htab))[i]
+-# define de_stack		((char_type *)&tab_suffixof(1<<BITS))
++# define de_stack		((char_type *)&tab_suffixof((code_int) 1<<BITS))
+ #endif	/* XENIX_16 */
+ 
+ code_int free_ent = 0;			/* first unused entry */
+@@ -264,7 +268,12 @@
+ #define	CLEAR	256	/* table clear output code */
+ 
+ int force = 0;
+-char ofname [100];
++char ofname [PATH_MAX + 3];	/* rosco: was 100, overrun by long names */
++/* rosco: ofname was removed after errors and ^C also when this program
++ * had not made it: "compress -cd x.Z" removed x (on a write error, or at
++ * the "overwrite?" question); now only an output file made here
++ */
++int ofmade = 0;
+ #ifdef DEBUG
+ int verbose = 0;
+ #endif /* DEBUG */
+@@ -290,7 +299,8 @@
+ char **argv;
+ {
+     int overwrite = 0;	/* Do not overwrite unless given -f flag */
+-    char tempname[100];
++    char tempname[PATH_MAX + 3];	/* rosco: was 100, overrun by long names */
++    int bad = 0;	/* rosco: exit 1 if a file could not be done */
+     char **filelist, **fileptr;
+     char *cp;
+     struct stat statbuf;
+@@ -307,16 +317,8 @@
+ 	_setmode(stdout,_BINARY);
+ 	_setmode(stderr,_TEXT);
+ #endif
+-	if (NULL == (htab = (count_int *)malloc(HTABSIZE)))
+-	{
+-		fprintf(stderr,"Can't allocate htab\n");
+-		exit(1);
+-	}
+-	if (NULL == (codetab = (unsigned short *)malloc(CODETABSIZE)))
+-	{
+-		fprintf(stderr,"Can't allocate codetab\n");
+-		exit(1);
+-	}
++	htab = htab_space;		/* rosco: was malloc(HTABSIZE) */
++	codetab = codetab_space;
+ #endif
+ #ifdef COMPATIBLE
+     nomagic = 1;	/* Original didn't have a magic number */
+@@ -427,13 +429,20 @@
+ 
+     if(maxbits < INIT_BITS) maxbits = INIT_BITS;
+     if (maxbits > BITS) maxbits = BITS;
+-    maxmaxcode = 1 << maxbits;
++    maxmaxcode = (code_int) 1 << maxbits;
+ 
+     if (*filelist != NULL) 
+ 	{
+-		for (fileptr = filelist; *fileptr; fileptr++) 
++		for (fileptr = filelist; *fileptr; fileptr++)
+ 		{
++		    if (exit_stat == 1) bad = 1;	/* rosco */
+ 		    exit_stat = 0;
++		    if (strlen(*fileptr) > PATH_MAX)	/* rosco */
++		    {
++			fprintf(stderr, "%s: name too long\n", *fileptr);
++			bad = 1;
++			continue;
++		    }
+ 		    if (do_decomp != 0) 
+ 			{			/* DECOMPRESSION */
+ 				/* Check for .Z suffix */
+@@ -469,9 +478,9 @@
+ 				    *fileptr = tempname;
+ 				}
+ 				/* Open input file */
+-				if ((freopen(*fileptr, "r", stdin)) == NULL) 
++				if ((freopen(*fileptr, "r", stdin)) == NULL)
+ 				{
+-					perror(*fileptr); continue;
++					perror(*fileptr); bad = 1; continue;
+ 				}
+ 				/* Check the magic number */
+ 				if (nomagic == 0) 
+@@ -483,17 +492,22 @@
+ 						fprintf(stderr, 
+ 						"%s: not in compressed format %x %x\n",
+ 					    *fileptr,magic1,magic2);
++					    bad = 1;
+ 					    continue;
+ 				    }
+ 				    maxbits = getc(stdin);	/* set -b from file */
+ 				    block_compress = maxbits & BLOCK_MASK;
+ 				    maxbits &= BIT_MASK;
+-				    maxmaxcode = 1 << maxbits;
+-				    if(maxbits > BITS) 
++				    maxmaxcode = (code_int) 1 << maxbits;
++				    /* rosco: below 9 bits n_bits grew past 16
++				     * (getcode() overran buf)
++				     */
++				    if(maxbits > BITS || maxbits < INIT_BITS)
+ 					{
+ 						fprintf(stderr,
+ 					"%s: compressed with %d bits, can only handle %d bits\n",
+ 						*fileptr, maxbits, BITS);
++						bad = 1;
+ 						continue;
+ 				    }
+ 				}
+@@ -544,9 +558,9 @@
+ 				    continue;
+ 				}
+ 				/* Open input file */
+-				if ((freopen(*fileptr, "r", stdin)) == NULL) 
++				if ((freopen(*fileptr, "r", stdin)) == NULL)
+ 				{
+-				    perror(*fileptr); continue;
++					perror(*fileptr); bad = 1; continue;
+ 				}
+ 				(void)stat( *fileptr, &statbuf );
+ 				fsize = (long) statbuf.st_size;
+@@ -555,17 +569,13 @@
+ 				 * but the sizes match earlier #defines, which
+ 				 * serve as upper bounds on the number of output codes. 
+ 				 */
++				/* rosco: always HSIZE.  The xor hash can give
++				 * an index above a smaller hsize, and the probe
++				 * then walked out of the part cl_hash() clears
++				 * (stale entries of the previous file, and with
++				 * BITS 13 past the end of the table).
++				 */
+ 				hsize = HSIZE; /*lint -e506 -e712 */
+-				if ( fsize < (1 << 12) )
+-				    hsize = min ( 5003, HSIZE );
+-				else if ( fsize < (1 << 13) )
+-				    hsize = min ( 9001, HSIZE );
+-				else if ( fsize < (1 << 14) )
+-				    hsize = min ( 18013, HSIZE );
+-				else if ( fsize < (1 << 15) )
+-				    hsize = min ( 35023, HSIZE );
+-				else if ( fsize < 47000 )
+-				    hsize = min ( 50021, HSIZE ); /*lint +e506 +e712 */
+ 
+ 				/* Generate output filename */
+ 				strcpy(ofname, *fileptr);
+@@ -642,8 +652,10 @@
+ 				if (freopen(ofname, "w", stdout) == NULL) 
+ 				{
+ 				    perror(ofname);
++				    bad = 1;
+ 				    continue;
+ 				}
++				ofmade = 1;	/* rosco */
+ 				if(!quiet)
+ 					fprintf(stderr, "%s: ", *fileptr);
+ 		    }
+@@ -665,6 +677,7 @@
+ 		    if(zcat_flg == 0) 
+ 			{
+ 				copystat(*fileptr, ofname);	/* Copy stats */
++				ofmade = 0;	/* rosco */
+ 				if((exit_stat == 1) || (!quiet))
+ 					putc('\n', stderr);
+ 		    }
+@@ -693,9 +706,9 @@
+ 				maxbits = getc(stdin);	/* set -b from file */
+ 				block_compress = maxbits & BLOCK_MASK;
+ 				maxbits &= BIT_MASK;
+-				maxmaxcode = 1 << maxbits;
++				maxmaxcode = (code_int) 1 << maxbits;
+ 				fsize = 100000;		/* assume stdin large for USERMEM */
+-				if(maxbits > BITS) 
++				if(maxbits > BITS || maxbits < INIT_BITS)	/* rosco */
+ 				{
+ 					fprintf(stderr,
+ 					"stdin: compressed with %d bits, can only handle %d bits\n",
+@@ -712,7 +725,8 @@
+ #endif /* DEBUG */
+ 		}
+     }
+-    return(exit_stat);
++    if (exit_stat == 1) bad = 1;	/* rosco */
++    return(bad ? 1 : exit_stat);	/* rosco: was 0 after missing files */
+ }
+ 
+ static int offset;
+@@ -745,7 +759,7 @@
+ #ifdef XENIX_16
+     REGISTER code_int disp;
+ #else	/* Normal machine */
+-    REGISTER int disp;
++    REGISTER code_int disp;	/* rosco: was int, hsize - i is up to 69001 */
+ #endif
+     REGISTER code_int hsize_reg;
+     REGISTER int hshift;
+@@ -789,7 +803,7 @@
+ 	{
+ 		in_count++;
+ 		fcode = (long) (((long) c << maxbits) + ent);
+-	 	i = ((c << hshift) ^ ent);	/* xor hashing */
++	 	i = (((code_int) c << hshift) ^ ent);	/* xor hashing; rosco: long */
+ 
+ 		if ( htabof (i) == fcode ) 
+ 		{
+@@ -1048,6 +1062,8 @@
+     finchar = oldcode = getcode();
+     if(oldcode == -1)	/* EOF already? */
+ 	return;			/* Get out of here */
++    if(oldcode >= 256)		/* rosco: see below */
++	oops(0);
+     putc( (char)finchar,stdout );		/* first code must be 8 bits = char */
+     if(ferror(stdout))		/* Crash if can't write */
+ 	writeerr();
+@@ -1068,6 +1084,12 @@
+ 	 * Special case for KwKwK string.
+ 	 */
+ 	if ( code >= free_ent ) {
++	    /* rosco: a code past the next free one is corrupt input; it
++	     * could make a loop in the prefix chains, and the loop below
++	     * then wrote on past de_stack through all memory (no MMU)
++	     */
++	    if ( code > free_ent )
++		oops(0);
+             *stackp++ = finchar;
+ 	    code = oldcode;
+ 	}
+@@ -1185,13 +1207,13 @@
+ #ifdef NO_UCHAR
+ 	    code |= (*bp++ & 0xff) << r_off;
+ #else
+-	    code |= *bp++ << r_off;
++	    code |= (code_int) *bp++ << r_off;	/* rosco: long, r_off up to 15 */
+ #endif /* NO_UCHAR */
+ 	    r_off += 8;
+ 	    bits -= 8;
+ 	}
+ 	/* high order bits. */
+-	code |= (*bp & rmask[bits]) << r_off;
++	code |= (code_int) (*bp & rmask[bits]) << r_off;	/* rosco: up to 16 */
+ #endif /* vax */
+     offset += n_bits;
+ 
+@@ -1338,8 +1360,8 @@
+ 
+ void writeerr()
+ {
+-    perror ( ofname );
+-    unlink ( ofname );
++    perror ( ofmade ? ofname : "stdout" );	/* rosco */
++    if (ofmade) unlink ( ofname );
+     exit ( 1 );
+ }
+ 
+@@ -1441,7 +1463,7 @@
+ int dummy; /* to keep the compiler happy */
+ {
+ 	(void)signal(SIGINT,SIG_IGN);
+-    unlink ( ofname );
++    if (ofmade) unlink ( ofname );	/* rosco */
+     exit ( 1 );
+ }
+ 
+@@ -1451,7 +1473,7 @@
+ 	(void)signal(SIGSEGV,SIG_IGN);
+     if ( do_decomp == 1 ) 
+     	fprintf ( stderr, "uncompress: corrupt input\n" );
+-    unlink ( ofname );
++    if (ofmade) unlink ( ofname );	/* rosco */
+     exit ( 1 );
+ }
+ #endif

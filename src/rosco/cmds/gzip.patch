@@ -44,3 +44,79 @@
  #endif
  
  #if defined(VAXC) || defined(VMS)
+--- a/gzip.c
++++ b/gzip.c
+@@ -521,6 +521,14 @@
+             if (*optarg == '.') optarg++;
+ #endif
+             z_len = strlen(optarg);
++            /* rosco: optarg was copied into z_suffix[MAX_SUFFIX+1] before
++             * the length check below: a long -S overflowed it.
++             */
++            if (z_len > MAX_SUFFIX) {
++                fprintf(stderr, "%s: incorrect suffix '%s'\n",
++                        progname, optarg);
++                do_exit(ERROR);
++            }
+             strcpy(z_suffix, optarg);
+             break;
+ 	case 't':
+@@ -566,8 +574,9 @@
+     }
+ #endif
+     if ((z_len == 0 && !decompress) || z_len > MAX_SUFFIX) {
++        /* rosco: z_suffix, optarg may be NULL here (an option after -S) */
+         fprintf(stderr, "%s: incorrect suffix '%s'\n",
+-                progname, optarg);
++                progname, z_suffix);
+         do_exit(ERROR);
+     }
+     if (do_lzw && !decompress) work = lzw;
+@@ -1006,6 +1015,16 @@
+     char *dot; /* pointer to ifname extension, or NULL */
+ #endif
+ 
++    /* rosco: a name longer than ifname[MAX_PATH_LEN] overflowed it here
++     * and in the strcat()s of a suffix below (the check of gzip 1.2.4a,
++     * with room for the longest suffix).
++     */
++    if (strlen(iname) >= sizeof(ifname) - (MAX_SUFFIX+1)) {
++	errno = ENAMETOOLONG;
++	perror(iname);
++	exit_code = ERROR;
++	return ERROR;
++    }
+     strcpy(ifname, iname);
+ 
+     /* If input file exists, return OK. */
+@@ -1244,6 +1263,10 @@
+ 		/* Copy the base name. Keep a directory prefix intact. */
+                 char *p = basename(ofname);
+                 char *base = p;
++                char *base2;
++                static char dflt[MAX_PATH_LEN]; /* rosco: the default name */
++
++                strcpy(dflt, base);
+ 		for (;;) {
+ 		    *p = (char)get_char();
+ 		    if (*p++ == '\0') break;
+@@ -1251,6 +1274,19 @@
+ 			error("corrupted input -- file name too large");
+ 		    }
+ 		}
++                /* rosco: the stored name replaced the base name with its
++                 * directory parts: "gunzip -N" of a file holding
++                 * "../../etc/x" or "/etc/x" wrote outside the directory
++                 * (CVE-2005-1228).  Keep only its base name, and the
++                 * default name if that is empty, "." or "..".
++                 */
++                base2 = strrchr(base, PATH_SEP);
++                base2 = base2 == NULL ? base : base2 + 1;
++                if (*base2 == '\0' || strequ(base2, ".") ||
++                    strequ(base2, "..")) {
++                    base2 = dflt;
++                }
++                memmove(base, base2, strlen(base2) + 1);
+                 /* If necessary, adapt the name to local OS conventions: */
+                 if (!list) {
+                    MAKE_LEGAL_NAME(base);

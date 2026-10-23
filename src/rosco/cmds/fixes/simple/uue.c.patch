@@ -1,0 +1,98 @@
+--- orig/simple/uue.c
++++ new/simple/uue.c
+@@ -48,7 +48,7 @@
+ char seqc = SEQMAX;
+ 
+ int split = 0;
+-int fileln = 32000;
++long fileln = 32000;	/* rosco: long, -n over 32767 wrapped in an int */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void maketable, (void));
+@@ -63,6 +63,7 @@
+ {
+   char *prog_name;
+   char *fname;
++  char *bname;
+   int filter;
+ 
+   prog_name = argv[0] + strlen(argv[0]);
+@@ -74,7 +75,10 @@
+ 	exit(2);
+   }
+   if (argv[1][0] == '-') {
+-	fileln = -atoi(argv[1]);
++	/* rosco: -atoi() wrapped in 16 bits (-40000 gave a negative or a
++	 * wrong count); the line count is a long now.
++	 */
++	fileln = -atol(argv[1]);
+ 	if (fileln <= 0) {
+ 		fprintf(stderr, "Wrong file length arg.\n");
+ 		exit(3);
+@@ -82,6 +86,10 @@
+ 	split = 1;
+ 	argv++;
+ 	argc--;
++	if (argc < 2) {		/* rosco: "uue -500" alone opened NULL */
++		fprintf(stderr, "Usage: %s [-n] inputfile [-]\n", prog_name);
++		exit(2);
++	}
+   }
+   if (filter) {		/* old uuencode reads from standard input */
+ 	fp = stdin;
+@@ -93,7 +101,12 @@
+   }
+   fname = argv[1] + strlen(argv[1]);
+   while (fname > argv[1] && fname[-1] != '/') fname--;
+-  strcpy(ofname, fname);
++  bname = fname;
++  /* rosco: strcpy() into ofname[80] overflowed on a long name; only the
++   * first FILE_NAME characters are used.
++   */
++  strncpy(ofname, fname, (size_t) FILE_NAME);
++  ofname[FILE_NAME] = '\0';
+   fname = ofname;
+   do {
+ 	if (*fname == '.') *fname = '\0';
+@@ -114,9 +127,19 @@
+ 	}
+   }
+   maketable();
+-  fprintf(outp, "begin %o %s\n", 0644, argv[1]);
++  /* rosco: the begin line named the file as given ("uue ../x" or "uue
++   * /usr/src/x"): uudecode wrote it back there, and uud now refuses such
++   * names.  Only the base name goes into the begin line.
++   */
++  fprintf(outp, "begin %o %s\n", 0644, bname);
+   encode();
+   fprintf(outp, "end\n");
++  /* rosco: write errors (a full disk) went unreported */
++  if (fflush(outp) != 0 || ferror(outp) || ferror(fp)) {
++	fprintf(stderr, "%s: %s error\n", prog_name,
++		ferror(fp) ? "read" : "write");
++	exit(1);
++  }
+   fclose(outp);
+   return(0);
+ }
+@@ -150,7 +173,7 @@
+ {
+   char buf[80];
+   register int i, n;
+-  register int lines;
++  register long lines;		/* rosco: long, as fileln */
+   lines = 6;
+ 
+   for (;;) {
+@@ -210,7 +233,10 @@
+   register int c, i;
+   for (i = 0; i < cnt; i++) {
+ 	c = fgetc(fp);
+-	if (feof(fp)) return(i);
++	/* rosco: on a read error feof() stayed 0 and EOF was encoded as
++	 * data, forever
++	 */
++	if (c == EOF) return(i);
+ 	buf[i] = c;
+   }
+   return(cnt);

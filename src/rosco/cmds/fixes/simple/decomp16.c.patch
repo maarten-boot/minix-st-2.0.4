@@ -1,0 +1,57 @@
+--- orig/simple/decomp16.c	2026-10-23 12:58:09.298020023 +0200
++++ new/simple/decomp16.c	2026-10-23 13:04:59.137319693 +0200
+@@ -78,6 +78,7 @@
+ #include <fcntl.h>
+ #include <stdlib.h>
+ #include <unistd.h>
++#include <sys/wait.h>
+ 
+ #define BUFSZ		1024	/* size of i/o buffers */
+ #define BUFSZ_2		(BUFSZ/2)	/* # of unsigned shorts in i/o bufs */
+@@ -109,6 +110,7 @@
+ int maxbits;			/* limit on number of bits */
+ int clearflg;			/* if set, allow CLEAR */
+ int inmod;			/* mod 8 for getbits() */
++int child = -1;			/* rosco: the pass that feeds this one */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void ffork, (void));
+@@ -231,6 +233,12 @@
+ 				curbits++;
+ 			}
+ 			getbits();
++			/* rosco: the other passes check this in getpipe();
++			 * in pass 4 a bad index above 52479 made dindex[]
++			 * point to itself: an endless loop below
++			 */
++			if (iindex > curend && !(iindex == 256 && clearflg))
++				die("invalid data\n");
+ 		} else
+ 			getpipe();	/* get next index */
+ 
+@@ -284,6 +292,7 @@
+ 	(void) close(pfd[0]);
+ 	pnum++;
+   } else {			/* this is the parent */
++	child = j;		/* rosco */
+ 	if (close(0) == -1) die("close(0) error\n");
+ 	if (dup(pfd[0]) != 0) die("dup(0) error\n");
+ 	(void) close(pfd[1]);
+@@ -313,6 +322,17 @@
+   if (s != (char *) NULL) {
+ 	while (*s) (void) write(fderr, s++, 1);
+   }
++  /* rosco: the exit status of the earlier passes (bad input found by
++   * pass 4 ended with exit 0); stdin is closed first, so a pass still
++   * writing to this one does not wait for it forever
++   */
++  if (child > 0) {
++	int st, r;
++
++	(void) close(fdin);
++	while ((r = wait(&st)) != child && r != -1) ;
++	if (r == child && st != 0 && s == (char *) NULL) s = "";
++  }
+   exit((s == (char *) NULL) ? 0 : 1);
+ }
+ 

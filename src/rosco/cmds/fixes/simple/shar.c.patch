@@ -1,0 +1,101 @@
+--- orig/simple/shar.c
++++ new/simple/shar.c
+@@ -1,10 +1,13 @@
+ /* shar - make a shell archive		Author: Michiel Husijes */
+ 
++#include <sys/types.h>		/* rosco: stat() to skip what is not a file */
++#include <sys/stat.h>
+ #include <stdlib.h>		/* for the nonstd :-( _PROTOTYPE */
+ #include <stdio.h>
+ 
+ static _PROTOTYPE( void error, (char *progname, char *operation,
+ 				char *filename) );
++static _PROTOTYPE( void putname, (char *name) );
+ _PROTOTYPE( int main, (int argc, char **argv) );
+ 
+ int main(argc, argv)
+@@ -16,29 +19,60 @@
+   register FILE *fp;
+   int exitstatus;
+   char *filename;
++  struct stat st;
++  int nonl;
+ 
+   exitstatus = 0;
+   for (argn = 1; argn < argc; argn++) {
+ 	filename = argv[argn];
++	/* rosco: a directory (or a device, a fifo) was archived as its raw
++	 * bytes; only regular files go into the archive.
++	 */
++	if (stat(filename, &st) == 0 && !S_ISREG(st.st_mode)) {
++		fputs(argv[0], stderr);
++		fputs(": ", stderr);
++		fputs(filename, stderr);
++		fputs(": not a regular file, skipped\n", stderr);
++		exitstatus = 1;
++		continue;
++	}
+ 	if ((fp = fopen(filename, "r")) == NULL) {
+ 		error(argv[0], "opening ", filename);
+ 		exitstatus = 1;
+ 	} else {
++		/* rosco: the name was written unquoted, so shell metacharacters
++		 * in it ran when the archive was unpacked: single-quote it.
++		 */
+ 		fputs("echo x - ", stdout);
+-		fputs(filename, stdout);
++		putname(filename);
+ 		fputs("\nsed '/^X/s///' > ", stdout);
+-		fputs(filename, stdout);
++		putname(filename);
+ 		fputs(" << '/'\n", stdout);
++		nonl = 0;
+ 		while ((ch = getc(fp)) != EOF) {
+ 			putchar('X');
+ 			putchar(ch);
+ 			while (ch != '\n') {
+ 				ch = getc(fp);
+-				if (ch == EOF) break;
++				if (ch == EOF) {
++					nonl = 1;
++					break;
++				}
+ 				putchar(ch);
+ 			}
+ 			if (ch == EOF) break;
+ 		}
++		/* rosco: without a final newline the here-document terminator
++		 * was glued to the last line ("Xlast/"): the shell then read
++		 * the rest of the archive into this file.  Add the newline.
++		 */
++		if (nonl) {
++			putchar('\n');
++			fputs(argv[0], stderr);
++			fputs(": ", stderr);
++			fputs(filename, stderr);
++			fputs(": no newline at the end, one added\n", stderr);
++		}
+ 		fputs("/\n", stdout);
+ 		if (ferror(fp)) {
+ 			error(argv[0], "reading ", filename);
+@@ -59,6 +93,20 @@
+   return(exitstatus);
+ }
+ 
++/* rosco: write a name in single quotes, a ' in it as '\'' */
++static void putname(name)
++char *name;
++{
++  putchar('\'');
++  for (; *name != '\0'; name++) {
++	if (*name == '\'')
++		fputs("'\\''", stdout);
++	else
++		putchar(*name);
++  }
++  putchar('\'');
++}
++
+ static void error(progname, operation, filename)
+ char *progname;
+ char *operation;

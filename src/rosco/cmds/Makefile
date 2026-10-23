@@ -124,6 +124,10 @@ STACK_ifdef = 8kw
 # and mined ("File too big.").  128kw holds about 150K of text.
 STACK_ed = 128kw
 STACK_mined = 128kw
+# compress: the ACK build's 450k held its tables, malloc'd.  The fixed copy
+# (16 bits) has them static (414K of bss); the gap only holds the stdio
+# buffers and the stack.
+STACK_compress = 16kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -410,7 +414,8 @@ obj/cawf/%.o:	obj/fix/cawf/%.c obj/fix/cawf/cawf.h
 # gzip (also gunzip and zcat, by their names): GNU gzip 1.2.4 in
 # ../gzip-1.2.4, as distributed.  gzip.patch adds a ROSCO section to
 # tailor.h: the 16-bit (MAXSEG_64K, DYN_ALLOC) setup of its MS-DOS port,
-# with fcalloc() and 16K read/write from gzrosco.c.  The patched copy is
+# with fcalloc() and 16K read/write from gzrosco.c, and the fixes of the
+# code review to gzip.c (-S, long names, -N).  The patched copy is
 # made in obj/gzip.  304K of buffers: window, hash tables, distances,
 # input and output.
 GZ	= ../gzip-1.2.4
@@ -722,6 +727,11 @@ FIX0	+= bc/bc.c bc/number.c bc/execute.c bc/load.c bc/storage.c bc/util.c \
 FIX0	+= $(CAWFOBJ:obj/%.o=%.c) cawf/cawf.h \
 	  $(addprefix indent/,args.c comment.c lexi.c indent.c parse.c io.c \
 	  globs.h)
+# archivers (group 6): shar, uue, uud
+FIX0	+= simple/shar.c simple/uue.c simple/uud.c
+# archivers (group 6): tar, compress, decomp16, backup, aal
+FIX0	+= simple/tar.c simple/compress.c simple/decomp16.c simple/backup.c \
+	  aal/archiver.c aal/print.c aal/rd.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -808,6 +818,8 @@ obj/kill.o:	obj/%.o:	obj/fix/simple/%.c
 obj/id.o obj/tty.o obj/mesg.o obj/write.o obj/which.o obj/xargs.o \
 obj/look.o obj/cgrep.o obj/ifdef.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+obj/shar.o obj/uue.o obj/uud.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 obj/flex/misc.o obj/flex/dfa.o: \
 		obj/flex/%.o:	obj/fix/flex-2.3.7/%.c obj/flex/parse.h
 	$(CC) $(CFLAGS) -DUSG -DDEFAULT_SKELETON_FILE='"/usr/lib/flex/flex.skel"' \
@@ -818,6 +830,12 @@ obj/kermit/ckutio.o obj/kermit/ckuus2.o obj/kermit/ckuus3.o \
 obj/kermit/ckuusr.o:	obj/kermit/%.o:	obj/fix/kermit/%.c
 	@mkdir -p obj/kermit
 	$(CC) $(CFLAGS) -I$c/kermit -DV7 -DMINIX -c -o $@ $<
+obj/tar.o obj/compress.o obj/decomp16.o obj/backup.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/aal/archiver.o obj/aal/print.o obj/aal/rd.o:	obj/aal/%.o:	obj/fix/aal/%.c
+	@mkdir -p obj/aal
+	$(CC) $(CFLAGS) -I$c/aal -DAAL -DSTB \
+		-DNDEBUG -DDISTRIBUTION -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

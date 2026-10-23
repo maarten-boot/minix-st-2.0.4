@@ -1,0 +1,14 @@
+--- orig/aal/print.c	2026-10-23 12:58:09.308019914 +0200
++++ new/aal/print.c	2026-10-23 13:05:55.489230011 +0200
+@@ -30,7 +30,10 @@
+ #endif
+ {
+ 	va_list args;
+-	char buf[SSIZE];
++	/* rosco: was SSIZE (1024): "%s: not found" with a long argument
++	 * overran it; an argument is at most ARG_MAX (4096)
++	 */
++	char buf[4096 + SSIZE];
+ 
+ #if __STDC__
+ 	va_start(args, fmt);

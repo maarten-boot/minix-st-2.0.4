@@ -1,0 +1,392 @@
+--- orig/simple/uud.c
++++ new/simple/uud.c
+@@ -50,13 +50,14 @@
+ 
+ #define NCHARS  256
+ #define LINELEN 256
+-#define FILELEN 64
++#define FILELEN 256	/* rosco: was 64, overflowed (strcpy/strcat) */
+ #define NORMLEN 60	/* allows for 80 encoded chars per line */
+ 
+ #define SEQMAX 'z'
+ #define SEQMIN 'a'
+ char seqc;
+-int first, secnd, check, numl;
++int first, secnd, check;
++long numl;		/* rosco: long, past 32767 lines it went negative */
+ 
+ FILE *in, *out;
+ char *pos;
+@@ -65,7 +66,14 @@
+ char blank, part = '\0';
+ int partn, lens;
+ int debug = 0, nochk = 0, onedone = 0;
+-int chtbl[NCHARS], cdlen[NORMLEN + 3];
++/* rosco: cdlen[] up to 63, the largest line length a character can give;
++ * NORMLEN + 3 (63 entries) left 61 and 62 zero and read 63 past the end.
++ * Characters index the tables as unsigned char (UC): with a signed char
++ * a byte over 127 read (and in gettable() wrote) before chtbl[].
++ */
++int chtbl[NCHARS], cdlen[64];
++#define UC(c)	((unsigned char) (c))
++
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(char *getnword, (char *str, int n));
+@@ -73,16 +81,17 @@
+ _PROTOTYPE(void decode, (void));
+ _PROTOTYPE(void getfile, (char *buf));
+ _PROTOTYPE(void format, (char *fp, ...));
+-_PROTOTYPE(void doprnt, (char *fp, char *ap));
+-_PROTOTYPE(void puti, (unsigned int i, unsigned int r));
+-_PROTOTYPE(void outc, (int c));
++_PROTOTYPE(void catname, (char *buf, char *dir, char *name));
++_PROTOTYPE(int unsafe, (char *name));
++_PROTOTYPE(void chomp, (char *buf));
+ 
+ int main(argc, argv) int argc; char *argv[];
+ {
+ 	int mode;
+ 	register int i, j;
+ 	char *curarg;
+-	char dest[FILELEN], buf[LINELEN];
++	char dest[LINELEN], buf[LINELEN];	/* rosco: dest was FILELEN (64),
++						 * sscanf %s from a 256 byte line */
+ 
+ 	while ((curarg = argv[1]) != NULL && curarg[0] == '-') {
+ 		if (((curarg[1] == 'd') || (curarg[1] == 'D')) &&
+@@ -126,11 +135,7 @@
+ 		in = stdin;
+ 		strcpy(ifname, "<stdin>");
+ 	} else {
+-		if (source != NULL) {
+-			strcpy(ifname, source);
+-			strcat(ifname, curarg);
+-		} else
+-			strcpy(ifname, curarg);
++		catname(ifname, source, curarg);
+ 		if ((in = fopen(ifname, "r")) == NULL) {
+ 			format("uud: Can't open %s\n", ifname);
+ 			Error(2);
+@@ -151,7 +156,7 @@
+  * set up the line length table, to avoid computing lotsa * and / ...
+  */
+ 	cdlen[0] = 1;
+-	for (i = 1, j = 5; i <= NORMLEN; i += 3, j += 4)
++	for (i = 1, j = 5; i < 64; i += 3, j += 4)	/* rosco: up to 63 */
+ 		cdlen[i] = (cdlen[i + 1] = (cdlen[i + 2] = j));
+ /*
+  * search for header or translation table line.
+@@ -177,8 +182,7 @@
+ 				break;
+ 			}
+ 		}
+-		lens = strlen(buf);
+-		if (lens) buf[--lens] = '\0';
++		chomp(buf);
+ #ifdef SMALL
+ 		if ((pos = getnword(buf, 3))) {
+ 			strcpy(dest, pos);
+@@ -191,11 +195,14 @@
+ 			Error(10);
+ 		}
+ 
+-		if (target != NULL) {
+-			strcpy(ofname, target);
+-			strcat(ofname, dest);
+-		} else
+-			strcpy(ofname, dest);
++		/* rosco: the name in the begin line was used as is: an absolute
++		 * path or ".." wrote anywhere (as root: /etc/passwd).  Refused.
++		 */
++		if (unsafe(dest)) {
++			format("uud: Unsafe file name in begin line: %s\n", dest);
++			Error(10);
++		}
++		catname(ofname, target, dest);
+ 
+ 		if((out = fopen(ofname, WRITE)) == NULL) {
+ 			format("uud: Cannot open output file: %s\n", ofname);
+@@ -207,9 +214,15 @@
+ 		first = 1;
+ 		secnd = 0;
+ 		decode();
+-		fclose(out);
++		if (fclose(out) != 0) {		/* rosco: a full disk */
++			format("uud: Error on writing decoded file.\n");
++			Error(18);
++		}
+ #ifdef UNIX
+-		chmod(ofname, mode);
++		/* rosco: no setuid/setgid/sticky bits from the begin line (as
++		 * GNU uudecode)
++		 */
++		chmod(ofname, mode & 0777);
+ #endif
+ 		onedone = 1;
+ 		if (debug) format("End uudecoding: %s\n", ofname);
+@@ -252,14 +265,14 @@
+ 		format("uud: Incomplete translation table.\n");
+ 		Error(6);
+ 	}
+-	cpt = buf + strlen(buf) - 1;
+-	*cpt = ' ';
+-	while (*(cpt) == ' ') {
+-		*cpt = 0;
+-		cpt--;
+-	}
++	/* rosco: on an all-blank line the loop that stripped the trailing
++	 * blanks walked back before buf; it stops at buf now
++	 */
++	chomp(buf);
++	cpt = buf + strlen(buf);
++	while (cpt > buf && cpt[-1] == ' ') *--cpt = '\0';
+ 	cpt = buf;
+-	while (c = *cpt) {
++	while ((c = UC(*cpt)) != 0) {
+ 		if (chtbl[c] != -1) {
+ 			format("uud: Duplicate char in translation table.\n");
+ 			Error(7);
+@@ -291,8 +304,8 @@
+ 			Error(8);
+ 		}
+ 		numl++;
++		chomp(buf);
+ 		len = strlen(buf);
+-		if (len) buf[--len] = '\0';
+ /*
+  * Is it an unprotected empty line before the end line ?
+  */
+@@ -300,7 +313,7 @@
+ /*
+  * Get the binary line length.
+  */
+-		n = trtbl[*buf];
++		n = trtbl[UC(*buf)];
+ 		if (n >= 0) goto decod;
+ /*
+  * end of uuencoded file ?
+@@ -313,7 +326,7 @@
+ 			getfile(buf);
+ 			continue;
+ 		}
+-		format("uud: Bad prefix line %d in file: %s\n",numl, ifname);
++		format("uud: Bad prefix line %ld in file: %s\n",numl, ifname);
+ 		if (debug) format("Bad line =%s\n",buf);
+ 		Error(11);
+ /*
+@@ -327,16 +340,20 @@
+ /*
+  * Pad with blanks.
+  */
++		/* rosco: also the sequence character (buf[rlen]) was read
++		 * from beyond the line, and the line lost its terminator
++		 */
+ 		for (bp = &buf[c = len];
+-			c < rlen; c++, bp++) *bp = blank;
++			c <= rlen; c++, bp++) *bp = blank;
++		if (len <= rlen) buf[rlen + 1] = '\0';
+ /*
+  * Verify if asked for.
+  */
+ 		if (debug) {
+ 			for (len = 0, bp = buf; len < rlen; len++) {
+-				if (trtbl[*bp] < 0) {
++				if (trtbl[UC(*bp)] < 0) {
+ 					format(
+-	"Non uuencoded char <%c>, line %d in file: %s\n", *bp, numl, ifname);
++	"Non uuencoded char <%c>, line %ld in file: %s\n", *bp, numl, ifname);
+ 					format("Bad line =%s\n",buf);
+ 					Error(16);
+ 				}
+@@ -367,7 +384,7 @@
+  */
+ 		if (check) {
+ 			if (buf[rlen] != seqc) {
+-				format("uud: Wrong sequence line %d in %s\n",
++				format("uud: Wrong sequence line %ld in %s\n",
+ 					numl, ifname);
+ 				if (debug)
+ 					format(
+@@ -387,20 +404,20 @@
+ 		len = n;
+ 		bp = &buf[1];
+ 		while (n > 0) {
+-			*(ut++) = trtbl[*bp] << 2 | trtbl[bp[1]] >> 4;
++			*(ut++) = trtbl[UC(*bp)] << 2 | trtbl[UC(bp[1])] >> 4;
+ 			n--;
+ 			if (n) {
+-				*(ut++) = (trtbl[bp[1]] << 4) |
+-					  (trtbl[bp[2]] >> 2);
++				*(ut++) = (trtbl[UC(bp[1])] << 4) |
++					  (trtbl[UC(bp[2])] >> 2);
+ 				n--;
+ 			}
+ 			if (n) {
+-				*(ut++) = trtbl[bp[2]] << 6 | trtbl[bp[3]];
++				*(ut++) = trtbl[UC(bp[2])] << 6 | trtbl[UC(bp[3])];
+ 				n--;
+ 			}
+ 			bp += 4;
+ 		}
+-		if ((n = fwrite(outl, (size_t)1, (size_t)len, out)) <= 0) {
++		if ((n = fwrite(outl, (size_t)1, (size_t)len, out)) != len) {
+ 			format("uud: Error on writing decoded file.\n");
+ 			Error(18);
+ 		}
+@@ -417,11 +434,7 @@
+ 		format("uud: Missing include file name.\n");
+ 		Error(17);
+ 	} else
+-		if (source != NULL) {
+-			strcpy(ifname, source);
+-			strcat(ifname, pos);
+-		} else
+-			strcpy(ifname, pos);
++		catname(ifname, source, pos);
+ #ifdef GEMDOS
+ 	if (Fattrib(ifname, 0, 0) < 0)
+ #else
+@@ -455,8 +468,7 @@
+ 		}
+ 		if (strncmp(buf, "begin", (size_t)5) == 0) break;
+ 	}
+-	lens = strlen(buf);
+-	if (lens) buf[--lens] = '\0';
++	chomp(buf);
+ /*
+  * Check the part suffix.
+  */
+@@ -477,86 +489,68 @@
+ }
+ 
+ /*
+- * Printf style formatting. (Borrowed from MicroEmacs by Dave Conroy.) 
+- * A lot smaller than the full fledged printf.
++ * rosco: messages go to stderr through vfprintf().  The old format() handed
++ * the address of its va_list to a small doprnt() as the argument pointer,
++ * so every %s, %d and %c printed garbage (or crashed), and it wrote to
++ * stdout.
+  */
+-#ifdef __STDC__
+ void format(char *fp, ...)
+ {
+   va_list args;
+ 
+-  va_start (args, fp);
+-  doprnt(fp, (char *)&args);
++  va_start(args, fp);
++  vfprintf(stderr, fp, args);
+   va_end(args);
+ }
+-#else
+-/* VARARGS1 */
+-void format(fp, args) char *fp;
+-{
+-	doprnt(fp, (char *)&args);
+-}
+-#endif
+ 
+-void doprnt(fp, ap)
+-register char	*fp;
+-register char	*ap;
++/*
++ * rosco: dir and name into buf[FILELEN] (ifname, ofname), with a '/' in
++ * between if dir lacks one (-s and -t take a directory, the name was just
++ * appended to it); strcpy/strcat overflowed ifname and ofname.
++ */
++void catname(buf, dir, name)
++char *buf, *dir, *name;
+ {
+-	register int	c, k;
+-	register char	*s;
++  size_t dl = dir == NULL ? 0 : strlen(dir);
++  size_t slash = dl > 0 && dir[dl - 1] != '/';
+ 
+-	while ((c = *fp++) != '\0') {
+-		if (c != '%')
+-			outc(c);
+-		else {
+-			c = *fp++;
+-			switch (c) {
+-			case 'd':
+-				puti(*(int *)ap, 10);
+-				ap += sizeof(int);
+-				break;
+-
+-			case 's':
+-				s = *(char **)ap;
+-				while ((k = *s++) != '\0')
+-					outc(k);
+-				ap += sizeof(char *);
+-				break;
+-
+-			case 'c':
+-				outc(*(int *)ap);
+-				ap += sizeof(int);
+-				break;
+-
+-			default:
+-				outc(c);
+-			}
+-		}
+-	}
++  if (dl + slash + strlen(name) >= FILELEN) {
++	format("uud: Name too long: %s\n", name);
++	Error(19);
++  }
++  buf[0] = '\0';
++  if (dl > 0) {
++	strcpy(buf, dir);
++	if (slash) strcat(buf, "/");
++  }
++  strcat(buf, name);
+ }
+ 
+ /*
+- * Put integer, in radix "r".
++ * rosco: an absolute name or one with a ".." component.
+  */
+-void puti(i, r)
+-register unsigned int	i;
+-register unsigned int	r;
++int unsafe(name)
++char *name;
+ {
+-	register unsigned int	q, s;
++  char *p;
+ 
+-	if ((q = i / r) != 0)
+-		puti(q, r);
+-	s = i % r;
+-	if (s <= 9)
+-		outc(s + '0');
+-	else
+-		outc(s - 10 + 'A');
++  if (name[0] == '/') return 1;
++  for (p = name; *p != '\0'; p++) {
++	if ((p == name || p[-1] == '/') && p[0] == '.' && p[1] == '.' &&
++	    (p[2] == '/' || p[2] == '\0'))
++		return 1;
++  }
++  return 0;
+ }
+-void outc(c) register char c;
++
++/*
++ * rosco: strip the newline.  The old code cut the last character of every
++ * line, also of a last line without newline ("end" became "en").
++ */
++void chomp(buf)
++char *buf;
+ {
+-#ifdef GEMDOS
+-	if (c == '\n') Bconout(2, '\r');
+-	Bconout(2, c);
+-#else
+-	putchar(c);
+-#endif
++  size_t n = strlen(buf);
++
++  if (n > 0 && buf[n - 1] == '\n') buf[n - 1] = '\0';
+ }

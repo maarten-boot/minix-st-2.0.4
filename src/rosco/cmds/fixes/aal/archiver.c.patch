@@ -1,0 +1,115 @@
+--- orig/aal/archiver.c	2026-10-23 12:58:09.305019947 +0200
++++ new/aal/archiver.c	2026-10-23 13:25:04.300968079 +0200
+@@ -37,6 +37,7 @@
+ #define	S_IEXEC		S_IXUSR
+ #endif
+ #include <signal.h>
++#include <fcntl.h>
+ #include <arch.h>
+ #ifdef AAL
+ #include <ranlib.h>
+@@ -122,7 +123,10 @@
+ BOOL quit;
+ char *str1, *str2, *str3, *str4;
+ {
+-	char errbuf[256];
++	/* rosco: was 256; a long file name ("cannot find %s") overran it on
++	 * the stack.  An argument is at most ARG_MAX (4096).
++	 */
++	char errbuf[4096 + 256];
+ 
+ 	sprint(errbuf, str1, str2, str3, str4);
+ 	write(2, errbuf, strlen(errbuf));
+@@ -153,6 +157,7 @@
+ }
+ 
+ extern unsigned int rd_unsigned2();
++int temp_fd_made = 0;	/* rosco: see open_archive() */
+ 
+ open_archive(name, mode)
+ register char *name;
+@@ -162,7 +167,15 @@
+   int fd;
+ 
+   if (mode == CREATE) {
+-	if ((fd = creat(name, 0666)) < 0)
++	/* rosco: the temporary file in /usr/tmp is made new (O_EXCL): creat()
++	 * followed a symbolic link put there under the guessable name
++	 */
++	if (name == temp_arch && temp_fd_made == 0) {
++		fd = open(name, O_WRONLY | O_CREAT | O_EXCL, 0600);
++		temp_fd_made = 1;
++	} else
++		fd = creat(name, 0666);
++	if (fd < 0)
+ 		error(TRUE, "cannot creat %s\n", name);
+ 	magic = MAGIC_NUMBER;
+ 	wr_int2(fd, magic);
+@@ -532,9 +545,19 @@
+ {
+   int fd = 1;
+   char buf[sizeof(member->ar_name) + 1];
++  extern char *strchr();	/* rosco: no <string.h> here */
+ 
+   strncpy(buf, member->ar_name, sizeof(member->ar_name));
+   buf[sizeof(member->ar_name)] = 0;
++  /* rosco: aal stores base names only; a member named "/etc/passwd" or
++   * "../x" was written there (as root)
++   */
++  if (pr_fl == FALSE && (strchr(buf, '/') != NIL_PTR || buf[0] == 0 ||
++				strcmp(buf, ".") == 0 || strcmp(buf, "..") == 0)) {
++	error(FALSE, "%s: bad member name, not extracted\n", buf);
++	lseek(ar_fd, even(member->ar_size), 1);
++	return;
++  }
+   if (pr_fl == FALSE && (fd = creat(buf, 0666)) < 0) {
+ 	error(FALSE, "cannot create %s\n", buf);
+ 	fd = -1;
+@@ -698,7 +721,11 @@
+ 	register struct outhead	*headp;
+ {
+ 
+-	return !BADMAGIC(*headp) && headp->oh_nname != 0;
++	/* rosco: also the newer ACK's 0x0202 (see rd.c): its objects got
++	 * no symbols in __.SYMDEF
++	 */
++	return (headp->oh_magic == O_MAGIC || headp->oh_magic == 0x0202) &&
++		headp->oh_nname != 0;
+ }
+ 
+ do_object(f, size)
+@@ -732,10 +759,13 @@
+ 	struct outhead	*headp;
+ {
+ 	register char	*strings;
+-	register int	nnames = headp->oh_nname;
++	register unsigned nnames = headp->oh_nname;	/* rosco: was int */
+ #define NNAMES 100
+ 	struct outname	namebuf[NNAMES];
+-	long xxx = OFF_CHAR(*headp);
++	/* rosco: 10 byte relocation records with magic 0x0202 */
++	long xxx = OFF_NAME(*headp) + (long) headp->oh_nname * SZ_NAME
++		+ (headp->oh_magic == 0x0202 ?
++			(long) headp->oh_nrelo * (10 - SZ_RELO) : 0L);
+ 
+ 	if (	headp->oh_nchar != (unsigned int)headp->oh_nchar ||
+ 		(strings = malloc((unsigned int)headp->oh_nchar)) == (char *)0
+@@ -780,6 +810,9 @@
+ 	register char	*cp;
+ 
+ 	if (tnum >= tabsz) {
++		/* rosco: the size is a 16 bit size_t */
++		if (tabsz >= 65535 / sizeof(struct ranlib) - 512)
++			error(TRUE, "Out of core\n");
+ 		tab = (struct ranlib *)
+ 			realloc((char *) tab, (tabsz += 512) * sizeof(struct ranlib));
+ 		if (! tab) error(TRUE, "Out of core\n");
+@@ -789,6 +822,8 @@
+ 
+ 	for (cp = namep->on_mptr;; cp++) {
+ 		if (tssiz >= strtabsz) {
++			if (strtabsz >= 65535 - 4096)	/* rosco: as above */
++				error(TRUE, "string table overflow\n");
+ 			tstrtab = realloc(tstrtab, (strtabsz += 4096));
+ 			if (! tstrtab) error(TRUE, "string table overflow\n");
+ 		}

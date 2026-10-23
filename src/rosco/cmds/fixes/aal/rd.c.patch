@@ -1,0 +1,16 @@
+--- orig/aal/rd.c	2026-10-23 13:25:04.284192330 +0200
++++ new/aal/rd.c	2026-10-23 13:25:04.300787196 +0200
+@@ -125,7 +125,12 @@
+ 	}
+ 	off = OFF_RELO(*head) + rd_base;
+ 	BEGINSEEK(PARTRELO, off);
+-	off += (long) head->oh_nrelo * SZ_RELO;
++	/* rosco: objects of the newer ACK (magic 0x0202, the ACK of this
++	 * system) have 10 byte relocation records; the names were looked for
++	 * at the wrong place
++	 */
++	off += (long) head->oh_nrelo *
++		(head->oh_magic == 0x0202 ? 10 : SZ_RELO);
+ 	BEGINSEEK(PARTNAME, off);
+ 	off += (long) head->oh_nname * SZ_NAME;
+ 	BEGINSEEK(PARTCHAR, off);

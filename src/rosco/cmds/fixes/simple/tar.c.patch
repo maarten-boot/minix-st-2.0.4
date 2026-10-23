@@ -1,0 +1,841 @@
+--- orig/simple/tar.c	2026-10-23 12:58:09.290020110 +0200
++++ new/simple/tar.c	2026-10-23 13:01:53.580050762 +0200
+@@ -73,6 +73,7 @@
+ #include <sys/wait.h>
+ #include <stdio.h>		/* need NULL */
+ #include <errno.h>
++#include <limits.h>
+ 
+ #define	POSIX_COMP		/* POSIX compatible */
+ #define DIRECT_3		/* use directory(3) routines */
+@@ -166,8 +167,16 @@
+ /* Char usage[] = "Usage: tar [cxt] tarfile [files]."; */
+ char usage[] = "Usage: tar [cxt][vo][F][f] tarfile [files].";
+ char io_buffer[TBLOCK_SIZE];
+-char path[NAME_SIZE];
+-char pathname[NAME_SIZE];
++/* rosco: path and pathname were NAME_SIZE (100): path_name() and
++ * make_header() wrote longer names past them (over the flags after
++ * pathname and the header fields after name).  Names up to PATH_MAX now,
++ * stored with the POSIX prefix field when longer than 100.
++ */
++char path[PATH_MAX + 1];
++char pathname[PATH_MAX + 1];
++char tname[NAMSIZ + 1 + PFXSIZ + 1];	/* rosco: member name, terminated */
++char tlink[NAMSIZ + 1];			/* rosco: link name, terminated */
++int errors = 0;				/* rosco: exit status 1 after errors */
+ int force_flag = 0;
+ #ifdef ORIGINAL_DEFAULTS
+ int chown_flag = 1;
+@@ -185,7 +194,8 @@
+ int total_blocks;
+ int u_mask;			/* one's complement of current umask */
+ 
+-#define block_size()	(int) ((convert(header.member.m_size, LONG_TYPE) \
++/* rosco: long (was int: wrong past 16 MB) */
++#define block_size()	((convert(header.member.m_size, LONG_TYPE) \
+   + (long) TBLOCK_SIZE - 1) / (long) TBLOCK_SIZE)
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+@@ -199,7 +209,14 @@
+ _PROTOTYPE(void timestamp, (char *file));
+ _PROTOTYPE(void copy, (char *file, int from, int to, long bytes));
+ _PROTOTYPE(long convert, (char str[], int type));
+-_PROTOTYPE(int checksum, (void));
++_PROTOTYPE(long checksum, (int sign));
++_PROTOTYPE(void put_checksum, (void));
++_PROTOTYPE(char *member_name, (void));
++_PROTOTYPE(char *link_name, (void));
++_PROTOTYPE(char *safe_name, (char *name));
++_PROTOTYPE(int has_data, (void));
++_PROTOTYPE(int via_symlink, (char *file));
++_PROTOTYPE(int make_dirs, (char *file));
+ _PROTOTYPE(int is_dir, (char *file));
+ _PROTOTYPE(char *path_name, (char *file));
+ _PROTOTYPE(void add_path, (char *name));
+@@ -207,7 +224,7 @@
+ _PROTOTYPE(void verb_print, (char *s1, char *s2));
+ _PROTOTYPE(void add_close, (int fd));
+ _PROTOTYPE(int add_open, (char *file, struct stat * st));
+-_PROTOTYPE(void make_header, (char *file, struct stat * st));
++_PROTOTYPE(int make_header, (char *file, struct stat * st));
+ _PROTOTYPE(void is_added, (struct stat * st, char *file));
+ _PROTOTYPE(void is_deleted, (struct stat * st));
+ _PROTOTYPE(char *is_linked, (struct stat * st));
+@@ -287,7 +304,10 @@
+ 
+   ar_dev = -1;			/* impossible device nr */
+   if (creat_fl) {
+-	if (tar_fd > 1 && fstat(tar_fd, &st) < 0)
++	/* rosco: with "tar cf -" st was used uninitialised (a random file
++	 * could be taken for the archive and left out); fstat fd 1 too.
++	 */
++	if (fstat(tar_fd, &st) < 0)
+ 		error("Can't stat ", argv[2]);	/* will never be here,
+ 						 * right? */
+ 	else {			/* get archive inode & device	 */
+@@ -303,7 +323,17 @@
+   } else if (ext_fl) {
+ 	/* Extraction code moved here from tarfile() MSP */
+ 	while (get_header()) {
+-		mem_name = header.member.m_name;
++		/* rosco: the name may fill all 100 characters (not
++		 * terminated) and continue in the POSIX prefix field; a
++		 * leading '/' is dropped and names with ".." refused (an
++		 * archive could write anywhere, e.g. /etc/passwd as root).
++		 */
++		mem_name = safe_name(member_name());
++		if (mem_name == NIL_PTR) {
++			if (has_data()) skip_entry();
++			flush();
++			continue;
++		}
+ 		if (is_dir(mem_name)) {
+ 			for (ptr = mem_name; *ptr; ptr++);
+ 			*(ptr - 1) = '\0';
+@@ -314,9 +344,7 @@
+ 				break;
+ 		if (argc == 3 || (i < argc)) {
+ 			extract(mem_name);
+-		} else if (header.dbuf.typeflag == '0' ||
+-			   header.dbuf.typeflag == 0 ||
+-			   header.dbuf.typeflag == ' ')
++		} else if (has_data())	/* rosco: also '7' and unknown types */
+ 			skip_entry();
+ 		flush();
+ 	}
+@@ -324,12 +352,132 @@
+ 	tarfile();		/* tarfile() justs prints info. now MSP */
+ 
+   flush();
+-  return(0);
++  return(errors ? 1 : 0);	/* rosco: was always 0 */
++}
++
++/* rosco: the member name: name (up to 100 characters, not always
++ * terminated), after "prefix/" in a POSIX ustar header.  (GNU's old
++ * format, magic "ustar  ", keeps other data in the prefix field.)
++ */
++char *member_name()
++{
++  char *p = tname;
++
++  if (memcmp(header.dbuf.magic, "ustar\0", (size_t) 6) == 0 &&
++						header.dbuf.prefix[0]) {
++	strncpy(p, header.dbuf.prefix, (size_t) PFXSIZ);
++	p[PFXSIZ] = 0;
++	p += strlen(p);
++	*p++ = '/';
++  }
++  strncpy(p, header.dbuf.name, (size_t) NAMSIZ);
++  p[NAMSIZ] = 0;
++  return tname;
++}
++
++/* rosco: the link name, terminated (it may fill all 100 characters) */
++char *link_name()
++{
++  strncpy(tlink, header.dbuf.linkname, (size_t) NAMSIZ);
++  tlink[NAMSIZ] = 0;
++  return tlink;
++}
++
++/* rosco: names to extract: without leading '/', no ".." component */
++char *safe_name(name)
++char *name;
++{
++  char *p;
++  static int told = 0;
++
++  if (*name == '/') {
++	while (*name == '/') name++;
++	if (!told) string_print(NIL_PTR, "Removing leading '/' from names\n");
++	told = 1;
++  }
++  for (p = name; *p; ) {
++	if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == 0)) {
++		string_print(NIL_PTR, "%s: name contains \"..\", skipped\n",
++								name);
++		errors++;
++		return NIL_PTR;
++	}
++	while (*p && *p != '/') p++;
++	while (*p == '/') p++;
++  }
++  if (*name == 0) return NIL_PTR;
++  return name;
++}
++
++/* rosco: does data follow the header?  Not for links, devices, fifos and
++ * directories (Minix tar wrote the file size into the header of a hard
++ * link); for regular, contiguous ('7') and unknown types (GNU 'L', 'x'...).
++ */
++int has_data()
++{
++  int n = 0;
++
++  switch (header.dbuf.typeflag) {
++      case '1': case '2': case '3': case '4': case '5': case '6':
++	return 0;
++  }
++  while (n < NAMSIZ && header.dbuf.name[n] != 0) n++;
++  return !(n > 0 && header.dbuf.name[n - 1] == '/');
++}
++
++/* rosco: is a directory in the name a symbolic link?  An archive could
++ * first make "d" a link to /etc and then write "d/passwd".
++ */
++int via_symlink(file)
++char *file;
++{
++  char *p;
++  struct stat st;
++  int r = 0;
++
++  for (p = file; (p = strchr(p, '/')) != NIL_PTR; p++) {
++	*p = 0;
++	r = (lstat(file, &st) == 0 && S_ISLNK(st.st_mode));
++	*p = '/';
++	if (r) {
++		string_print(NIL_PTR, "%s: not extracted through a symbolic link\n",
++								file);
++		errors++;
++		break;
++	}
++  }
++  return r;
++}
++
++/* Make the missing directories in the name of file (moved here from
++ * extract(), rosco: now also for directories and links).
++ */
++int make_dirs(file)
++char *file;
++{
++  char *pd1, *pd2;
++
++  pd1 = file;
++  while ((pd2 = strchr(pd1, '/')) != NIL_PTR) {
++	*pd2 = '\0';
++	if (access(file, 1) < 0)
++		if (mkdir(file, 0777) < 0) {
++			string_print(NIL_PTR, "Cannot mkdir %s: %s\n",
++				file, strerror(errno));
++			*pd2 = '/';
++			errors++;
++			return -1;
++		} else
++			string_print(NIL_PTR, "Made directory %s\n", file);
++	*pd2 = '/';
++	pd1 = ++pd2;
++  }
++  return 0;
+ }
+ 
+ BOOL get_header()
+ {
+-  register int check;
++  register long check;
+ 
+   mread(tar_fd, (char *) &header, sizeof(header));
+   if (header.member.m_name[0] == '\0') return FALSE;
+@@ -337,9 +485,13 @@
+   if (force_flag)		/* skip checksum verification  -Dal */
+ 	return TRUE;
+ 
+-  check = (int) convert(header.member.m_checksum, INT_TYPE);
++  check = convert(header.member.m_checksum, INT_TYPE);
+ 
+-  if (check != checksum()) error("Tar: header checksum error.", NIL_PTR);
++  /* rosco: POSIX sums the bytes unsigned, in more than 16 bits (a
++   * header with non-ASCII names failed); old tars summed signed chars.
++   */
++  if (check != checksum(0) && check != checksum(1))
++	error("Tar: header checksum error.", NIL_PTR);
+ 
+   return TRUE;
+ }
+@@ -352,15 +504,15 @@
+   register char *mem_name;
+ 
+   while (get_header()) {
+-	mem_name = header.member.m_name;
++	mem_name = member_name();	/* rosco: terminated, with prefix */
+ 	string_print(NIL_PTR, "%s%s", mem_name,
+ 		     (verbose_flag ? " " : "\n"));
+ 	switch (header.dbuf.typeflag) {
+ 	    case '1':
+-		verb_print("linked to", header.dbuf.linkname);
++		verb_print("linked to", link_name());
+ 		break;
+ 	    case '2':
+-		verb_print("symbolic link to", header.dbuf.linkname);
++		verb_print("symbolic link to", link_name());
+ 		break;
+ 	    case '6':	verb_print("", "fifo");	break;
+ 	    case '3':
+@@ -382,10 +534,11 @@
+ 	    case '0':		/* official POSIX */
+ 	    case 0:		/* also mentioned in POSIX */
+ 	    case ' ':		/* ofetn used */
++	    case '7':		/* rosco: contiguous: a regular file */
+ 		if (!is_dir(mem_name)) {
+ 			if (verbose_flag)
+ 				string_print(NIL_PTR, "%d tape blocks\n",
+-					     block_size());
++					     (int) block_size());
+ 			skip_entry();
+ 			break;
+ 		} else		/* FALL TROUGH */
+@@ -393,8 +546,12 @@
+ 			verb_print("", "directory");
+ 		break;
+ 	    default:
++		/* rosco: skip its data (GNU 'L', pax 'x' have some); the
++		 * next header was read from the data before
++		 */
+ 		string_print(NIL_PTR, "not recogised item %d\n",
+ 			     header.dbuf.typeflag);
++		skip_entry();
+ 	}
+ 	flush();
+   }
+@@ -402,35 +559,55 @@
+ 
+ void skip_entry()
+ {
+-  register int blocks = block_size();
++  register long blocks = block_size();	/* rosco: long */
+ 
+-  while (blocks--) (void) bread(tar_fd, io_buffer, TBLOCK_SIZE);
++  /* rosco: mread, a truncated archive was not noticed */
++  while (blocks--) mread(tar_fd, io_buffer, TBLOCK_SIZE);
+ }
+ 
+ void extract(file)
+ register char *file;
+ {
+   register int fd, r;
+-  char *pd1, *pd2;		/* walk thru failed directory path */
++  char *lname;
++  struct stat st;
+ 
++  /* rosco: not through a symbolic link made by the archive */
++  if (via_symlink(file)) {
++	if (has_data()) skip_entry();
++	return;
++  }
+   switch (header.dbuf.typeflag) {
+       case '1':			/* Link */
++	/* rosco: the link name is checked as the name (it was a way to
++	 * write over any file); the missing directories are made
++	 */
++	lname = safe_name(link_name());
++	if (lname == NIL_PTR || via_symlink(lname)) return;
+ 	delete(file);
+-	if (link(header.member.m_link, file) < 0)
++	if (link(lname, file) < 0 && (make_dirs(file) < 0 ||
++						link(lname, file) < 0)) {
+ 		string_print(NIL_PTR, "Cannot link %s to %s: %s\n",
+-			     header.member.m_link, file, strerror(errno));
+-	else if (verbose_flag)
++			     lname, file, strerror(errno));
++		errors++;
++	} else if (verbose_flag)
+ 		string_print(NIL_PTR, "Linked %s to %s\n",
+-			     header.member.m_link, file);
++			     lname, file);
+ 	return;
+       case '5':			/* directory */
+ 	if (!(file[0] == '.' && file[1] == '\0')) delete(file);
+-	if ((file[0] == '.' && file[1] == '\0') || mkdir(file, 0700) == 0) {
++	/* rosco: an existing directory is no error (the archive was
++	 * extracted before), missing parents are made
++	 */
++	if ((file[0] == '.' && file[1] == '\0') || mkdir(file, 0700) == 0 ||
++	    (errno == ENOENT && make_dirs(file) == 0 && mkdir(file, 0700) == 0)
++	    || (stat(file, &st) == 0 && S_ISDIR(st.st_mode))) {
+ 		do_chown(file);
+ 		verb_print("created directory", file);
+ 	} else {
+ 		string_print(NIL_PTR, "Can't make directory %s: %s\n",
+ 				file, strerror(errno));
++		errors++;
+ 	}
+ 	return;
+       case '3':			/* character special */
+@@ -442,7 +619,9 @@
+ 		dminor = (int) convert(header.dbuf.devminor, INT_TYPE);
+ 		mode = (header.dbuf.typeflag == '3' ? S_IFCHR : S_IFBLK);
+ 		delete(file);
+-		if (mknod(file, mode, (dmajor << 8 | dminor)) == 0) {
++		if (mknod(file, mode, (dmajor << 8 | dminor)) == 0 ||
++		    (errno == ENOENT && make_dirs(file) == 0 &&
++		     mknod(file, mode, (dmajor << 8 | dminor)) == 0)) {
+ 			if (verbose_flag) string_print(NIL_PTR,
+ 				     "made %s special file major %s minor %s\n",
+ 				      (header.dbuf.typeflag == '3' ?
+@@ -460,54 +639,69 @@
+ 					     header.dbuf.devmajor,
+ 					     header.dbuf.devminor,
+ 					     strerror(errno));
++			errors++;
+ 		}
+ 		return;
+ 	}
+       case '2':			/* symbolic link */
+ #ifdef HAVE_SYMLINK
+ 	delete(file);
+-	if (symlink(header.member.m_link, file) < 0)
++	/* rosco: link_name(): the link name may fill all 100 characters */
++	if (symlink(link_name(), file) < 0 && (errno != ENOENT ||
++			make_dirs(file) < 0 || symlink(tlink, file) < 0)) {
+ 		string_print(NIL_PTR, "Cannot make symbolic link %s to %s: %s\n",
+-			     header.member.m_link, file, strerror(errno));
+-	else if (verbose_flag)
++			     tlink, file, strerror(errno));
++		errors++;
++	} else if (verbose_flag)
+ 		string_print(NIL_PTR, "Symbolic link %s to %s\n",
+-			     header.member.m_link, file);
++			     tlink, file);
+ 	return;
+ #endif
+-      case '7':			/* contiguous file -- what is this (KS) */
+-	print("Not implemented file type\n");
+-	return;			/* not implemented, but break out */
+ #ifdef HAVE_FIFO
+       case '6':			/* fifo */
+ 	delete(file);
+ 	if (mkfifo(file, 0) == 0) {	/* is chmod'ed in do_chown */
+ 		do_chown(file);
+ 		verb_print("made fifo", file);
+-	} else
++	} else {
+ 		string_print(NIL_PTR, "Can't make fifo %s: %s\n",
+ 			file, strerror(errno));
++		errors++;
++	}
+ 	return;
+ #endif
++      case '0':
++      case '\0':
++      case ' ':
++      case '7':	/* contiguous file: rosco: a regular file (POSIX), its data
++		 * was taken for the next header */
++	break;
++      default:
++	/* rosco: GNU long names ('L'), pax headers ('x') ...: their data
++	 * was extracted as a file "././@LongLink"
++	 */
++	string_print(NIL_PTR, "%s: unknown type '%c' skipped\n", file,
++		     header.dbuf.typeflag);
++	skip_entry();
++	return;
+   }
+ 
+-  /* Create regular file.  If failure, try to make missing directories. */
++  /* Create regular file.  If failure, try to make missing directories.
++   * rosco: remove the old file first: a link or symbolic link put there by
++   * the archive was written through.  The data of a file that cannot be
++   * created is skipped (it was read as the next headers).
++   */
++  delete(file);
+   if ((fd = creat(file, 0600)) < 0) {
+-	pd1 = file;
+-	while ((pd2 = index(pd1, '/')) > (char *) 0) {
+-		*pd2 = '\0';
+-		if (access(file, 1) < 0)
+-			if (mkdir(file, 0777) < 0) {
+-				string_print(NIL_PTR, "Cannot mkdir %s: %s\n",
+-					file, strerror(errno));
+-				return;
+-			} else
+-				string_print(NIL_PTR, "Made directory %s\n", file);
+-		*pd2 = '/';
+-		pd1 = ++pd2;
++	if (make_dirs(file) < 0) {
++		skip_entry();
++		return;
+ 	}
+ 	if ((fd = creat(file, 0600)) < 0) {
+ 		string_print(NIL_PTR, "Cannot create %s: %s\n",
+ 			file, strerror(errno));
++		errors++;
++		skip_entry();
+ 		return;
+ 	}
+   }
+@@ -523,7 +717,7 @@
+   /* remove a file or an empty directory */
+   struct stat stbuf;
+ 
+-  if (stat(file, &stbuf) < 0) return;
++  if (lstat(file, &stbuf) < 0) return;	/* rosco: not a link's target */
+ 
+   if (S_ISDIR(stbuf.st_mode)) (void) rmdir(file); else (void) unlink(file);
+   /* leave error reporting to the create following soon. */
+@@ -535,16 +729,22 @@
+   int uid = -1, gid = -1;	/* these are illegal ??? -- KS */
+ 
+   if (!chown_flag) {		/* set correct owner and group  -Dal */
+-	if (header.dbuf.magic[TMAGLEN] == ' ')
+-		header.dbuf.magic[TMAGLEN] = '\0';	/* some tars out there
+-							 * ... */
+-	if (strncmp(TMAGIC, header.dbuf.magic, (size_t) TMAGLEN)) {
++	/* rosco: the test was the wrong way round (names were looked up
++	 * in headers without them); GNU tar's "ustar  " has names too.
++	 * The names are terminated (32 characters may fill the field).
++	 */
++	if (strncmp(TMAGIC, header.dbuf.magic, (size_t) 5) == 0) {
+ 		struct passwd *pwd;
+ 		struct group *grp;
++		char name[TUNMLEN + 1];
+ 
+-		pwd = getpwnam(header.dbuf.uname);
++		strncpy(name, header.dbuf.uname, (size_t) TUNMLEN);
++		name[TUNMLEN] = 0;
++		pwd = getpwnam(name);
+ 		if (pwd != NULL) uid = pwd->pw_uid;
+-		grp = getgrnam(header.dbuf.gname);
++		strncpy(name, header.dbuf.gname, (size_t) TGNMLEN);
++		name[TGNMLEN] = 0;
++		grp = getgrnam(name);
+ 		if (grp != NULL) gid = grp->gr_gid;
+ 	}
+ 	if (uid == -1) uid = (int) convert(header.member.m_uid, INT_TYPE);
+@@ -573,13 +773,19 @@
+ register long bytes;
+ {
+   register int rest;
+-  int blocks = (int) ((bytes + (long) TBLOCK_SIZE - 1) / (long) TBLOCK_SIZE);
++  long blocks = (bytes + (long) TBLOCK_SIZE - 1) / (long) TBLOCK_SIZE;
+ 
+   if (verbose_flag)
+-	string_print(NIL_PTR, "%s, %d tape blocks\n", file, blocks);
++	string_print(NIL_PTR, "%s, %d tape blocks\n", file, (int) blocks);
+ 
+   while (blocks--) {
+-	(void) bread(from, io_buffer, TBLOCK_SIZE);
++	/* rosco: a truncated archive gave a file with old buffer contents
++	 * and exit 0; now "Tar: read error." and exit 1
++	 */
++	if (from == tar_fd)
++		mread(from, io_buffer, TBLOCK_SIZE);
++	else
++		(void) bread(from, io_buffer, TBLOCK_SIZE);
+ 	rest = (bytes > (long) TBLOCK_SIZE) ? TBLOCK_SIZE : (int) bytes;
+ 	mwrite(to, io_buffer, (to == tar_fd) ? TBLOCK_SIZE : rest);
+ 	bytes -= (long) rest;
+@@ -603,19 +809,39 @@
+   return ac;
+ }
+ 
+-int checksum()
++/* rosco: long (a 16 bit int overflowed above 32767, so the checksum
++ * written for a header with long or non-ASCII names was wrong), bytes
++ * unsigned as POSIX says (sign: signed, as old tars and this one did).
++ */
++long checksum(sign)
++int sign;
+ {
+   register char *ptr = header.member.m_checksum;
+-  register int ac = 0;
++  register long ac = 0;
+ 
+   while (ptr < &header.member.m_checksum[INT_TYPE]) *ptr++ = ' ';
+ 
+   ptr = header.hdr_block;
+-  while (ptr < &header.hdr_block[TBLOCK_SIZE]) ac += *ptr++;
++  while (ptr < &header.hdr_block[TBLOCK_SIZE])
++	ac += sign ? (long) (signed char) *ptr++ : (long) (*ptr++ & 0xFF);
+ 
+   return ac;
+ }
+ 
++/* rosco: six octal digits, NUL, space (POSIX) */
++void put_checksum()
++{
++  long sum = checksum(0);
++  int i;
++
++  for (i = 5; i >= 0; i--) {
++	header.member.m_checksum[i] = '0' + (int) (sum & 07);
++	sum >>= 3;
++  }
++  header.member.m_checksum[6] = '\0';
++  header.member.m_checksum[7] = ' ';
++}
++
+ int is_dir(file)
+ register char *file;
+ {
+@@ -628,8 +854,11 @@
+ char *path_name(file)
+ register char *file;
+ {
+-
+-  string_print(pathname, "%s%s", path, file);
++  /* rosco: bounded (see pathname); a name that does not fit gives "" */
++  if (strlen(path) + strlen(file) > PATH_MAX)
++	pathname[0] = 0;
++  else
++	string_print(pathname, "%s%s", path, file);
+   return pathname;
+ }
+ 
+@@ -647,7 +876,8 @@
+ 	*path_ptr = '\0';
+   } else {
+ 	while (*name) {
+-		if (path_ptr == &path[NAME_SIZE])
++		/* rosco: room for the '/' and '\0' after it */
++		if (path_ptr >= &path[PATH_MAX - 1])
+ 			error("Pathname too long", NIL_PTR);
+ 		*path_ptr++ = *name++;
+ 	}
+@@ -666,7 +896,7 @@
+   char *linkname;
+   register int fd = -1;
+   char namebuf[16];		/* -Dal */
+-  char cwd[129];		/* -KS */
++  char cwd[PATH_MAX + 1];	/* -KS, rosco: was 129, deeper failed */
+ 
+ #ifdef HAVE_SYMLINK
+   if (lstat(file, &st) < 0) {
+@@ -674,6 +904,16 @@
+   if (stat(file, &st) < 0) {
+ #endif
+ 	string_print(NIL_PTR, "%s: %s\n", file, strerror(errno));
++	errors++;
++	return;
++  }
++  /* rosco: names longer than the header holds (100, or 155 + '/' + 100
++   * with the prefix field) are not added (were cut, and wrote past
++   * pathname)
++   */
++  if (!make_header(path_name(file), &st)) {
++	string_print(NIL_PTR, "%s%s: name too long, not added\n", path, file);
++	errors++;
+ 	return;
+   }
+   if (st.st_dev == ar_dev && st.st_ino == ar_inode) {
+@@ -682,28 +922,33 @@
+   }				/* marks@mgse Mon Sep 25 12:06:28 CDT 1989 */
+   if ((fd = add_open(file, &st)) < 0) {
+ 	string_print(NIL_PTR, "Cannot open %s\n", file);
++	errors++;
+ 	return;
+   }
+-  make_header(path_name(file), &st);
+-  if ((linkname = is_linked(&st)) != NULL) {
++  /* rosco: a hard link gets size 0 (it has no data; GNU tar skipped the
++   * file's size after it); a link name over 100 characters is stored as
++   * a copy
++   */
++  if ((linkname = is_linked(&st)) != NULL && strlen(linkname) <= NAMSIZ) {
+ 	strncpy(header.dbuf.linkname, linkname, (size_t) NAMSIZ);
+ 	header.dbuf.typeflag = '1';
++	memcpy(header.dbuf.size, "00000000000", (size_t) TSIZLEN);
+ 	if (verbose_flag) string_print(NIL_PTR, "linked %s to %s\n",
+-			     header.dbuf.linkname, file);
+-	string_print(header.member.m_checksum, "%I ", checksum());
++			     linkname, file);
++	put_checksum();
+ 	mwrite(tar_fd, (char *) &header, sizeof(header));
+   } else {
+ 	is_added(&st, file);
+ 	switch (st.st_mode & S_IFMT) {
+ 	    case S_IFREG:
+ 		header.dbuf.typeflag = '0';
+-		string_print(header.member.m_checksum, "%I ", checksum());
++		put_checksum();	/* rosco */
+ 		mwrite(tar_fd, (char *) &header, sizeof(header));
+ 		copy(path_name(file), fd, tar_fd, (long) st.st_size);
+ 		break;
+ 	    case S_IFDIR:
+ 		header.dbuf.typeflag = '5';
+-		string_print(header.member.m_checksum, "%I ", checksum());
++		put_checksum();	/* rosco */
+ 		mwrite(tar_fd, (char *) &header, sizeof(header));
+ 		verb_print("read directory", file);
+ 		if (norec_flag) break;
+@@ -782,7 +1027,7 @@
+ 				return;
+ 			}
+ 			header.dbuf.linkname[i] = 0;
+-			string_print(header.member.m_checksum, "%I ", checksum());
++			put_checksum();	/* rosco */
+ 			mwrite(tar_fd, (char *) &header, sizeof(header));
+ 			break;
+ 		}
+@@ -791,7 +1036,7 @@
+ 	    case S_IFIFO:
+ 		header.dbuf.typeflag = '6';
+ 		verb_print("read fifo", file);
+-		string_print(header.member.m_checksum, "%I ", checksum());
++		put_checksum();	/* rosco */
+ 		mwrite(tar_fd, (char *) &header, sizeof(header));
+ 		break;
+ #endif
+@@ -806,7 +1051,7 @@
+ 			 "read block device %s major %s minor %s\n",
+ 				     file, header.dbuf.devmajor, header.dbuf.devminor, sizebuf);
+ 		}
+-		string_print(header.member.m_checksum, "%I ", checksum());
++		put_checksum();	/* rosco */
+ 		mwrite(tar_fd, (char *) &header, sizeof(header));
+ 		break;
+ 	    case S_IFCHR:
+@@ -814,7 +1059,7 @@
+ 		if (verbose_flag) string_print(NIL_PTR,
+ 				     "read character device %s major %s minor %s\n",
+ 				     file, header.dbuf.devmajor, header.dbuf.devminor);
+-		string_print(header.member.m_checksum, "%I ", checksum());
++		put_checksum();	/* rosco */
+ 		mwrite(tar_fd, (char *) &header, sizeof(header));
+ 		break;
+ 	    default:
+@@ -857,20 +1102,37 @@
+   return fd;
+ }
+ 
+-void make_header(file, st)
++int make_header(file, st)
+ char *file;
+ register struct stat *st;
+ {
+-  register char *ptr = header.member.m_name;
+   struct passwd *pwd;
+   struct group *grp;
++  char full[PATH_MAX + 2];
++  int n, k;
+ 
+   clear_header();
+ 
+-  while (*ptr++ = *file++);
+-
++  /* rosco: the name was copied without a limit (over the fields after
++   * it); now names up to 100 characters go into name, longer ones are
++   * split at a '/' into prefix (155) and name (100) as POSIX ustar does.
++   * Returns 0 if the name does not fit.
++   */
++  n = strlen(file);
++  if (n == 0 || n > PATH_MAX) return 0;
++  strcpy(full, file);
+   if ((st->st_mode & S_IFMT) == S_IFDIR) {	/* fixed test  -Dal */
+-	*(ptr - 1) = '/';
++	full[n++] = '/';
++	full[n] = 0;
++  }
++  if (n <= NAMSIZ) {
++	memcpy(header.dbuf.name, full, (size_t) n);
++  } else {
++	for (k = 0; k < n; k++)
++		if (full[k] == '/' && k > 0 && n - k - 1 <= NAMSIZ) break;
++	if (k >= n || k > PFXSIZ || n - k - 1 == 0) return 0;
++	memcpy(header.dbuf.prefix, full, (size_t) k);
++	memcpy(header.dbuf.name, full + k + 1, (size_t) (n - k - 1));
+   }
+   string_print(header.member.m_mode, "%I ", st->st_mode & 07777);
+   string_print(header.member.m_uid, "%I ", st->st_uid);
+@@ -881,19 +1143,20 @@
+ 	strncpy(header.dbuf.size, "0", (size_t) TSIZLEN);
+   string_print(header.member.m_time, "%L ", st->st_mtime);
+   strncpy(header.dbuf.magic, TMAGIC, (size_t) TMAGLEN);
+-  header.dbuf.version[0] = 0;
+-  header.dbuf.version[1] = 0;
++  header.dbuf.version[0] = '0';	/* rosco: POSIX "00" */
++  header.dbuf.version[1] = '0';
+   pwd = getpwuid(st->st_uid);
+   strncpy(header.dbuf.uname,
+ 	(pwd != NULL ? pwd->pw_name : "nobody"), TUNMLEN);
+   grp = getgrgid(st->st_gid);
+   strncpy(header.dbuf.gname,
+ 	(grp != NULL ? grp->gr_name : "nobody"), TGNMLEN);
+-  if (st->st_mode & (S_IFBLK | S_IFCHR)) {
+-	string_print(header.dbuf.devmajor, "%I ", (st->st_rdev >> 8));
++  /* rosco: was st_mode & (S_IFBLK | S_IFCHR): directories too */
++  if (S_ISBLK(st->st_mode) || S_ISCHR(st->st_mode)) {
++	string_print(header.dbuf.devmajor, "%I ", (st->st_rdev >> 8) & 0xFF);
+ 	string_print(header.dbuf.devminor, "%I ", (st->st_rdev & 0xFF));
+   }
+-  header.dbuf.prefix[0] = 0;
++  return 1;
+ }
+ 
+ void is_added(st, file)
+@@ -934,7 +1197,7 @@
+ {
+   struct link *cur = link_top;
+   struct link **pre = &link_top;
+-  static char name[NAMSIZ];
++  static char name[PATH_MAX + 1];	/* rosco: was NAMSIZ, not terminated */
+ 
+   while (cur != NULL)
+ 	if ((cur->dev != st->st_dev) || (cur->ino != st->st_ino)) {
+@@ -943,7 +1206,7 @@
+ 	} else {
+ 		if (--cur->nlink == 0) {
+ 			*pre = cur->next;
+-			strncpy(name, cur->name, NAMSIZ);
++			strcpy(name, cur->name);
+ 			return name;
+ 		}
+ 		return cur->name;
+@@ -1067,8 +1330,14 @@
+   register char *buf_ptr;
+   char *scan_ptr;
+   char buf[STRING_SIZE];
++  char dbuf[8];
+   BOOL pr_fl, i;
++  int d;
+ 
++  /* rosco: output to the terminal goes piece by piece to print(); it
++   * was collected in buf[256] without a limit ("tar cf" with a long
++   * archive name, or messages with two long names, overran the stack)
++   */
+   if (pr_fl = (buffer == NIL_PTR)) buffer = buf;
+ 
+   va_start(args, fmt);
+@@ -1088,16 +1357,36 @@
+ 			scan_ptr = num_out((long) va_arg(args, long));
+ 			break;
+ 		    case 'd':
+-			scan_ptr = num_out((long) va_arg(args, int));
+-			while (*scan_ptr == '0') scan_ptr++;
+-			scan_ptr--;
++			/* rosco: decimal (num_out() is octal: "tape blocks"
++			 * were shown in octal)
++			 */
++			d = va_arg(args, int);
++			scan_ptr = &dbuf[sizeof(dbuf) - 1];
++			*scan_ptr = '\0';
++			do {
++				*--scan_ptr = '0' + (unsigned) d % 10;
++				d = (unsigned) d / 10;
++			} while (d != 0);
+ 			break;
+ 		    default:	scan_ptr = "";
+ 		}
++		if (pr_fl) {
++			*buf_ptr = '\0';
++			print(buffer);
++			print(scan_ptr);
++			buf_ptr = buffer;
++			continue;
++		}
+ 		while (*buf_ptr++ = *scan_ptr++);
+ 		buf_ptr--;
+-	} else
++	} else {
+ 		*buf_ptr++ = *fmt++;
++		if (pr_fl && buf_ptr == &buffer[STRING_SIZE - 1]) {
++			*buf_ptr = '\0';
++			print(buffer);
++			buf_ptr = buffer;
++		}
++	}
+   }
+   *buf_ptr = '\0';
+ 
