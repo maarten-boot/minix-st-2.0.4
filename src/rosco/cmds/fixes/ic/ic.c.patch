@@ -1,0 +1,15 @@
+--- orig/ic/ic.c
++++ new/ic/ic.c
+@@ -278,7 +278,11 @@
+ 				strcpy(s->file_name, "/tmp/pad_");
+ 				if ((id = cuserid(NULL)) == NULL)
+ 					return(ERROR);
+-				strcat(s->file_name, id);
++				/* rosco: a login name of more than 10
++				 * characters overran file_name[20]
++				 */
++				strncat(s->file_name, id,
++				    sizeof(s->file_name) - strlen(s->file_name) - 1);
+ 				if ((s->scratch_pad = fopen(s->file_name, "w")) == NULL)
+ 					return(ERROR);
+ 			}

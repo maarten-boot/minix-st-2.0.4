@@ -1,0 +1,42 @@
+--- orig/simple/factor.c
++++ new/simple/factor.c
+@@ -2,6 +2,7 @@
+ 
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>		/* rosco: strtol() range check */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(long first, (long k));
+@@ -13,8 +14,18 @@
+ /* Factor a number */
+ 
+   long i, n, flag = 0;
++  char *end;
+ 
+-  if (argc != 2 || (n = atol(argv[1])) < 2) {
++  /* rosco: atol() took "12abc" as 12 and wrapped numbers of 2**31 and more
++   * without a word (6442450941 was factored as 2147483645); now the whole
++   * argument must be a number in range.
++   */
++  if (argc == 2) {
++	errno = 0;
++	n = strtol(argv[1], &end, 10);
++	if (end == argv[1] || *end != '\0' || errno == ERANGE) n = 0;
++  }
++  if (argc != 2 || n < 2) {
+ 	printf("Usage: factor n   (2 <= n < 2**31)\n");
+ 	exit(1);
+   }
+@@ -47,7 +58,10 @@
+ 
+   if (k == 2) return(0);
+   if (k % 2 == 0) return (2);
+-  for (i = 3; i <= k / 3; i += 2)
++  /* rosco: up to the square root, not k / 3: for a prime near 2**31 that
++   * was 357 million long divisions (hours on a 68010), now 23170.
++   */
++  for (i = 3; i <= k / i; i += 2)
+ 	if (k % i == 0) return(i);
+   return(0);
+ }

@@ -1,0 +1,156 @@
+--- orig/simple/calendar.c
++++ new/simple/calendar.c
+@@ -34,11 +34,14 @@
+ _PROTOTYPE(void calendar, (void));
+ _PROTOTYPE(char *getstr, (char *s, int n));
+ _PROTOTYPE(int newaccess, (char *file));
+-_PROTOTYPE(void grep, (char *file, char *user));
++_PROTOTYPE(void grep, (char *file, char *user, uid_t uid));
++_PROTOTYPE(int ownfile, (struct stat *st, uid_t uid));
++_PROTOTYPE(int goodname, (char *s));
+ _PROTOTYPE(int date_exp, (void));
+ _PROTOTYPE(char *date_pat, (time_t t));
+ _PROTOTYPE(void regerror, (char *s));
+ _PROTOTYPE(void error, (char *s, char *t));
++_PROTOTYPE(void warning, (char *s, char *t));
+ 
+ int main(argc, argv)
+ int argc;
+@@ -71,11 +74,14 @@
+ void calendar()
+ {
+   int i;
++  uid_t uid;
+   char *s;
+   FILE *fp;
++  struct stat st;
++  char user[512];
+ 
+   if (!mflg) {
+-	grep("calendar", "");
++	grep("calendar", "", 0);
+ 	return;
+   }
+ 
+@@ -87,15 +93,41 @@
+ 	for (i = 0, s = buf; *s && *s != '\n'; s++)
+ 		if (*s == ':') i++;
+ 	*s = '\0';
+-	if (i != 6) error("illegal '/etc/passwd' format: %s", buf);
++	/* rosco: one bad line ended the service for every user after it;
++	 * now it is skipped.
++	 */
++	if (i != 6) {
++		warning("illegal '/etc/passwd' format: %s", buf);
++		continue;
++	}
++
++	/* rosco: the name goes to the shell (popen() of "mail name") and
++	 * into command[128]: only plain names.  The home directory went
++	 * into calfile[PATH_MAX] unchecked.
++	 */
++	strcpy(user, getstr(buf, 0));
++	if (!goodname(user)) {
++		warning("bad user name skipped: %s", user);
++		continue;
++	}
++	uid = (uid_t) atoi(getstr(buf, 2));
++	s = getstr(buf, 5);
++	if (strlen(s) + sizeof("/calendar") > sizeof(calfile)) continue;
+ 
+ 	/* Calendar file = ${HOME}/calendar */
+-	sprintf(calfile, "%s/%s", getstr(buf, 5), "calendar");
++	sprintf(calfile, "%s/%s", s, "calendar");
++
++	/* rosco: run by root (cron) this read any file a user named
++	 * ~/calendar, a link to /etc/shadow for example, and mailed the
++	 * lines with today's date to the user.  Only a regular file the
++	 * user owns is read (and touched by -r).
++	 */
++	if (stat(calfile, &st) != 0 || !ownfile(&st, uid)) continue;
+ 
+ 	if ((access(calfile, R_OK) != 0) || (rflg && !newaccess(calfile)))
+ 		continue;
+ 
+-	grep(calfile, getstr(buf, 0));
++	grep(calfile, user, uid);
+   }
+ 
+   fclose(fp);
+@@ -143,15 +175,29 @@
+   return r;
+ }
+ 
+-void grep(file, user)
+-char *file, *user;
++/* rosco: uid, the owner the file must have (with a user); a prototype
++ * definition, a K&R one with a short parameter conflicts
++ */
++void grep(char *file, char *user, uid_t uid)
+ {				/* grep 'exp[]' [| mail user] */
+   int i;
+   char command[128];		/* mail command */
+   FILE *ifp, *ofp;
++  struct stat st;
+ 
+-  if ((ifp = fopen(file, "r")) == (FILE *) NULL)
+-	error("cannot open %s", file);
++  if ((ifp = fopen(file, "r")) == (FILE *) NULL) {
++	/* rosco: for one user's file it ended the service for all */
++	if (*user == '\0') error("cannot open %s", file);
++	warning("cannot open %s", file);
++	return;
++  }
++  /* rosco: check again what was opened (the file may have been replaced
++   * after the stat() in calendar())
++   */
++  if (*user != '\0' && (fstat(fileno(ifp), &st) != 0 || !ownfile(&st, uid))) {
++	fclose(ifp);
++	return;
++  }
+   if (*user != '\0') {
+ 	sprintf(command, "%s %s", mail, user);
+ 	ofp = (FILE *) NULL;
+@@ -214,6 +260,29 @@
+   return str;
+ }
+ 
++/* rosco: a regular file owned by uid */
++int ownfile(struct stat *st, uid_t uid)
++{
++  return(S_ISREG(st->st_mode) && st->st_uid == uid);
++}
++
++/* rosco: a login name: letters, digits, '.', '_', '-', not too long and
++ * not starting with '-'
++ */
++int goodname(s)
++char *s;
++{
++  char *p;
++
++  if (*s == '\0' || *s == '-' || strlen(s) > 64) return(0);
++  for (p = s; *p != '\0'; p++) {
++	if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
++	      (*p >= '0' && *p <= '9') || *p == '.' || *p == '_' || *p == '-'))
++		return(0);
++  }
++  return(1);
++}
++
+ void regerror(s)
+ char *s;
+ {				/* regcomp() needs this */
+@@ -228,3 +297,12 @@
+   fprintf(stderr, "\n");
+   exit(1);
+ }
++
++/* rosco: a message without exit */
++void warning(s, t)
++char *s, *t;
++{
++  fprintf(stderr, "%s: ", cmd);
++  fprintf(stderr, s, t);
++  fprintf(stderr, "\n");
++}

@@ -732,6 +732,9 @@ FIX0	+= simple/shar.c simple/uue.c simple/uud.c
 # archivers (group 6): tar, compress, decomp16, backup, aal
 FIX0	+= simple/tar.c simple/compress.c simple/decomp16.c simple/backup.c \
 	  aal/archiver.c aal/print.c aal/rd.c
+# small programs (group 11): fortune, banner, cal, calendar, factor, ic
+FIX0	+= simple/fortune.c simple/banner.c simple/cal.c simple/calendar.c \
+	  simple/factor.c ic/ic.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -836,6 +839,12 @@ obj/aal/archiver.o obj/aal/print.o obj/aal/rd.o:	obj/aal/%.o:	obj/fix/aal/%.c
 	@mkdir -p obj/aal
 	$(CC) $(CFLAGS) -I$c/aal -DAAL -DSTB \
 		-DNDEBUG -DDISTRIBUTION -c -o $@ $<
+obj/fortune.o obj/banner.o obj/cal.o obj/calendar.o obj/factor.o: \
+		obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/ic/ic.o:	obj/fix/ic/ic.c $c/ic/ic.h
+	@mkdir -p obj/ic
+	$(CC) $(CFLAGS) -I$c/ic -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

@@ -1,0 +1,39 @@
+--- orig/simple/fortune.c
++++ new/simple/fortune.c
+@@ -37,6 +37,11 @@
+ 	printf("\nIt furthers one to see the super guru.\n  - %s\n", argv[0]);
+ 	exit (-1);
+   }
++  /* rosco: an empty cookie jar divided by zero in magic() */
++  if (cookie_stat.st_size == 0) {
++	printf("\nThe cookie jar is empty.\n  - %s\n", argv[0]);
++	exit (-1);
++  }
+   fseek(cookie, magic((unsigned long) cookie_stat.st_size), 0); /* m ove bu magic... */
+ 
+   c2 = c3 = '\n';
+@@ -45,8 +50,23 @@
+ 	c2 = c1;
+   }
+ 
++  /* rosco: a position in the last separator ("%%\n" at the end of the
++   * file) found no separator after it and ended here (2 positions of
++   * the 4719 of fortune.dat):
++   * look again from the start of the file.
++   */
++  if (c1 == EOF) {
++	rewind(cookie);
++	c2 = c3 = '\n';
++	while (((c1 = getc(cookie)) != EOF) && ((c1 != '%') || (c2 != '%') || (c3 != '\n'))) {
++		c3 = c2;
++		c2 = c1;
++	}
++  }
++
+   if (c1 == EOF) {
+-	printf("\nSomething unexpected has happened.\n  - %s", argv[0]);
++	/* rosco: the line had no newline */
++	printf("\nSomething unexpected has happened.\n  - %s\n", argv[0]);
+ 	exit (-1);
+   }
+ 
