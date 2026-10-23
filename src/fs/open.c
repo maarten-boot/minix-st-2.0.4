@@ -35,7 +35,7 @@ PRIVATE char mode_map[] = {R_BIT, W_BIT, R_BIT|W_BIT, 0};
 FORWARD _PROTOTYPE( int common_open, (int oflags, Mode_t omode)		);
 FORWARD _PROTOTYPE( int pipe_open, (struct inode *rip,Mode_t bits,int oflags));
 FORWARD _PROTOTYPE( struct inode *new_node, (char *path, Mode_t bits,
-							zone_t z0)	);
+						zone_t z0, int follow)	);
 
 
 /*===========================================================================*
@@ -102,7 +102,12 @@ mode_t omode;
   if (oflags & O_CREAT) {
   	/* Create a new inode by calling new_node(). */
         omode = I_REGULAR | (omode & ALL_MODES & fp->fp_umask);
-    	rip = new_node(user_path, omode, NO_ZONE);
+	/* rosco: with O_EXCL a symbolic link as the last component is not
+	 * followed (POSIX): it exists, so the open fails with EEXIST.
+	 * Following it created the target of a dangling link, so an O_EXCL
+	 * temporary file could be redirected to any file.
+	 */
+    	rip = new_node(user_path, omode, NO_ZONE, !(oflags & O_EXCL));
     	r = err_code;
     	if (r == OK) exist = FALSE;      /* we just created the file */
 	else if (r != EEXIST) return(r); /* other error */
@@ -206,10 +211,13 @@ mode_t omode;
 /*===========================================================================*
  *				new_node				     *
  *===========================================================================*/
-PRIVATE struct inode *new_node(path, bits, z0)
+PRIVATE struct inode *new_node(path, bits, z0, follow)
 char *path;			/* pointer to path name */
 mode_t bits;			/* mode of the new inode */
 zone_t z0;			/* zone number 0 for new inode */
+int follow;			/* rosco: follow a symbolic link as the last
+				 * component (only open without O_EXCL)
+				 */
 {
 /* New_node() is called by common_open(), do_mknod(), and do_mkdir().  
  * In all cases it allocates a new inode, makes a directory entry for it on 
@@ -242,7 +250,8 @@ zone_t z0;			/* zone number 0 for new inode */
 	/* The final directory is accessible. Get final component of the path.*/
 	rip = advance(rlast_dir_ptr, string);
 
-	if (rip != NIL_INODE && (rip->i_mode & I_TYPE) == I_SYMBOLIC_LINK) {
+	if (follow && rip != NIL_INODE &&
+			(rip->i_mode & I_TYPE) == I_SYMBOLIC_LINK) {
 		if (++loops > 8) {
 			fp->fp_workdir = old_workdir_ip;
 			put_inode(rlast_dir_ptr);
@@ -349,7 +358,10 @@ PUBLIC int do_mknod()
   if (!super_user && ((mode_bits & I_TYPE) != I_NAMED_PIPE)) return(EPERM);
   if (fetch_name(m.m1_p1, m.m1_i1, M1) != OK) return(err_code);
   bits = (mode_bits & I_TYPE) | (mode_bits & ALL_MODES & fp->fp_umask);
-  ip = new_node(user_path, bits, (zone_t) m.m1_i3);
+  /* rosco: mknod, mkdir and symlink never follow a symbolic link as the
+   * last component (POSIX): it exists, EEXIST.
+   */
+  ip = new_node(user_path, bits, (zone_t) m.m1_i3, FALSE);
   put_inode(ip);
   return(err_code);
 }
@@ -383,7 +395,7 @@ PUBLIC int do_mkdir()
 
   /* Next make the inode. If that fails, return error code. */
   bits = I_DIRECTORY | (mode & RWX_MODES & fp->fp_umask);
-  rip = new_node(user_path, bits, (zone_t) 0);
+  rip = new_node(user_path, bits, (zone_t) 0, FALSE);
   if (rip == NIL_INODE || err_code == EEXIST) {
 	put_inode(rip);		/* can't make dir: it already exists */
 	put_inode(ldirp);	/* return parent too */
@@ -565,7 +577,7 @@ PUBLIC int do_symlink()
   if (r != OK) return(r);
 
   if ( (new_ip = new_node(user_path, (mode_t)(I_SYMBOLIC_LINK | 0777),
-	                            (off_t)0)) == NIL_INODE) {
+	                            (off_t)0, FALSE)) == NIL_INODE) {
 	put_inode(new_ip);
 	return(err_code);
   }
