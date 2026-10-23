@@ -180,6 +180,7 @@ f /usr/test/sh2	755 ../../test/sh2
 f /usr/test/test1.c	644 ../../test/test1.c
 f /usr/test/texecl	755 ../test/bin/texecl
 f /usr/test/tshadow	755 ../test/bin/tshadow
+f /usr/test/tsigcc	755 ../test/bin/tsigcc
 
 # awk, bc (and its math library for bc -l), m4
 f /usr/bin/awk	755 ../cmds/bin/awk

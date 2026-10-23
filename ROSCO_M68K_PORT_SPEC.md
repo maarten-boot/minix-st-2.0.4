@@ -937,6 +937,8 @@ fallback.
 | Default passwords: root has none (Minix 1.5 used "Geheim"); network logins (telnet, ftp) need one | Root stays without one (user); documented in ROSCO_M68K_USAGE.md (Follow-up 48) |
 | MicroPython (user question, Follow-up 47) | Not ported; assessed only |
 | 32-bit int build of the whole system (user question, Follow-up 48) | Assessed only, see Follow-up 48 |
+| A lone ESC on the console reached a program only with the next key (held back for the PF1-PF4 debug keys; BBC BASIC's Escape, vi) | Fixed: passed on after 3 ticks (Follow-up 85, from the old host) |
+| A signal between a compare and its branch changed the branch: sigreturn took the status register of the handler's sigreturn call | Fixed: the condition codes come from the sigcontext (Follow-up 86, from the old host; test `tsigcc`) |
 | Kernel panic from a user program: a bus error in a process (old shutdown overrunning a buffer) gave "kernel trap ... trap via vector 2" (Follow-up 50) | Fixed: a user bus error is now a signal (Memory fault), Follow-up 67 |
 | Small commands dying with Memory fault: arguments, environment, heap (4K steps) and stack share the 4kw (8K) gap of the ACK stack sizes (Follow-ups 75-80) | Fixed: every command gets at least 8kw (Follow-up 81) |
 | cc (ACK) on the board: C files of about 32K or more fail (em_cemcom.ansi "no source file" from about 50K, a pass dies with sig=10 at about 32K) (Follow-up 51) | Open |
