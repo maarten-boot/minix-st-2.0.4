@@ -1,0 +1,26 @@
+--- orig/make/macro.c
++++ new/make/macro.c
+@@ -144,12 +144,21 @@
+ 	}
+ 	else {
+ 		q = buf;
++		/* rosco: the name went into buf[256] without a limit: a long
++		 * $(...) overwrote the globals after it.
++		 */
+ 		if (*++rp == '{')
+-			while (*++rp && *rp != '}')
++			while (*++rp && *rp != '}') {
++				if (q >= buf + sizeof(buf) - 1)
++					fatal("Macro name too long: %.40s...", buf, 0);
+ 				*q++ = *rp;
++			}
+ 		else if (*rp == '(')
+-			while (*++rp && *rp != ')')
++			while (*++rp && *rp != ')') {
++				if (q >= buf + sizeof(buf) - 1)
++					fatal("Macro name too long: %.40s...", buf, 0);
+ 				*q++ = *rp;
++			}
+ 		else if (!*rp) {
+ 			*p++ = '$';
+ 			to->pos++;

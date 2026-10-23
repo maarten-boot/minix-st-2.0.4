@@ -1,0 +1,11 @@
+--- orig/make/rules.c
++++ new/make/rules.c
+@@ -46,6 +46,8 @@
+   bool           depexists = FALSE;
+ 
+ 
++  /* rosco: the name was copied into str1 without checking its size */
++  while (strlen(np->n_name) >= str1s.len) strrealloc(&str1s);
+   p = str1;
+   q = np->n_name;
+   suff = suffix(q);

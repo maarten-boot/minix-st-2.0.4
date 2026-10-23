@@ -1,0 +1,34 @@
+--- orig/make/main.c
++++ new/make/main.c
+@@ -44,6 +44,8 @@
+ 
+ static char version[]= "2.0";
+ 
++extern bool errors;	/* rosco: make.c; a command failed under -k */
++
+ static FILE *ifd;           /*  Input file desciptor  */
+ static char *ptrmakeflags;
+ 
+@@ -123,8 +125,12 @@
+   }
+ 
+   /* evaluate and update environment MAKEFLAGS */
++  /* rosco: a '-' or blank in MAKEFLAGS (MAKEFLAGS=-s, as POSIX allows)
++   * went to setoption() and stopped make with the usage message.
++   */
+   if((p =getenv("MAKEFLAGS")) != (char *)0)
+-	while(*p) setoption(*p++);
++	for (; *p; p++)
++		if (*p != '-' && !isspace((unsigned char)*p)) setoption(*p);
+   for( p = ptrmakeflags; !isspace((int)*p); p++) ;
+   *p = '\0';
+   putenv(makeflags);
+@@ -200,7 +206,7 @@
+   if (quest)
+ 	exit(estat);
+   else
+-		exit(0);
++		exit(errors);	/* rosco: was exit(0) after errors under -k */
+ }
+ 
+ #ifdef __STDC__

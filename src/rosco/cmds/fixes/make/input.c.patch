@@ -1,0 +1,58 @@
+--- orig/make/input.c
++++ new/make/input.c
+@@ -45,10 +45,20 @@
+   str2s.len = LZ2;
+ }
+ 
++/* rosco: len is a 16-bit int: doubling 16384 gave -32768 (realloc of
++ * 32784 bytes, then of 16 bytes) and a line or expansion of more than
++ * 16K overwrote the heap.  Stop at STRMAX (with the 16 extra bytes below
++ * 32767) with an error instead.
++ */
++#define STRMAX	32000
++
+ void strrealloc(strs)
+ struct str *strs;
+ {
+-  strs->len *= 2;
++  if (strs->len >= STRMAX)
++	fatal("Line or macro expansion too long (more than 32000 characters)",
++							(char *)0,0);
++  strs->len = strs->len >= STRMAX / 2 ? STRMAX : strs->len * 2;
+   *strs->ptr = (char *) realloc(*strs->ptr, strs->len + 16);
+   if(*strs->ptr == (char *) NULL)
+        fatal("No memory for string reallocation",(char *)0,0);
+@@ -295,6 +305,7 @@
+   struct depend *dp;
+   struct cmd    *cp;
+   bool dbl;
++  bool eof;		/* rosco: getline() hit the end of the makefile */
+ 
+ 
+   if (getline(&str1s, fd))  return;	/*  Read the first line  */
+@@ -414,10 +425,14 @@
+ 	*((q = str1) + strlen(str1) + 1) = '\0';
+ 		/*  Need two nulls for gettok (Remember separation)  */
+ 
+-	if (getline(&str2s, fd) == FALSE) {		/*  Get commands  */
++	/* rosco: remember getline()'s EOF instead of testing feof() below:
++	 * a last line without a newline is returned as a line (reader.c)
++	 * with feof() already true, and was dropped.
++	 */
++	if ((eof = getline(&str2s, fd)) == FALSE) {	/*  Get commands  */
+ 		while (*str2 == TABCHAR) {
+ 			cp = newcmd(&str2[0], cp);
+-			if (getline(&str2s, fd))
++			if (eof = getline(&str2s, fd))
+ 				break;
+ 		}
+ 	}
+@@ -430,7 +445,7 @@
+ 			firstname = np;
+ 	}
+ 
+-	if (feof(fd))				/*  EOF?  */
++	if (eof)				/*  EOF?  */
+ 		return;
+ 
+ 	while (strlen(str2) >= str1s.len) strrealloc(&str1s);

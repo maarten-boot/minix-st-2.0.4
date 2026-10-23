@@ -1,0 +1,154 @@
+--- orig/make/make.c
++++ new/make/make.c
+@@ -25,11 +25,64 @@
+ #include "h.h"
+ #include <sys/wait.h>
+ #include <unistd.h>
++#include <signal.h>
+ 
+ _PROTOTYPE(static void tellstatus, (FILE *out, char *name, int status));
+ 
+ static bool  execflag;
+ 
++/* rosco: errors seen under -k (main.c exits 1 for them, it exited 0) */
++bool errors = FALSE;
++
++/* rosco: interrupts.  An interrupt (or quit, hangup, terminate) while a
++ * command ran killed make with the command: a half-made target was left
++ * newer than its sources and the next make thought it up to date.  Now
++ * the signal is noted while a command runs (system() waits for the
++ * command to end), the target is made to look old as after an error,
++ * and make then dies of the same signal.
++ */
++static int sigs[] = { SIGINT, SIGQUIT, SIGHUP, SIGTERM };
++static int incmd;		/* a command is running */
++static int caught;		/* the signal caught while it ran */
++
++static void catcher(sig)
++int sig;
++{
++  if (incmd) {
++	caught = sig;
++	signal(sig, catcher);
++	return;
++  }
++  signal(sig, SIG_DFL);
++  kill(getpid(), sig);
++}
++
++static void catchsigs()
++{
++  static int done;
++  int i;
++
++  if (done) return;
++  done = 1;
++  for (i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
++	if (signal(sigs[i], SIG_IGN) != SIG_IGN)
++		signal(sigs[i], catcher);
++}
++
++static void interrupted(np)
++struct name *np;
++{
++  int sig = caught;
++
++  fflush(stdout);
++  if (!(np->n_flag & N_PREC) && makeold(np->n_name) == 0)
++	fprintf(stderr, "%s: interrupted, made '%s' look old.\n",
++							myname, np->n_name);
++  signal(sig, SIG_DFL);
++  kill(getpid(), sig);
++  exit(1);
++}
++
+ /*
+  *	Exec a shell that returns exit status correctly (/bin/esh).
+  *	The standard EON shell returns the process number of the last
+@@ -136,6 +189,8 @@
+ 
+   for (cp = lp->l_cmd; cp; cp = cp->c_next) {
+ 	execflag = TRUE;
++	/* rosco: str1 can be shorter than a command line (read into str2) */
++	while (strlen(cp->c_cmd) >= str1s.len) strrealloc(&str1s);
+ 	strcpy(str1, cp->c_cmd);
+ 	expmake = FALSE;
+ 	expand(&str1s);
+@@ -165,7 +220,12 @@
+ 
+ 	if (domake || expmake) {	/*  Get the shell to execute it  */
+ 		fflush(stdout);
+-		if ((estat = dosh(q, shell)) != 0) {
++		catchsigs();
++		incmd = 1;
++		estat = dosh(q, shell);
++		incmd = 0;
++		if (caught) interrupted(np);
++		if (estat != 0) {
+ 		    if (estat == -1)
+ 			fatal("Couldn't execute %s", shell,0);
+ 		    else if (signore) {
+@@ -174,6 +234,7 @@
+ 		    } else {
+ 			tellstatus(stderr, myname, estat);
+ 			fprintf(stderr, "\n");
++			errors = TRUE;	/* rosco: for the exit status */
+ 			if (!(np->n_flag & N_PREC))
+ #ifdef unix
+ 			    if (makeold(np->n_name) == 0)
+@@ -583,6 +644,7 @@
+ 
+   if (!(np->n_flag & (N_TARG | N_EXISTS))) {
+      fprintf(stderr,"%s: Don't know how to make %s\n", myname, np->n_name);
++     errors = TRUE;	/* rosco: for the exit status under -k */
+      if (conterr) {
+         np->n_flag |= N_ERROR;
+         if (dbginfo) dbgprint(level,np,"don't know how to make");
+@@ -617,9 +679,24 @@
+   np->n_flag |= N_DONE;
+ 
+   if (quest) {
++     /* rosco: every name got n_time = now here, so each target with a
++      * dependency looked out of date and -q always said 1.  A name is
++      * out of date if a dependency is (N_EXEC, passed up in the loop
++      * above), if it is older than one, or if it does not exist and has
++      * commands; only then does it look new to its parents.
++      */
++     bool hascmds = FALSE;
++
++     for (lp = np->n_line; lp; lp = lp->l_next)
++        if (lp->l_cmd) hascmds = TRUE;
+      t = np->n_time;
+-     np->n_time = now;
+-     return (t < dtime);
++     if ((np->n_flag & N_EXEC) || (np->n_flag & N_EXISTS ?
++                  t < dtime : hascmds)) {
++        np->n_flag |= N_EXEC;
++        np->n_time = now;
++        return 1;
++     }
++     return 0;
+   }
+   else if ((np->n_time < dtime || !( np->n_flag & N_EXISTS))
+                && !(np->n_flag & N_DOUBLE)) {
+@@ -683,6 +760,11 @@
+     setDFmacro("*",basename);
+ 
+     for (dp = qdp; dp; dp = qdp) {
++       /* rosco: $? was built in str1 unchecked (a target with many
++        * dependency lines overran it)
++        */
++       while (strlen(str1) + strlen(dp->d_name->n_name) + 1 >= str1s.len)
++          strrealloc(&str1s);
+        if (strlen(str1))
+           strcat(str1, " ");
+        strcat(str1, dp->d_name->n_name);
+@@ -714,6 +796,8 @@
+   bool           dpflag = FALSE;
+ 
+   /* get basename out of target name */
++  /* rosco: the name was copied into str2 (256 bytes) unchecked */
++  while (strlen(np->n_name) >= str2s.len) strrealloc(&str2s);
+   p = str2;
+   q = np->n_name;
+   suff = suffix(q);

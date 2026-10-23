@@ -1,0 +1,19 @@
+--- orig/make/reader.c
++++ new/make/reader.c
+@@ -57,8 +57,14 @@
+ 		do {
+ 			if (strs->pos >= strs->len)
+ 				strrealloc(strs);
+-			if ((c = getc(fd)) == EOF)
+-				return TRUE;		/* EOF */
++			if ((c = getc(fd)) == EOF) {
++				/* rosco: a last line without a newline was
++				 * dropped (its rule or commands lost); end it.
++				 */
++				if (strs->pos == 0)
++					return TRUE;		/* EOF */
++				c = '\n';
++			}
+ 			(*strs->ptr)[strs->pos++] = c;
+ 		} while (c != '\n');
+ 

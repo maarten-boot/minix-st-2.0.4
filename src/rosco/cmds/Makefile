@@ -756,6 +756,8 @@ FIX0	+= simple/leave.c simple/last.c simple/cleantmp.c simple/synctree.c \
 # development (group 7): nm, strip, chmem, mkproto, proto, ci, co, fix
 FIX0	+= simple/nm.c simple/strip.c simple/chmem.c simple/mkproto.c \
 	  simple/proto.c simple/ci.c simple/co.c simple/fix.c
+# development (group 7): make (make/make.c is above, for execl0.sed)
+FIX0	+= make/main.c make/input.c make/reader.c make/macro.c make/rules.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -770,7 +772,9 @@ obj/urlget/urlget.o:	obj/fix/urlget/urlget.c
 	$(CC) $(CFLAGS) -I$c/urlget -c -o $@ $<
 obj/readfs.o:	obj/fix/simple/readfs.c
 	$(CC) $(CFLAGS) -c -o $@ $<
-obj/make/make.o:	obj/fix/make/make.c $c/make/h.h
+obj/make/make.o obj/make/main.o obj/make/input.o obj/make/reader.o \
+obj/make/macro.o obj/make/rules.o: \
+		obj/make/%.o:	obj/fix/make/%.c $c/make/h.h
 	@mkdir -p obj/make
 	$(CC) $(CFLAGS) -Dunix -I$c/make -c -o $@ $<
 obj/elle/eemain.o obj/elle/sbm.o obj/elle/sbstr.o obj/elle/eeerr.o \
