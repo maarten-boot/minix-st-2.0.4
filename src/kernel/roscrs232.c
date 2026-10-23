@@ -581,7 +581,8 @@ PRIVATE void rs_read(tp)
 tty_t *tp;			/* which tty */
 {
 /* Process characters from the circular input buffer.  On the console the
- * debug keys (roscons.c) are taken out first.
+ * debug keys (roscons.c) are taken out first, and a lone ESC that they held
+ * back is passed on when it has timed out.
  */
 
   rs232_t *rs = tp->tty_priv;
@@ -607,6 +608,7 @@ tty_t *tp;			/* which tty */
 	unlock();
 	if ((rs->itail += count) == bufend(rs->ibuf)) rs->itail = rs->ibuf;
   }
+  if (rs->console) cons_esc_timeout(tp);
 }
 
 

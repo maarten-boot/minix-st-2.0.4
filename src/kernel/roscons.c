@@ -11,6 +11,7 @@
  *   scr_init:	initialize the console tty (called from tty.c)
  *   putk:	kernel printf() output, polled
  *   cons_debug_key: debug key recognition for roscrs232.c
+ *   cons_esc_timeout: pass on an ESC held back too long, for roscrs232.c
  *   out_char, flush, func_key, dump, kb_init, kb_timer, vduswitch,
  *   vdu_loadfont: as in the ST console driver
  *
@@ -18,6 +19,11 @@
  * PF1..PF3 (ESC O P, ESC O Q, ESC O R) here: process table with the
  * uptime, memory map, registers of the billed process.  PF4 (ESC O S)
  * sends a test line out of /dev/tty00 (DUART channel B).
+ *
+ * The ESC (or ESC O) of a possible PF key is held back.  A terminal sends
+ * the three characters of a PF key in one go, so if nothing follows within
+ * ESC_TICKS clock ticks it was a lone ESC (the Escape key of BBC BASIC,
+ * vi ...): kb_timer then wakes the TTY task and rs_read passes it on.
  */
 
 #include "kernel.h"
@@ -30,7 +36,12 @@
 #include "roscduart.h"
 #include "rosco.h"
 
+#define ESC_TICKS	3	/* 2..3 ticks, 33..50 ms at 60 Hz */
+
 PRIVATE int pfstate;		/* debug key recognition: 0, ESC, ESC O */
+PRIVATE int esctic;		/* ticks left to hold back ESC (kb_timer) */
+PRIVATE int esctimeout;		/* set by kb_timer: pass the ESC on */
+PRIVATE char esc[2] = { ESC, 'O' };
 
 /*===========================================================================*
  *				putk					     *
@@ -77,17 +88,24 @@ int c;
 {
 /* Recognize PF1..PF3 (ESC O P/Q/R) and do the debug dumps.  Returns 1 if
  * the character was used.  An ESC is held back until the next character
- * shows whether a PF key follows; if not, it is passed on late.
+ * shows whether a PF key follows; if not, it is passed on late (or by
+ * cons_esc_timeout if no character follows).
  */
-  static char esc[2] = { ESC, 'O' };
+  if (pfstate != 0) {
+	lock();
+	esctic = 0;
+	esctimeout = 0;
+	unlock();
+  }
 
   switch (pfstate) {
   case 0:
 	if (c != ESC) return(0);
 	pfstate = 1;
+	esctic = ESC_TICKS;
 	return(1);
   case 1:
-	if (c == 'O') { pfstate = 2; return(1); }
+	if (c == 'O') { pfstate = 2; esctic = ESC_TICKS; return(1); }
 	pfstate = 0;
 	(void) in_process(tp, esc, 1);		/* the held back ESC */
 	return(c == ESC ? cons_debug_key(tp, c) : 0);
@@ -113,6 +131,26 @@ int c;
 	(void) in_process(tp, esc, 2);		/* not ours: pass it on */
 	return(0);
   }
+}
+
+/*===========================================================================*
+ *				cons_esc_timeout			     *
+ *===========================================================================*/
+PUBLIC void cons_esc_timeout(tp)
+tty_t *tp;
+{
+/* Pass on the ESC (or ESC O) held back by cons_debug_key when kb_timer has
+ * found that no character followed in time.  Called by rs_read after the
+ * characters that did arrive, so a PF key in the buffer is still seen.
+ */
+
+  if (!esctimeout) return;
+  lock();
+  esctimeout = 0;
+  unlock();
+  if (pfstate == 0) return;
+  (void) in_process(tp, esc, pfstate);
+  pfstate = 0;
 }
 
 /*===========================================================================*
@@ -156,7 +194,14 @@ PUBLIC void dump()
 
 PUBLIC void kb_timer()
 {
-/* No keyboard repeat to do. */
+/* Called by the clock interrupt at every tick.  There is no keyboard repeat
+ * to do; time out a held back ESC (see cons_debug_key).
+ */
+
+  if (esctic == 0 || --esctic != 0) return;
+  esctimeout = 1;
+  tty_table[0].tty_events = 1;
+  force_timeout();
 }
 
 PUBLIC void vduswitch(tp)

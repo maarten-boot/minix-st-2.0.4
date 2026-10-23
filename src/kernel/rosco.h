@@ -35,6 +35,7 @@ _PROTOTYPE( void duart_imr_clr, (int bits)				);
 
 /* roscons.c */
 _PROTOTYPE( int cons_debug_key, (struct tty *tp, int c)			);
+_PROTOTYPE( void cons_esc_timeout, (struct tty *tp)			);
 
 /* roscrs232.c */
 _PROTOTYPE( void rs_cons_init, (struct tty *tp)				);
