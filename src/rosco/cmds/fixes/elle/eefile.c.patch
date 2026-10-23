@@ -1,0 +1,57 @@
+--- elle/eefile.c
++++ elle/eefile.c
+@@ -9,6 +9,16 @@
+ 
+ #include "elle.h"
+ #include <stdio.h>	/* Use "standard" I/O package for writing */
++
++/* rosco: FNAMSIZ (100) was smaller than a Minix path (PATH_MAX 255), and
++** iwritfile copied names into its FNAMSIZ buffers without a check: saving
++** a file with a path of 100 characters or more overran the stack
++** (Memory fault).  Room for a full path plus the backup name's postfix;
++** longer names are refused (FNCHK).  FNAMSIZ is only used in this file.
++*/
++#undef FNAMSIZ
++#define FNAMSIZ (255+16)
++#define FNCHK(s) (strlen(s) > FNAMSIZ-16)
+ #ifndef BUFSIZ
+ #define BUFSIZ BUFSIZE	/* Some places use wrong name in stdio.h */
+ #endif /*-BUFSIZ*/
+@@ -395,6 +405,11 @@
+ 	if (flags&WF_ASK)
+ 	  {	if((o_name = ask(prompt))==0)
+ 			return(0);		/* User punted. */
++		if(FNCHK(o_name))	/* rosco: would overrun fname */
++		  {	chkfree(o_name);
++			ding("File name too long");
++			return(0);
++		  }
+ 		strcpy(&fname[0], o_name);	/* Copy filename onto stack */
+ 		chkfree(o_name);
+ 	  }
+@@ -405,6 +420,10 @@
+ 		  {	ding("No default file name.");
+ 			return(0);
+ 		  }
++		if(FNCHK(b->b_fn))	/* rosco: would overrun fname */
++		  {	ding("File name too long");
++			return(0);
++		  }
+ 		strcpy(o_name, b->b_fn);
+ 	  }
+ 
+@@ -724,7 +743,13 @@
+ 	if(b = bp) goto once;
+ 	while(!bp && (b = sel_mbuf(b)))
+ 	  {
+-	once:	strcat(strcat(strcpy(sfname,homedir),"/+"),b->b_name);
++	once:	/* rosco: no HOME (NULL), or a name that does not fit */
++		if(!homedir || strlen(homedir)+2+strlen(b->b_name) >= FNAMSIZ)
++		  {	if(grunt) printf("Cannot save %s: no HOME or too long\n",
++					b->b_name);
++			continue;
++		  }
++		strcat(strcat(strcpy(sfname,homedir),"/+"),b->b_name);
+ 		if(grunt) printf("Saving %s...",sfname);
+ #if !(TOPS20)
+ 		if((wfd = creat(sfname, ev_filmod)) < 0)

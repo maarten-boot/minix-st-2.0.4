@@ -1,0 +1,33 @@
+--- elle/ellec.c
++++ elle/ellec.c
+@@ -295,6 +295,9 @@
+ 
+ 	/* Hack user's profile */
+ 	if(!uproflg) exit(0);
++	/* rosco: $HOME is copied into temp[300] below */
++	if((cp = getenv("HOME")) && strlen(cp) > sizeof(temp) - 20)
++		fatal("HOME too long");
+ 	if(!argfile)
+ 	  {
+ 		temp[0] = 0;
+@@ -865,7 +868,8 @@
+ 	  {	lineno++;
+ 		linecp = linebuf;
+ 	  }
+-	else *linecp++ = c;
++	else if(linecp < &linebuf[MAXLINE-1])	/* rosco: a line of */
++		*linecp++ = c;	/* 300+ chars overran linebuf (Memory fault) */
+ 	return(c);
+ }
+ 
+@@ -935,8 +939,8 @@
+ 			  }
+ 		default:
+ 		ok:
+-			if(++i > LSMAX)
+-				break;
++			if(++i >= LSMAX)	/* rosco: was >, the NUL */
++				break;		/* went past cbuf[LSMAX] */
+ 			*cp++ = c;
+ 			continue;
+ 	  }

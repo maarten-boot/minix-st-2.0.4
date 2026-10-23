@@ -1,0 +1,30 @@
+--- yap/getline.c
++++ yap/getline.c
+@@ -78,6 +78,11 @@
+ 			 * No blockheaders left. Allocate new ones
+ 			 */
+ 			siz = topblocklist - pblock;
++			/* rosco: the size is an unsigned (16 bits): at 3276
++			 * blocks (6.7 MB of input) it wrapped */
++			if ((long) (siz + CHUNK) * sizeof(*pblock) > 65535L) {
++				panic("No core");
++			}
+ 			blocklist = pblock = (struct block *)
+ 			re_alloc((char *) pblock,
+ 			(unsigned) (siz * sizeof(*pblock)),
+@@ -707,8 +712,13 @@
+ 	}
+ # endif
+ # endif
+-	if (read(0,&c,1) <= 0) retval = -1; else retval = c & 0177;
+-	return retval;
++	/* rosco: end of file (or an error other than an interrupt) on the
++	 * command input ended nothing: getcomm() asked again and again,
++	 * forever at full speed ("yap file </dev/null", a hangup) */
++	if ((retval = read(0,&c,1)) == 1) return c & 0177;
++	if (retval < 0 && errno == EINTR) return -1;
++	quit();
++	return -1;
+ }
+ 
+ /*

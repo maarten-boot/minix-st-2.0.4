@@ -1,0 +1,22 @@
+--- yap/keys.c
++++ yap/keys.c
+@@ -22,6 +22,7 @@
+ 
+ char *strcpy();
+ char *strcat();
++char *strncpy();	/* rosco: for kerror() */
+ char *getenv();
+ 
+ /*
+@@ -32,7 +33,10 @@
+ kerror(key, emess) char *key, *emess; {
+ 	static char ebuf[80];	/* Room for the error message */
+ 
+-	(VOID) strcpy(ebuf, key);
++	/* rosco: the key part comes from $YAPKEYS and can be any length; a
++	 * long one overran ebuf (and no_tty after it: yap became cat) */
++	(VOID) strncpy(ebuf, key, 40);
++	ebuf[40] = 0;
+ 	(VOID) strcat(ebuf, emess);
+ 	return ebuf;
+ }

@@ -1,0 +1,19 @@
+--- yap/main.c
++++ yap/main.c
+@@ -57,8 +57,15 @@
+ 		exit(1);
+ 	}
+ 	if (no_tty) {
++		extern char **environ;
++
+ 		*--av = "cat";
+-		execve("/bin/cat", av, (char *) 0);
++		/* rosco: environ, not a null pointer (execve read the
++		 * environment list from address 0); and say if it fails */
++		execve("/bin/cat", av, environ);
++		putline("Cannot execute /bin/cat\n");
++		flush();
++		exit(1);
+ 	}
+ 	else	processfiles((int)(argc-(av-argv)), av);
+ 	(VOID) quit();

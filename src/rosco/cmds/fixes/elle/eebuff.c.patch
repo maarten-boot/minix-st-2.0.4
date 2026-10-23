@@ -1,0 +1,15 @@
+--- elle/eebuff.c
++++ elle/eebuff.c
+@@ -263,8 +263,10 @@
+ {
+ 	register chroff cnt;
+ 	register int c;
+-	register int page, line;
+-	int lineatp;
++	/* rosco: counted in chroff (long): in an int (16 bits) the 40000th
++	** line was reported as line -25535 */
++	register chroff page, line;
++	chroff lineatp;
+ 	char tempstr[12], *dottoa ();
+ 
+         saynow("Dot=");

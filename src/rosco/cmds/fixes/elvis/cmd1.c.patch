@@ -1,0 +1,14 @@
+--- orig/elvis/cmd1.c
++++ new/elvis/cmd1.c
+@@ -964,7 +964,10 @@
+ 
+ 	/* try to read the tag info */
+ 	for (scan = tmpblk.c;
+-	     (i = tread(fd, scan, scan - tmpblk.c + BLKSIZE)) > 0;
++	     /* rosco: the room left, not BLKSIZE plus what was read (a
++	      * second read could run past tmpblk); 1 byte for the NUL
++	      */
++	     (i = tread(fd, scan, BLKSIZE - 1 - (int)(scan - tmpblk.c))) > 0;
+ 	     scan += i)
+ 	{
+ 	}

@@ -1,0 +1,42 @@
+--- orig/mined/mined2.c
++++ new/mined/mined2.c
+@@ -728,8 +728,14 @@
+   	return;				/* Empty file */
+ 
+ /* Insert this text at the current location. */
+-  if (insert(line, cur_text, line_buffer) == ERRORS)
++  if (insert(line, cur_text, line_buffer) == ERRORS) {
++	/* rosco: read the rest, else get_line() kept it in its buffer and
++	 * returned it for the next file read
++	 */
++	while ((ret = get_line(fd, line_buffer)) != ERRORS && ret != NO_LINE)
++		;
+   	return;
++  }
+ 
+ /* Repeat getting lines (and inserting lines) until EOF is reached */
+   while ((ret = get_line(fd, line_buffer)) != ERRORS && ret != NO_LINE)
+@@ -1122,7 +1128,10 @@
+ char *message;				/* Message to prompt for expression */
+ FLAG file;
+ {
+-  char mess_buf[LINE_LEN];	/* Buffer to hold message */
++  /* rosco: 2 * LINE_LEN: the prompt and the expression (up to LINE_LEN - 1)
++   * overran it
++   */
++  char mess_buf[2 * LINE_LEN];	/* Buffer to hold message */
+   char replacement[LINE_LEN];	/* Buffer to hold subst. pattern */
+   REGEX *program;			/* Program resulting from compilation */
+   register LINE *line = cur_line;
+@@ -1223,7 +1232,10 @@
+   }
+ 
+ /* Check for line length not exceeding MAX_CHARS */
+-  if (length_of(text_buffer) + length_of(program->end_ptr) >= MAX_CHARS) {
++  /* rosco: textp - text_buffer: text_buffer has no NUL at textp yet, so
++   * length_of() counted whatever followed from earlier use
++   */
++  if ((textp - text_buffer) + length_of(program->end_ptr) >= MAX_CHARS) {
+   	error("Substitution result: line too big", NIL_PTR);
+   	return NIL_PTR;
+   }

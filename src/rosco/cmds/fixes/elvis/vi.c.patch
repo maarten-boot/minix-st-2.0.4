@@ -1,0 +1,55 @@
+--- orig/elvis/vi.c
++++ new/elvis/vi.c
+@@ -11,6 +11,25 @@
+ #include "ctype.h"
+ #include "vi.h"
+ 
++/* rosco: the bell for an ESC in command mode.  beep() also discards the
++ * type-ahead (to abort a macro), and ESC waits "keytime" (1 s) for the
++ * rest of an arrow key, so keys typed right after it were read with it
++ * and lost: on the board ESC (twice, or in command mode) followed by ":"
++ * did nothing, an arrow key first "helped".  vi keeps them.
++ */
++static void escbell()
++{
++	if (*o_flash)
++	{
++		do_VB();
++		refresh();
++	}
++	else if (*o_errorbells)
++	{
++		ttywrite("\007", 1);
++	}
++}
++
+ 
+ 
+ /* This array describes what each key does */
+@@ -342,6 +361,7 @@
+ 		 */
+ 		if (V_from && !(keyptr->flags & VIZ))
+ 		{
++			if (key == '\033') escbell(); else	/* rosco */
+ 			beep();
+ 			prevkey = 0;
+ 			count = 0;
+@@ -354,6 +374,7 @@
+ 		 */
+ 		if (prevkey && !(keyptr->flags & (MVMT|PTMV)))
+ 		{
++			if (key == '\033') escbell(); else	/* rosco */
+ 			beep();
+ 			prevkey = 0;
+ 			count = 0;
+@@ -461,6 +482,10 @@
+ 			{
+ 				(*keyptr->func)();
+ 			}
++			else if (key == '\033')	/* rosco: see escbell() */
++			{
++				escbell();
++			}
+ 			else
+ 			{
+ 				beep();

@@ -118,6 +118,12 @@ STACK_install = 8kw
 # not fit: "ifdef -t file" said "could not malloc", a long -D gave
 # "Memory fault"
 STACK_ifdef = 8kw
+# ed and mined keep the whole file on the heap (ed about 20 bytes a line
+# more than the text, mined about 30): with the ACK build's 32kw and 64k a
+# 40K file filled ed ("file insert error" at 43150 bytes, 2443 short lines)
+# and mined ("File too big.").  128kw holds about 150K of text.
+STACK_ed = 128kw
+STACK_mined = 128kw
 stacks.mk:	$c/simple/Makefile $(TOOLS)/stacks.py
 	python3 $(TOOLS)/stacks.py $c/simple/Makefile > $@
 
@@ -211,11 +217,16 @@ MINEDOBJ = $(addprefix obj/mined/,mined1.o mined2.o)
 bin/mined:	$(MINEDOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/mined.elf $L/crtso.o $(MINEDOBJ) $(LIBS)
-	$(MKMINIX) -S 64k obj/mined.elf $@
+	$(MKMINIX) -S $(or $(STACK_mined),64k) obj/mined.elf $@
 
-obj/mined/%.o:	$c/mined/%.c
+# compiled from obj/fix (Source fixes)
+obj/mined/%.o:	obj/fix/mined/%.c $c/mined/mined.h
 	@mkdir -p obj/mined
 	$(CC) $(CFLAGS) -I$c/mined -c -o $@ $<
+
+# ed: compiled from obj/fix (Source fixes)
+obj/ed.o:	obj/fix/simple/ed.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 # elvis: commands/elvis, a vi clone (18kw in the ACK build); the Minix-ST
 # settings of its Makefile: the libc termcap, no feature reductions
@@ -231,6 +242,12 @@ bin/elvis:	$(ELVISOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 obj/elvis/%.o:	$c/elvis/%.c elvisproto.h
 	@mkdir -p obj/elvis
 	$(CC) $(CFLAGS) -include elvisproto.h -I$c/elvis -c -o $@ $<
+
+# tmp.c, cmd1.c and vi.c: compiled from obj/fix (Source fixes); -iquote, so that
+# "regexp.h" and "ctype.h" are elvis' own, not those of the include tree
+obj/elvis/tmp.o obj/elvis/cmd1.o obj/elvis/vi.o:	obj/elvis/%.o:	obj/fix/elvis/%.c elvisproto.h
+	@mkdir -p obj/elvis
+	$(CC) $(CFLAGS) -include elvisproto.h -iquote $c/elvis -c -o $@ $<
 
 # dosread (also dosdir, doswrite by its name): commands/ibm, FAT12/16 file
 # access through the raw device, e.g. dosdir /dev/c0d0p0 (the boot partition).
@@ -298,13 +315,16 @@ obj/bc/%.o:	$c/bc/%.c
 	$(CC) $(CFLAGS) -Dconst= -I$c/bc -c -o $@ $<
 
 # yap (also more, by its name): commands/yap, a pager (16kw in the ACK build)
+# 64kw: it keeps 20 bytes per 2K block of input (and both the old and the
+# new table while growing it), and 10 blocks: with 16kw "cat file | more"
+# of a 1 MB file died with "No core" at the end; 64kw holds about 5 MB
 YAPOBJ	= $(addprefix obj/yap/,assert.o commands.o display.o getcomm.o \
 	  getline.o help.o keys.o machine.o main.o options.o output.o \
 	  pattern.o process.o prompt.o term.o)
 bin/yap:	$(YAPOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/yap.elf $L/crtso.o $(YAPOBJ) $(LIBS)
-	$(MKMINIX) -S 16kw obj/yap.elf $@
+	$(MKMINIX) -S 64kw obj/yap.elf $@
 
 # __CC68__: no K&R malloc() and lseek() declarations in getline.c;
 # pattern.c defines regerror(char *) against const in <regexp.h>
@@ -483,7 +503,11 @@ obj/advent/%.o:	$c/advent/%.c obj/advent/stamp
 ELLESRC	= eemain eecmds eesite eevini eedisp eeterm eeerr eeques eebuff \
 	  eefile eefed eeedit eebit eef1 eef2 eefd eehelp eekmac eef3 eesrch \
 	  eequer eefill eediag sbstr sbm sberr sbbcpy
-$(eval $(call pkgbin,elle,elle,$(ELLESRC),64k))
+# 128k (64k in the ACK build): elle's own allocator (sbm.c) uses up to 64K
+# and then swaps text out to /tmp; with a 64k gap the heap reached the
+# stack first, and saving after an edit of 50K or more died with "Memory
+# fault"
+$(eval $(call pkgbin,elle,elle,$(ELLESRC),128k))
 $(eval $(call pkgbin,ellec,elle,ellec,16kw))
 # Built without _MINIX, as its Makefile does: <string.h> would declare
 # bcopy(), which elle has its own of (sbbcpy.c).  eefd.c declares
@@ -673,6 +697,13 @@ FIX0	= simple/in.rshd.c make/make.c elle/eemain.c zmodem/rz.c \
 	  simple/xargs.c simple/look.c simple/cgrep.c simple/ifdef.c \
 	  simple/printf.c simple/expr.c simple/test.c simple/sleep.c \
 	  simple/time.c simple/echo.c simple/kill.c
+# editors (group 4): ed, mined
+FIX0	+= simple/ed.c mined/mined1.c mined/mined2.c elvis/tmp.c elvis/cmd1.c \
+	  elvis/vi.c
+# editors and pagers (group 4): elle, ellec, yap
+FIX0	+= elle/sbm.c elle/sbstr.c elle/eeerr.c elle/eefile.c elle/eebuff.c \
+	  elle/eecmds.c elle/ellec.c \
+	  yap/main.c yap/getline.c yap/keys.c yap/commands.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -690,9 +721,15 @@ obj/readfs.o:	obj/fix/simple/readfs.c
 obj/make/make.o:	obj/fix/make/make.c $c/make/h.h
 	@mkdir -p obj/make
 	$(CC) $(CFLAGS) -Dunix -I$c/make -c -o $@ $<
-obj/elle/eemain.o:	obj/fix/elle/eemain.c
+obj/elle/eemain.o obj/elle/sbm.o obj/elle/sbstr.o obj/elle/eeerr.o \
+obj/elle/eefile.o obj/elle/eebuff.o obj/elle/eecmds.o obj/elle/ellec.o: \
+		obj/elle/%.o:	obj/fix/elle/%.c
 	@mkdir -p obj/elle
 	$(CC) $(ELLECF) -c -o $@ $<
+obj/yap/main.o obj/yap/getline.o obj/yap/keys.o obj/yap/commands.o: \
+		obj/yap/%.o:	obj/fix/yap/%.c
+	@mkdir -p obj/yap
+	$(CC) $(CFLAGS) -D__CC68__ -Dconst= -I$c/yap -c -o $@ $<
 obj/zmodem/rz.o:	obj/fix/zmodem/rz.c $c/zmodem/rbsb.c $c/zmodem/zm.c $c/zmodem/zmodem.h
 	@mkdir -p obj/zmodem
 	$(CC) $(CFLAGS) -I$c/zmodem -DPOSIX -c -o $@ $<

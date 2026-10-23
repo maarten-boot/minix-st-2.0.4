@@ -1,0 +1,41 @@
+--- elle/eecmds.c
++++ elle/eecmds.c
+@@ -222,10 +222,22 @@
+ 	chroff sbx_fdlen();
+ 	register char *profptr;
+ 	struct stored_profile st_prof;
++	chroff flen;
+ 
+-	if(filename) strcpy(pfile,filename);
++	/* rosco: names were copied into pfile[200] unchecked (a long name
++	** given to -p or Set Profile overran the stack); no HOME was a NULL
++	** strcpy */
++	if(filename)
++	  {	if(strlen(filename) >= sizeof(pfile))
++		  {	ding("File name too long");
++			return;
++		  }
++		strcpy(pfile,filename);
++	  }
+ 	else		/* Check for user's profile */
+-	  {
++	  {	if(!homedir
++		  || strlen(homedir) + 1 + strlen(ev_profile) >= sizeof(pfile))
++			return;
+ 		strcat(strcat(strcpy(pfile,homedir),"/"),ev_profile);
+ 	  }
+ 	if((pfd = open(pfile,
+@@ -240,8 +252,12 @@
+ 		  }
+ 		return;
+ 	  }
+-	if((len = (int)sbx_fdlen(pfd)) < sizeof(struct stored_profile))
++	/* rosco: the long length was cut to an int (a file of 32K or more
++	** became a negative, then huge unsigned, length); a profile is small */
++	flen = sbx_fdlen(pfd);
++	if(flen < (chroff)sizeof(struct stored_profile) || flen > 8192)
+ 		goto badfil;
++	len = (int)flen;
+ 	profptr = memalloc((SBMO)len);
+ 	if(read(pfd,profptr,len) != len)
+ 		goto badfmt;

@@ -1,0 +1,78 @@
+--- orig/elvis/tmp.c
++++ new/elvis/tmp.c
+@@ -98,6 +98,7 @@
+ 	REG int		j, k;
+ 	int		i;
+ 	long		nbytes;
++	int		toobig = 0;	/* rosco: see "allocate next buffer" */
+ 
+ 	/* switching to a different file certainly counts as a change */
+ 	changes++;
+@@ -105,6 +106,15 @@
+ 
+ 	/* open the original file for reading */
+ 	*origname = '\0';
++	/* rosco: origname[] has 256 bytes; a longer name (from the command
++	 * line) ran over origtime, nlines and lnum[] after it, and the
++	 * editor went astray (":" only beeped)
++	 */
++	if (filename && strlen(filename) >= sizeof origname)
++	{
++		msg("File name too long");
++		return tmpstart("");
++	}
+ 	if (filename && *filename)
+ 	{
+ 		strcpy(origname, filename);
+@@ -338,13 +348,27 @@
+ 			}
+ 
+ 			/* allocate next buffer */
++			/* rosco: the tmp file has at most MAXBLKS blocks (about
++			 * 2 MB): a larger file ran past hdr.n[] and lnum[].  Stop
++			 * reading a few blocks before, leaving room for edits,
++			 * and make the file read-only, so that the truncated text
++			 * is not written back by accident.
++			 */
++			if (i >= MAXBLKS - 4)
++			{
++				toobig = 1;
++				next = (BLK *)0;
++				i++;
++			}
++			else
+ 			next = blkget(++i);
+ 
+ 			/* move fragmentary last line to next buffer */
+ 			inbuf -= k;
+ 			for (j = 0; k < BLKSIZE; j++, k++)
+ 			{
+-				next->c[j] = this->c[k];
++				if (next)
++					next->c[j] = this->c[k];
+ 				this->c[k] = 0;
+ 			}
+ 
+@@ -368,6 +392,10 @@
+ 				nbytes++;
+ 			}
+ 			lnum[i - 1] = nlines;
++			if (toobig)		/* rosco: see above */
++			{
++				break;
++			}
+ 		}
+ FoundEOF:
+ 
+@@ -412,6 +440,11 @@
+ 	{
+ 		msg("Newline characters have been inserted to break up long lines");
+ 	}
++	if (toobig)		/* rosco */
++	{
++		setflag(file, READONLY);
++		msg("File too big: only the first %ld lines were read; READONLY", nlines);
++	}
+ #ifndef CRUNCH
+ 	if (tstflag(file, HADBS))
+ 	{

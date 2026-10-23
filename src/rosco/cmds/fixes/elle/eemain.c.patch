@@ -1,0 +1,10 @@
+--- elle/eemain.c
++++ elle/eemain.c
+@@ -174,6 +174,7 @@
+ 				break;	
+ 			case 'P':
+ 				prof_file = *av;
++				break;	/* rosco: fell into "bad switch" */
+ 			default:
+ 				goto stop;
+ 		  }

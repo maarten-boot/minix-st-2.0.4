@@ -1,0 +1,12 @@
+--- elle/eeerr.c
++++ elle/eeerr.c
+@@ -57,7 +57,8 @@
+ 		if (oldttystate > 0) set_tty();
+ 		return(1);	/* Try to continue normally */
+ 	  }
+-	printf("%sERR: %o ", (type ? "SBX" : "SBM"), adr);
++	/* rosco: adr is a 4-byte pointer, %o printed half of it */
++	printf("%sERR: %lo ", (type ? "SBX" : "SBM"), (long)adr);
+ 	printf(str,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12);
+ 	askerr();
+ }

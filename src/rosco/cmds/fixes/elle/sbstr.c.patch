@@ -1,0 +1,92 @@
+--- elle/sbstr.c
++++ elle/sbstr.c
+@@ -1061,7 +1061,7 @@
+ 			return(sbx_err(0,"No file"));	/* Gasp? */
+ 		if(!sbx_rdf(sd->sdfile->sffd, sm->smaddr, sm->smuse,
+ 				1, sd->sdaddr))
+-			return(sbx_err(0,"Readin SD: %o", sd));
++			return(sbx_err(0,"Readin SD: %lo", sd));	/* rosco: %lo, pointers are 4 bytes */
+ 		/* ------- */
+ 
+ 	sekr2:	sbx_sbrdy(sb);		/* Make it current, pt to beg */
+@@ -1710,6 +1710,21 @@
+  * sbstr gets major hacking (not just getc/putc).
+  */
+ extern struct smblk *sbm_list;
++
++/* rosco: sbm_nfor() passes its last argument on as a 4-byte pointer (its
++** prototype), and sbx_sdgc() read the level from the first 2 bytes of it,
++** the high half: always 0.  So the GC never got past level 0: no modified
++** text was ever written to the swapout file, and editing more than about
++** 50K ended with "GC loop, cannot free block" (and a Memory fault).
++** This takes the pointer and passes the level on as an int.
++*/
++static int
++sbx_sdgcp(sdp, levp)
++struct sdblk *sdp;
++struct sbfile *levp;
++{	return(sbx_sdgc(sdp, (int)(long)levp));
++}
++
+ sbx_comp(cmin,lev)
+ int cmin, lev;
+ {	int sbx_sdgc();
+@@ -1721,7 +1736,8 @@
+ 				cmin));
+ 
+ 	/* Step thru core hunting for SD node blocks */
+-	sbm_nfor(SM_DNODS,sizeof(struct sdblk),sbx_sdgc,lev);
++	sbm_nfor(SM_DNODS,sizeof(struct sdblk),sbx_sdgcp,	/* rosco */
++		(struct sbfile *)(long)lev);
+ }
+ 
+ /* Do GC stuff on a sdblk.  Guaranteed to exist, but may be locked */
+@@ -1911,7 +1927,7 @@
+ 		  }
+ 		else if(inlen = sd->sdlen)
+ 		  {	if(sd->sdfile == 0)
+-				return(sbx_err(errno,"Sdfile 0, SD %o",sd));
++				return(sbx_err(errno,"Sdfile 0, SD %lo",sd));	/* rosco: %lo, pointers are 4 bytes */
+ 			/* Foo on UNIX */
+ 			botchflg = ((ifd = sd->sdfile->sffd) == ofd) ? 1 : 0;
+ 			skflg = 1;		/* Always seek first time */
+@@ -1926,7 +1942,7 @@
+ 			  {
+ 				if(inlen < cnt) cnt = inlen;
+ 				if(!sbx_rdf(ifd, buf+rem, cnt, skflg, inptr))
+-					return(sbx_err(errno,"Swapout err, SD %o",sd));
++					return(sbx_err(errno,"Swapout err, SD %lo",sd));	/* rosco: %lo, pointers are 4 bytes */
+ 				/* Further seeks depend on botch setting */
+ 				if(skflg = botchflg)
+ 				  {	if(lseek(ofd,outptr,0) < 0)
+@@ -2096,7 +2112,7 @@
+ 		else if(cur >= (sd->sdaddr + sd->sdlen))
+ 			continue;
+ 
+-		sbx_err(0,"FFND blew it, but recovered. SD %o siz %ld",
++		sbx_err(0,"FFND blew it, but recovered. SD %lo siz %ld",	/* rosco: %lo, pointers are 4 bytes */
+ 			sd, size);
+ 		sd = (sds = sdl)->sdforw;
+ 		goto redo;
+@@ -2141,7 +2157,7 @@
+ 			if(sbx_rugpull(fd))	/* Yes, handle special case */
+ 				return(cnt);	/* Allow "win" return */
+ 	  }
+-	sbx_err(0,"%s %d:%s, %ld:(%d%s,%o,%d)=%ld (fl %ld)",
++	sbx_err(0,"%s %d:%s, %ld:(%d%s,%lo,%d)=%ld (fl %ld)",	/* rosco: %lo, pointers are 4 bytes */
+ 			errtyp,	eres, strerror(eres),
+ 			loc, fd, ftyp, addr, cnt, lres,
+ 			curlen);
+@@ -2190,6 +2206,11 @@
+ 	  {	abort();
+ 	  }
+ 	if(sbv_debug)
+-		(*sbv_debug)(1,*sptr,str,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12);
++		/* rosco: the handler (errsbm) takes the caller's address as a
++		** pointer; *sptr was a 2-byte int with -mshort, which moved
++		** "str" and the arguments by 2 bytes: printf got a garbage
++		** format pointer (Memory fault on any SB error).
++		*/
++		(*sbv_debug)(1,(char *)__builtin_return_address(0),str,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12);
+ 	return(val);
+ }

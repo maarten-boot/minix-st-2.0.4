@@ -1,0 +1,119 @@
+--- orig/simple/ed.c
++++ new/simple/ed.c
+@@ -153,7 +153,18 @@
+ #define LGLOB	2		/* line marked global */
+ 
+ 				/* max number of chars per line */
+-#define MAXLINE	(sizeof(int) == 2 ? 256 : 8192)
++/* rosco: 4096, not 256: sizeof(int) is 2 here, and lines over 255
++ * characters were cut when a file was read (and lost when it was
++ * written back).  A line holds at most MAXLINE - 2 characters, so it
++ * still fits with "\n" and the NUL in the MAXLINE buffers.
++ */
++#define MAXLINE	4096
++/* rosco: the command line keeps its old size: optpat() copies a pattern
++ * from it into str[MAXPAT] without a bound
++ */
++#define MAXCMD	256
++				/* rosco: ed numbers lines in an int */
++#define MAXLINES 32767
+ #define MAXPAT	256		/* max number of chars per replacement
+ 				 * pattern */
+ 				/* max file name size */
+@@ -369,7 +380,8 @@
+   while (1) {
+ 	if (nflg) printf("%6d. ", curln + 1);
+ 
+-	if (fgets(lin, MAXLINE, stdin) == NULL) return(EOF);
++	/* rosco: MAXLINE - 1: at most MAXLINE - 2 characters and "\n" */
++	if (fgets(lin, MAXLINE - 1, stdin) == NULL) return(EOF);
+ 	if (lin[0] == '.' && lin[1] == '\n') return (0);
+ 	stat = ins(lin);
+ 	if (stat < 0) return(ERR);
+@@ -986,7 +998,10 @@
+ 	return(ERR);
+   }
+   curln = lin;
+-  for (lines = 0, bytes = 0; (err = egets(str, MAXLINE, fp)) > 0;) {
++  /* rosco: MAXLINE - 1: egets() stores up to size characters, then "\n"
++   * or the NUL after them (a line of 255 characters wrote past str[])
++   */
++  for (lines = 0, bytes = 0; (err = egets(str, MAXLINE - 1, fp)) > 0;) {
+ 	bytes += strlen(str);
+ 	if (ins(str) < 0) {
+ 		printf("file insert error\n");
+@@ -1075,7 +1090,7 @@
+ int curln = 0;
+ int lastln = 0;
+ char *inptr;
+-static char inlin[MAXLINE];
++static char inlin[MAXCMD];	/* rosco: MAXCMD, see there */
+ int nflg, lflg;
+ int line1, line2, nlines;
+ extern char fname[];
+@@ -1107,10 +1122,15 @@
+ 	for (i = 1; i < argc; i++) {
+ 		if (doread(0, argv[i]) == 0) {
+ 			curln = 1;
+-			strcpy(fname, argv[i]);
++			/* rosco: bounded (a long name overran fname[]) */
++			strncpy(fname, argv[i], MAXFNAME - 1);
+ 			break;
+ 		}
+ 	}
++	/* rosco: remember the name of a new file, so that "w" writes it
++	 * (it said "no file name")
++	 */
++	if (fname[0] == EOS) strncpy(fname, argv[1], MAXFNAME - 1);
+   }
+   while (1) {
+ 	setjmp(env);
+@@ -1364,7 +1384,13 @@
+ 
+   if (*inptr >= '0' && *inptr <= '9') {	/* line number */
+ 	for (num = 0; *inptr >= '0' && *inptr <= '9';) {
+-		num = (num * 10) + *inptr - '0';
++		/* rosco: a number over 32767 wrapped ("65537p" printed
++		 * line 1); now it stays too big, which getone() refuses
++		 */
++		if (num <= (MAXLINES - 9) / 10)
++			num = (num * 10) + *inptr - '0';
++		else
++			num = MAXLINES;
+ 		inptr++;
+ 	}
+ 	return num;
+@@ -1523,6 +1549,8 @@
+ 		cp++;
+ 		continue;
+ 	}
++	/* rosco: lastln is an int: stop at 32767 lines */
++	if (lastln >= MAXLINES) return(ERR);
+ 	if ((new = (LINE *) malloc(sizeof(LINE) + strlen(buf))) == NULL)
+ 		return(ERR);	/* no memory */
+ 
+@@ -2052,8 +2080,12 @@
+   /* Skip white space */
+   while (*inptr == SP || *inptr == HT) inptr++;
+ 
++  /* rosco: bounded: a long word overran word[16] (Memory fault) */
+   for (i = 0; *inptr != SP && *inptr != HT && *inptr != NL;)
+-	word[i++] = *inptr++;
++	if (i < sizeof(word) - 1)
++		word[i++] = *inptr++;
++	else
++		inptr++;
+   word[i] = EOS;
+   for (t = tbl; t->t_str; t++) {
+ 	if (strcmp(word, t->t_str) == 0) {
+@@ -2129,6 +2161,10 @@
+ 			lastm = m;
+ 		}
+ 		if (m == NULL || m == txtptr) {
++			/* rosco: bounded: the rest of a line after a long
++			 * replacement was copied past the end of buf[]
++			 */
++			if (new >= buf + MAXLINE) return(ERR);
+ 			*new++ = *txtptr++;
+ 		} else {
+ 			txtptr = m;

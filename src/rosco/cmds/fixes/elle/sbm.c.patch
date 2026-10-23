@@ -1,0 +1,101 @@
+--- elle/sbm.c
++++ elle/sbm.c
+@@ -73,8 +73,10 @@
+ 	register char *cp;
+ 
+ 	/* Get initial chunk of memory from standard system rtn */
++	/* rosco: compare the pointer, not its low 16 bits (an int with
++	** -mshort): a break on a 64K boundary looked like a failure */
+ 	if((cp = SBM_SBRK(SMNODES*sizeof(struct smblk))) == 0
+-	  || (int) cp == -1)
++	  || cp == (char *) -1)
+ 		return(sbm_err(0,"Can't sbrk"));
+ 	sm = (struct smblk *)cp;		/* Better be word-aligned! */
+ 	sbm_lmak(sm,(SBMO)sizeof(struct smblk),SMNODES);      /* Make list */
+@@ -325,13 +327,16 @@
+ 		if(sbm_nxtra		/* If normal then try for big chunk */
+ 		  && csiz < sbm_chksiz) csiz = sbm_chksiz;	/* Max */
+ 		if (csiz > sm->smlen)  csiz = sm->smlen;	/* Min */
++		/* rosco: sbrk() takes an int; 32K or more was negative */
++		if (csiz > 0x7FFE) csiz = 0x7FFE;
+ 
+ 		/* Get the NXM mem */
+ 		if((addr = (SBMA)SBM_SBRK(csiz)) != sm->smaddr)
+ 		  {     /* Unexpected value returned from SBRK! */
+ 
+-			if((int)addr != 0 && (int)addr != -1)
+-			  {	return(sbm_err(0,"SBRK %o != %o", addr,
++			/* rosco: pointer compares (were (int), 16 bits) */
++			if(addr != 0 && addr != (SBMA) -1)
++			  {	return(sbm_err(0,"SBRK %lo != %lo", addr,	/* rosco: %lo, pointers are 4 bytes */
+ 						sm->smaddr));
+ #if 0
+ 			/* If value indicates couldn't get the stuff, then
+@@ -349,7 +354,7 @@
+ 				 * the NXM then something is screwed up. */
+ 				if(addr < sm->smaddr
+ 				  || (addr >= sm->smaddr+sm->smlen))
+-					return(sbm_err(0,"SBRK %o != %o",
++					return(sbm_err(0,"SBRK %lo != %lo",	/* rosco: %lo, pointers are 4 bytes */
+ 						addr, sm->smaddr));
+ 				/* Got some mem, falls within NXM.
+ 				 * Presumably someone else has called sbrk
+@@ -373,14 +378,18 @@
+ 				return(sbm_err(0,"No uNXM node!"));
+ 			xaddr = sm->smaddr;	/* Use this for checking */
+ 			sm->smuse = 0;		/* Use this for sum */
+-			for(csiz = sm->smlen; csiz > 0;)
++			/* rosco: sbrk() takes an int: at most 0x7FFE at a
++			** time (32K or more was a negative increment, which
++			** gave memory back); pointer compares, not (int) */
++			for(csiz = (sm->smlen > 0x7FFE ? 0x7FFE : sm->smlen);
++			    csiz > 0;)
+ 			  {	addr = SBM_SBRK(csiz);
+-				if((int)addr == 0 || (int)addr == -1)
++				if(addr == 0 || addr == (SBMA) -1)
+ 				  {	csiz >>= 1;
+ 					continue;
+ 				  }
+ 				if(addr != xaddr)
+-					return(sbm_err(0,"SBRK %o != %o", addr,
++					return(sbm_err(0,"SBRK %lo != %lo", addr,	/* rosco: %lo, pointers are 4 bytes */
+ 						xaddr));
+ 				sm->smuse += csiz;
+ 				xaddr += csiz;
+@@ -424,7 +433,7 @@
+ 			 */
+ 			if(sm->smlen > csiz	/* Split unless all used */
+ 			  && !sbm_split(sm,csiz)) /* Call shd always win */
+-				return(sbm_err(0,"getsplit err: %o",sm));
++				return(sbm_err(0,"getsplit err: %lo",sm));	/* rosco: %lo, pointers are 4 bytes */
+ 			sm->smflags &= ~SM_NXM;	/* Node is now real mem */
+ 		  }
+ 
+@@ -719,7 +728,8 @@
+ 	if((int)sbm_debug==1)
+ 		abort();
+ 	if(sbm_debug)
+-		(*sbm_debug)(0,*sptr,str,a0,a1,a2,a3);
++		/* rosco: a pointer, as errsbm takes it (see sbx_err) */
++		(*sbm_debug)(0,(char *)__builtin_return_address(0),str,a0,a1,a2,a3);
+ 	return(val);
+ }
+ 
+@@ -761,7 +771,7 @@
+ 	smp = &((struct smblk **)ptr)[-1];	/* Point to addr-1 */
+ 	sm = *smp;				/* Pluck SM ptr therefrom */
+ 	if(((sm->smflags&0377) != SM_NID) || sm->smaddr != (SBMA)smp)
+-		return((int)sbm_err(0,"free: bad arg %o", ptr));
++		return((int)sbm_err(0,"free: bad arg %lo", ptr));	/* rosco: %lo, pointers are 4 bytes */
+ 	sbm_mfree(sm);
+ 	return(1);
+ }
+@@ -775,7 +785,7 @@
+ 	smp = &((struct smblk **)ptr)[-1];	/* Point to addr-1 */
+ 	sm = *smp;				/* Pluck SM ptr therefrom */
+ 	if(((sm->smflags&0377) != SM_NID) || (sm->smaddr != (SBMA)smp))
+-		return((char *)sbm_err(0,"realloc: bad arg %o",ptr));
++		return((char *)sbm_err(0,"realloc: bad arg %lo",ptr));	/* rosco: %lo, pointers are 4 bytes */
+ 	if((sm = sbm_exp(sm, rndup(size+(sizeof(struct smblk *))))) == 0)
+ 		return(0);
+ 	*(smp = (struct smblk **)sm->smaddr) = sm;      /* Save smblk ptr */

@@ -1,0 +1,109 @@
+--- orig/mined/mined1.c
++++ new/mined/mined1.c
+@@ -600,12 +600,15 @@
+   char buf[LINE_LEN];
+   register char *p = buf;
+ 
++  /* rosco: bounded: "Cannot create " or "Reading " and a long file name
++   * overran buf[LINE_LEN]
++   */
+   *p++ = ' ';
+   if (s1 != NIL_PTR)
+-	while (*p = *s1++)
++	while (p < &buf[LINE_LEN - 2] && (*p = *s1++))
+ 		p++;
+   if (s2 != NIL_PTR)
+-	while (*p = *s2++)
++	while (p < &buf[LINE_LEN - 2] && (*p = *s2++))
+ 		p++;
+   *p++ = ' ';
+   *p++ = 0;
+@@ -1123,7 +1126,11 @@
+ 
+ /* Set tty to CBREAK mode */
+   tcgetattr(input_fd, &new_tty);
+-  new_tty.c_lflag &= ~(ICANON|ECHO|ECHONL);
++  /* rosco: and IEXTEN: the tty handles ^V (LNEXT) and ^R (REPRINT) even
++   * in non-canonical mode, so ^V (visit) and ^R (global replace) never
++   * reached mined
++   */
++  new_tty.c_lflag &= ~(ICANON|ECHO|ECHONL|IEXTEN);
+   new_tty.c_iflag &= ~(IXON|IXOFF);
+ 
+ /* Unset signal chars, leave only SIGQUIT set to ^\ */
+@@ -1302,6 +1309,8 @@
+  * couldn't be opened, just some initializations are done, and a line consisting
+  * of a `\n' is installed.
+  */
++int split_lines;	/* rosco: number of long lines get_line() split */
++
+ void load_file(file)
+ char *file;
+ {
+@@ -1323,6 +1332,13 @@
+ 	}
+ 	file_name[0] = '\0';
+   }
++  else if (length_of(file) >= LINE_LEN) {
++	/* rosco: file_name[] holds LINE_LEN - 1 characters; a longer
++	 * name overran it
++	 */
++	status_line("File name too long: ", file);
++	file_name[0] = '\0';
++  }
+   else {
+   	copy_string(file_name, file);	/* Save file name */
+   	if (access(file, 0) < 0)	/* Cannot access file. */
+@@ -1346,7 +1362,9 @@
+   		line = line_insert(line, "\n", 1);
+   	clear_buffer();		/* Clear output buffer */
+   	cur_line = header->next;
+-  	fstatus("Read", nr_of_chars);
++  	fstatus(split_lines ? "Read (long lines split)" : "Read",
++								nr_of_chars);
++  	split_lines = 0;
+   	(void) close(fd);		/* Close file */
+   }
+   else					/* Just install a "\n" */
+@@ -1385,6 +1403,15 @@
+   	}
+ 	if (*cur_pos == '\0')
+ 		*cur_pos = ' ';
++	/* rosco: a line longer than MAX_CHARS - 2 characters ran past the
++	 * end of the buffer (text_buffer[MAX_CHARS], the globals after it);
++	 * split it, as the editor cannot hold longer lines
++	 */
++	if (buffer - begin >= MAX_CHARS - 2) {
++		*buffer++ = '\n';
++		split_lines++;
++		break;
++	}
+   } while ((*buffer++ = *cur_pos++) != '\n');
+ 
+   current = cur_pos;
+@@ -1710,7 +1737,10 @@
+ FLAG writefl, changed;
+ {
+   register LINE *line;
+-  char msg[LINE_LEN + 40];/* Buffer to hold line */
++  /* rosco: + 80, not + 40: a long message, name, counts and the buffer
++   * information came close to the end
++   */
++  char msg[LINE_LEN + 80];/* Buffer to hold line */
+   char yank_msg[LINE_LEN];/* Buffer for msg of yank_file */
+ 
+   if (count < 0)		/* Not valid. Count chars in file */
+@@ -1896,7 +1926,12 @@
+   			/* If inbuf is empty clear status_line */
+   			return (ptr == inbuf && clearfl == TRUE) ? NO_INPUT :FINE;
+   		default :		/* Only read ASCII chars */
+-  			if ((c >= ' ' && c <= '~') || c == '\t') {
++  			/* rosco: bounded: every caller's buffer has LINE_LEN
++  			 * characters; a long answer overran it
++  			 */
++  			if (ptr >= inbuf + LINE_LEN - 1)
++  				ring_bell();
++  			else if ((c >= ' ' && c <= '~') || c == '\t') {
+   				*ptr++ = c;
+   				*ptr = '\0';
+   				if (c == '\t')

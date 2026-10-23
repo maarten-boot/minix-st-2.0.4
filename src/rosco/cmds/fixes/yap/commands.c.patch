@@ -1,0 +1,35 @@
+--- yap/commands.c
++++ yap/commands.c
+@@ -464,7 +464,15 @@
+ do_skiplines(cnt) long cnt; {	/* Skip lines forwards */
+ 
+ 	/* Should be interruptable ... */
+-	(VOID) scrollf((int) (cnt + maxpagesize - 1), 0);
++	/* rosco: in steps that fit an int; "40000s" was cut to a
++	 * negative int and did nothing */
++	cnt += maxpagesize - 1;
++	while (cnt > 0 && !interrupt) {
++		int n = cnt > 16384 ? 16384 : (int) cnt;
++
++		if (scrollf(n, 0) & EOFILE) break;
++		cnt -= n;
++	}
+ 	redraw(0);
+ }
+ 
+@@ -472,7 +480,14 @@
+ do_bskiplines(cnt) long cnt; {	/* Skip lines backwards */
+ 
+ 	/* Should be interruptable ... */
+-	(VOID) scrollb((int) (cnt + pagesize - 1), 0);
++	/* rosco: in steps that fit an int (see do_skiplines) */
++	cnt += pagesize - 1;
++	while (cnt > 0 && !interrupt) {
++		int n = cnt > 16384 ? 16384 : (int) cnt;
++
++		if (scrollb(n, 0) & START) break;
++		cnt -= n;
++	}
+ 	redraw(0);
+ }
+ 
