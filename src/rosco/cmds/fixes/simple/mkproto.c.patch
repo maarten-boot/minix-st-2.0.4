@@ -1,0 +1,163 @@
+--- orig/simple/mkproto.c
++++ new/simple/mkproto.c
+@@ -24,8 +24,11 @@
+ 
+ /* Globals. */
+ int count, origlen, tabs;
+-int gid, uid, prot, same_uid, same_gid, same_prot, blocks, inodes;
++int gid, uid, prot, same_uid, same_gid, same_prot;
++/* rosco: blocks and inodes were int: -b 40000 printed "-25536 -8504" */
++long blocks, inodes;
+ int block_given, inode_given, dprot;
++int status;			/* rosco: exit status, 1 after an error */
+ char *indentstr;
+ char *proto_file, *top;
+ FILE *outfile;
+@@ -62,7 +65,7 @@
+   while ((op = getopt(argc, argv, "b:g:i:p:t:u:d:s")) != EOF) {
+ 	switch (op) {
+ 	    case 'b':
+-		blocks = atoi(optarg);
++		blocks = atol(optarg);
+ 		block_given = 1;
+ 		break;
+ 	    case 'g':
+@@ -71,7 +74,7 @@
+ 		same_gid = 0;
+ 		break;
+ 	    case 'i':
+-		inodes = atoi(optarg);
++		inodes = atol(optarg);
+ 		inode_given = 1;
+ 		break;
+ 	    case 'p':
+@@ -106,23 +109,36 @@
+   if (!top) top = dir;
+   open_outfile();
+   if (block_given && !inode_given) inodes = (blocks / 3) + 8;
++  if (inodes > 65535L) inodes = 65535L;	/* rosco: the most mkfs can make */
+   if (!block_given && inode_given) usage(argv[0]);
+   count = 1;
+   tabs = 0;
+   origlen = strlen(dir);
+ 
+   /* Check that it really is a directory */
+-  stat(dir, &st);
++  /* rosco: the result of stat() was not checked (st uninitialised) */
++  if (stat(dir, &st) == -1) {
++	perror(dir);
++	exit(1);
++  }
+   if ((st.st_mode & S_IFMT) != S_IFDIR) {
+ 	fprintf(stderr, "mkproto: %s must be a directory\n", dir);
+ 	usage(argv[0]);
+   }
+-  fprintf(outfile, "boot\n%d %d\n", blocks, inodes);
++  fprintf(outfile, "boot\n%ld %ld\n", blocks, inodes);
+   display_attrib("", &st);
+   fprintf(outfile, "\n");
+   descend(dir);
+   fprintf(outfile, "$\n");
+-  return(0);
++  /* rosco: write errors and the errors of descend() (directories that
++   * could not be read, e.g. deeper than the open file limit allows) are
++   * reported in the exit status
++   */
++  if (fflush(outfile) == EOF || ferror(outfile)) {
++	fprintf(stderr, "mkproto: write error\n");
++	status = 1;
++  }
++  return(status);
+ }
+ 
+ /* Output the prototype spec for this directory. */
+@@ -133,16 +149,21 @@
+   DIR *dirp;
+   char *name, *temp, *tempend;
+   int i;
+-  struct stat st;
++  struct stat st, lst;
+   mode_t mode;
+ 
+   dirp = opendir(dirname);
+   if (dirp == NULL) {
+ 	fprintf(stderr, "unable to open directory %s\n", dirname);
++	status = 1;
+ 	return;
+   }
+   tabs++;
+   temp = (char *) malloc(sizeof(char) * strlen(dirname) +1 + PATH_MAX);
++  if (temp == NULL) {		/* rosco: was not checked */
++	fprintf(stderr, "mkproto: out of memory\n");
++	exit(1);
++  }
+   strcpy(temp, dirname);
+   strcat(temp, "/");
+   tempend = &temp[strlen(temp)];
+@@ -155,20 +176,33 @@
+ 
+ 	if (stat(temp, &st) == -1) {
+ 		fprintf(stderr, "cant get status of '%s' \n", temp);
++		status = 1;
+ 		continue;
+ 	}
+ 	if (name[0] == '.' && (name[1] == 0 ||
+ 	    (name[1] == '.' && name[2] == 0)))
+ 		continue;
+ 
++	/* rosco: stat() follows symbolic links: a link to a directory
++	 * above (ln -s .. loop) was descended again and again, until the
++	 * open file limit ended it.  Links to directories are left out.
++	 */
++	if (lstat(temp, &lst) == 0 && S_ISLNK(lst.st_mode)
++					&& S_ISDIR(st.st_mode)) {
++		fprintf(stderr, "%s: symbolic link to a directory, skipped\n",
++			temp);
++		continue;
++	}
++
+ 	display_attrib(name, &st);
+ 
+ 	mode = st.st_mode & S_IFMT;
+ 	if (mode == S_IFDIR) {
+ 		fprintf(outfile, "\n");
+ 		descend(temp);
++		/* rosco: fputs, the -d string was used as a format */
+ 		for (i = 0; i < tabs; i++) {
+-			fprintf(outfile, indentstr);
++			fputs(indentstr, outfile);
+ 		}
+ 		fprintf(outfile, "$\n");
+ 		continue;
+@@ -189,6 +223,7 @@
+ 	}
+ 	fprintf(outfile, " /dev/null");
+ 	fprintf(stderr,"File\n\t%s\n has an invalid mode, made empty.\n",temp);
++	status = 1;
+   }
+   closedir(dirp);
+   free(temp);
+@@ -208,7 +243,8 @@
+   if (same_gid) gid = st->st_gid;
+   if (same_prot)
+ 	prot = st->st_mode & 0777;	/***** This one is a bit shady *****/
+-  for (i = 0; i < tabs; i++) fprintf(outfile, indentstr);
++  /* rosco: fputs, the -d string (-d %s) was used as a format */
++  for (i = 0; i < tabs; i++) fputs(indentstr, outfile);
+   fprintf(outfile, "%s%s%c%c%c%3o %d %d",
+ 	name,
+ 	*name == '\0' ? "" : indentstr,	/* stop the tab for a null name */
+@@ -243,6 +279,11 @@
+ {
+   if (proto_file == NULL)
+ 	outfile = stdout;
+-  else if ((outfile = fopen(proto_file, "w")) == NULL)
+-	fprintf(stderr, "Cannot create %s\n ", proto_file);
++  else if ((outfile = fopen(proto_file, "w")) == NULL) {
++	/* rosco: went on with outfile NULL: fprintf() wrote through a FILE
++	 * at address 0 (no MMU: the vector table) and exited 0
++	 */
++	fprintf(stderr, "Cannot create %s\n", proto_file);
++	exit(1);
++  }
+ }

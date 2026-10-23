@@ -1,0 +1,124 @@
+--- orig/simple/strip.c
++++ new/simple/strip.c
+@@ -21,6 +21,7 @@
+ char buffer[BUFSIZ];		/* used to copy executable */
+ char new_file[NAME_LENGTH];	/* contains name of temporary */
+ struct exec header;
++int status;			/* rosco: exit status, 1 after an error */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void strip, (char *file));
+@@ -41,7 +42,7 @@
+ 		strip(*argv);
+ 		argv++;
+ 	}
+-  return(0);
++  return(status);	/* rosco: errors exited 0 */
+ }
+ 
+ void strip(file)
+@@ -54,11 +55,13 @@
+   fd = open(file, O_RDONLY);
+   if (fd == -1) {
+ 	fprintf(stderr, "can't open %s\n", file);
++	status = 1;
+ 	close(fd);
+ 	return;
+   }
+   if (read_header(fd)) {
+ 	fprintf(stderr, "%s: not an executable file\n", file);
++	status = 1;
+ 	close(fd);
+ 	return;
+   }
+@@ -70,14 +73,29 @@
+   header.a_syms = 0L;		/* remove table size */
+   fstat(fd, &buf);
+   relo_size = buf.st_size - (A_MINHDR + header.a_text + header.a_data + symb_size);
++  /* rosco: the relocations (GEMDOS format, mm/exec.c) follow the symbol
++   * table and are needed to load the program.  A symbol table size past
++   * the end of the file made relo_size negative: the copy had no
++   * relocations and died (sig=4) when run.  At least the long that
++   * starts the relocations must be there.
++   */
++  if (symb_size < 0 || relo_size < 4) {
++	fprintf(stderr, "%s: bad symbol table size %ld, not stripped\n",
++		file, symb_size);
++	status = 1;
++	close(fd);
++	return;
++  }
+   new_fd = make_tmp(new_file, file);
+   if (new_fd == -1) {
+ 	fprintf(stderr, "can't create temporary file\n");
++	status = 1;
+ 	close(fd);
+ 	return;
+   }
+   if (write_header(new_fd)) {
+ 	fprintf(stderr, "can't write temporary file\n");
++	status = 1;
+ 	unlink(new_file);
+ 	close(fd);
+ 	close(new_fd);
+@@ -85,6 +103,7 @@
+   }
+   if (copy_file(fd, new_fd, header.a_text + header.a_data)) {
+ 	fprintf(stderr, "can't copy %s\n", file);
++	status = 1;
+ 	unlink(new_file);
+ 	close(fd);
+ 	close(new_fd);
+@@ -94,6 +113,7 @@
+ 	lseek(fd, symb_size, 1);
+ 	if (copy_file(fd, new_fd, relo_size)) {
+ 	    fprintf(stderr, "can't copy %s\n", file);
++	    status = 1;
+ 	    unlink(new_file);
+ 	    close(fd);
+ 	    close(new_fd);
+@@ -101,15 +121,29 @@
+ 	}
+   }
+   close(fd);
+-  close(new_fd);
+-  if (unlink(file) == -1) {
+-	fprintf(stderr, "can't unlink %s\n", file);
++  if (close(new_fd) == -1) {
++	fprintf(stderr, "can't write temporary file\n");
++	status = 1;
++	unlink(new_file);
++	return;
++  }
++  /* rosco: the stripped copy gets the owner and mode of the original
++   * before it replaces it: chmod() alone gave a setuid program stripped
++   * by root to root.  If the owner cannot be kept, the setuid and setgid
++   * bits are dropped.
++   */
++  if (chown(new_file, buf.st_uid, buf.st_gid) == -1)
++	buf.st_mode &= ~(S_ISUID | S_ISGID);
++  chmod(new_file, buf.st_mode & 07777);
++  /* rosco: was unlink(file) + link(new_file, file) + unlink(new_file),
++   * with the result of link() unchecked: a failing link lost the program
++   */
++  if (rename(new_file, file) == -1) {
++	fprintf(stderr, "can't replace %s\n", file);
++	status = 1;
+ 	unlink(new_file);
+ 	return;
+   }
+-  link(new_file, file);
+-  unlink(new_file);
+-  chmod(file, buf.st_mode);
+ }
+ 
+ int read_header(fd)
+@@ -118,6 +152,8 @@
+   if (read(fd, (char *) &header, A_MINHDR) != A_MINHDR) return(1);
+   if (BADMAG(header)) return (1);
+   if (header.a_hdrlen > sizeof(struct exec)) return (1);
++  /* rosco: a header shorter than A_MINHDR (a_hdrlen 0) was taken */
++  if (header.a_hdrlen < A_MINHDR) return (1);
+   lseek(fd, 0L, SEEK_SET);	/* variable size header */
+   if (read(fd, (char *)&header, (int)header.a_hdrlen) != (int) header.a_hdrlen)
+ 	return(1);

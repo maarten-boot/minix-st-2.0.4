@@ -1,0 +1,255 @@
+--- orig/simple/ci.c
++++ new/simple/ci.c
+@@ -11,6 +11,7 @@
+ #include <fcntl.h>
+ #include <sys/wait.h>
+ #include <stdio.h>
++#include <errno.h>
+ 
+ #define SUFFIX		",S"	/* svc indicator */
+ #define SVCDIR		"SVC"	/* svc postfix indicator */
+@@ -55,6 +56,7 @@
+ _PROTOTYPE(void onintr, (int dummy));
+ _PROTOTYPE(void clean, (void));
+ _PROTOTYPE(char *whoami, (void));
++_PROTOTYPE(FILE *tmpcreate, (char *name, int mode));
+ 
+ int main(argc, argv)
+ int argc;
+@@ -84,6 +86,13 @@
+ 	fprintf(stderr, "ci: bad number of files arguments\n");
+ 	exit(1);
+   }
++  /* rosco: fname() and svcname() strcpy'd the name into PATHLEN buffers
++   * unchecked; svcname() adds at most "SVC/" and ",S"
++   */
++  if (strlen(*argv) > PATHLEN - 8) {
++	fprintf(stderr, "ci: file name %s is too long\n", *argv);
++	exit(1);
++  }
+   fname(*argv, file);
+   svcname(file, svc);
+ 
+@@ -105,20 +114,27 @@
+   }
+ #endif /* !BSD */
+ 
+-  strcpy(newsvc, svc);
+-  *(strrchr(newsvc, ',')) = ';';	/* temporary file will be "file;S" */
++  strcpy(line, svc);
++  *(strrchr(line, ',')) = ';';	/* temporary file will be "file;S" */
+ 
+-  if (NULL == (newfp = fopen(newsvc, "w"))) {
+-	perror("ci: can't create SVC temporary");
++  /* rosco: fopen("w") took over a "file;S" of a check-in still running
++   * (or one that died); now it must not exist (O_EXCL).  newsvc is set
++   * only when the file is ours: clean() removes it.
++   */
++  if (NULL == (newfp = tmpcreate(line, 0644))) {
++	fprintf(stderr, "ci: can't create SVC temporary %s: ", line);
++	perror(errno == EEXIST ? "another check-in? (remove it if not)" : "");
+ 	exit(1);
+   }
++  strcpy(newsvc, line);
+   (void) mktemp(original);
+   (void) mktemp(diffout);
+ 
+   if (NULL != (svcfp = fopen(svc, "r"))) {	/* does svc-file exist? */
+-	fgets(line, LINELEN, svcfp);
+-	if (1 != sscanf(line, "# %d", &rev)) {
++	if (NULL == fgets(line, LINELEN, svcfp)
++	    || 1 != sscanf(line, "# %d", &rev) || rev < 1) {
+ 		fprintf(stderr, "ci: %s: illegal SVC file header\n", svc);
++		clean();	/* rosco: left "file;S" behind */
+ 		exit(1);
+ 	}
+ 	++rev;
+@@ -128,9 +144,15 @@
+ 		clean();
+ 		exit(1);
+ 	}
+-	if (NULL == (origfp = fopen(original, "w"))) {
++	/* rosco: the /tmp files are created with O_EXCL (fopen("w")
++	 * followed a symbolic link planted under the mktemp() name, as
++	 * root too); a failure went on with origfp NULL
++	 */
++	if (NULL == (origfp = tmpcreate(original, 0600))) {
+ 		fprintf(stderr, "ci: can't create %s", original);
+ 		perror(" ");
++		clean();
++		exit(1);
+ 	}
+ 	fgets(line, LINELEN, svcfp);	/* skip "cat <<***MAIN-eof***" line */
+ 
+@@ -162,7 +184,38 @@
+ 	clean();
+ 	exit(1);
+   }
+-  while (NULL != fgets(line, LINELEN, srcfp)) fputs(line, newfp);
++  /* rosco: the text is kept between "cat <<***MAIN-eof***" and a line
++   * "***MAIN-eof***" (and old revisions between ***N-eof*** lines), and
++   * co reads it line by line: a last line without a newline swallowed
++   * the end marker, and a line that looks like an end marker cut the
++   * text short.  Such files are refused.
++   */
++  {
++	int nl = 1;
++	long lnum = 0;
++
++	while (NULL != fgets(line, LINELEN, srcfp)) {
++		size_t len = strlen(line);
++
++		if (nl) {
++			lnum++;
++			if (0 == strncmp(line, "***", (size_t)3) && len > 9
++			    && 0 == strcmp(line + len - 8, "-eof***\n")) {
++				fprintf(stderr, "ci: %s: line %ld looks like an SVC end marker, not checked in\n",
++					file, lnum);
++				clean();
++				exit(1);
++			}
++		}
++		nl = (len > 0 && line[len - 1] == '\n');
++		fputs(line, newfp);
++	}
++	if (!nl) {
++		fprintf(stderr, "ci: %s: no newline at the end, not checked in\n", file);
++		clean();
++		exit(1);
++	}
++  }
+   fclose(srcfp);
+   fputs("***MAIN-eof***\n", newfp);
+ 
+@@ -188,18 +241,23 @@
+ 
+   if (relock) {
+ 	fprintf(stderr, "(relocking into revision %d)\n", rev + 1);
+-	fprintf(newfp, "#***SVCLOCK*** %s %d\n", whoami(), rev + 1);
++	fprintf(newfp, "#***SVCLOCK*** %.32s %d\n", whoami(), rev + 1);
+   }
+   signal(SIGHUP, SIG_IGN);	/* disable during critical section */
+   signal(SIGINT, SIG_IGN);
+ 
+-  if (ferror(newfp) || fclose(newfp) || ((rev > 1) && unlink(svc))
+-      || link(newsvc, svc)) {
++  /* rosco: was unlink(svc) + link(newsvc, svc): when link() failed after
++   * the unlink, clean() removed newsvc too and the whole history was
++   * gone.  rename() replaces svc in one step.
++   */
++  if (ferror(newfp) || fclose(newfp) || rename(newsvc, svc)) {
+ 	fprintf(stderr, "SVC file write/link error - Checkin aborted\n");
+ 	clean();
+ 	exit(1);
+-  } else
++  } else {
++	newsvc[0] = '\0';	/* rosco: renamed, not ours to remove */
+ 	fprintf(stderr, "Checkin complete.\n");
++  }
+ 
+   if (stat(svc, &stb1) < 0 || chmod(svc, stb1.st_mode & 0555) < 0)
+ 	perror("ci: can't chmod SVC file");
+@@ -228,10 +286,13 @@
+ 	exit(1);
+ 
+       case 0:			/* child */
+-	if ((fd = creat(diffout, 0600)) < 0 || -1 == dup2(fd, 1)) {
++	/* rosco: O_EXCL instead of creat(), see tmpcreate(); the child
++	 * must not clean() (the parent's files)
++	 */
++	if ((fd = open(diffout, O_WRONLY | O_CREAT | O_EXCL, 0600)) < 0
++						|| -1 == dup2(fd, 1)) {
+ 		perror("ci: diffout");
+-		clean();
+-		exit(1);
++		_exit(1);
+ 	}
+ 	close(fd);
+ 	execlp("diff", "diff", file, original, (char *) 0);
+@@ -256,8 +317,17 @@
+   time(&now);
+   fprintf(stderr, "Enter log message for revision %d (end with ^D or '.'):\n", rev);
+   fprintf(fp, "#***SVC*** revision %d %s %s", rev, file, ctime(&now));
+-  while (NULL != gets(line) && strcmp(line, "."))
++  /* rosco: gets() into line[256]: a 300 character log line ran over the
++   * globals behind it (newfp: "SVC file write/link error", "file;S"
++   * left behind).  Longer lines are split.
++   */
++  while (NULL != fgets(line, LINELEN, stdin)) {
++	size_t len = strlen(line);
++
++	if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
++	if (!strcmp(line, ".")) break;
+ 	fprintf(fp, "#***SVC*** %s\n", line);
++  }
+ }
+ 
+ void fname(src, dst)
+@@ -265,6 +335,8 @@
+ {
+   char *p;
+   strcpy(dst, src);
++  /* rosco: a name shorter than SUFFIX looked before dst */
++  if (strlen(src) < strlen(SUFFIX)) return;
+   p = &dst[strlen(src) - strlen(SUFFIX)];
+   if (!strcmp(p, SUFFIX)) *p = '\0';
+ }
+@@ -279,9 +351,13 @@
+ 
+   if (0 != access(dst, 4)) {
+ 	char dirname[PATHLEN];
+-	if (NULL != (p = strrchr(src, '/')))
++	if (NULL != (p = strrchr(src, '/'))) {
+ 		strncpy(dirname, src, (size_t)(p - src + 1));
+-	else
++		/* rosco: strncpy() does not terminate: strcat() below
++		 * appended to stack garbage
++		 */
++		dirname[p - src + 1] = '\0';
++	} else
+ 		dirname[0] = '\0';
+ 	strcat(dirname, SVCDIR);
+ 
+@@ -301,16 +377,16 @@
+ FILE *fp;
+ int rev;
+ {
+-  char lock[40], check[40];
++  char lock[80], check[80];	/* rosco: was 40, see the %.32s below */
+   long pos;
+   int ret;
+ 
+-  sprintf(lock, "#***SVCLOCK*** %s %d\n", whoami(), rev);
++  sprintf(lock, "#***SVCLOCK*** %.32s %d\n", whoami(), rev);
+ 
+   pos = ftell(fp);
+   fseek(fp, -((long) strlen(lock)), 2);
+-  fgets(check, 40, fp);
+-  ret = (0 == strcmp(lock, check));
++  ret = (NULL != fgets(check, (int) sizeof(check), fp)
++					&& 0 == strcmp(lock, check));
+   fseek(fp, pos, 0);
+ 
+   return ret;
+@@ -341,3 +417,21 @@
+   else
+ 	return "nobody";
+ }
++
++/* rosco: create a new file that must not exist yet (O_EXCL: no symbolic
++ * link followed, no other check-in's file taken over), for writing
++ */
++FILE *tmpcreate(name, mode)
++char *name;
++int mode;
++{
++  int fd;
++  FILE *fp;
++
++  if ((fd = open(name, O_WRONLY | O_CREAT | O_EXCL, mode)) < 0) return(NULL);
++  if (NULL == (fp = fdopen(fd, "w"))) {
++	close(fd);
++	unlink(name);
++  }
++  return(fp);
++}

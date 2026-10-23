@@ -1,0 +1,118 @@
+--- orig/simple/chmem.c
++++ new/simple/chmem.c
+@@ -8,6 +8,7 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ #include <stdio.h>
++#include <string.h>
+ 
+ #define MAX_8086     0x10000L	/* maximum allocation size for 8086 */
+ #define MAX_386	  0x7FFFFFFFL	/* etc */
+@@ -15,6 +16,7 @@
+ #define MAX_SPARC 0x20000000L	/* No more than 512MB on a SparcStation! */
+ 
+ char *progname;
++int status;			/* rosco: exit status, 1 after an error */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(void error, (char *s1, char *s2));
+@@ -47,8 +49,20 @@
+   if (argc < 3) usage();
+   p = argv[1];
+   if (*p != '=' && *p != '+' && *p != '-') usage();
++  /* rosco: atol() took "=abc" or "=8k" as 0 (or 8): =abc set the stack
++   * to 0 bytes; only digits now
++   */
++  if (p[1] == '\0' || strspn(p + 1, "0123456789") != strlen(p + 1)
++						|| strlen(p + 1) > 9) {
++	error(p + 1, "is not a number of bytes");
++	exit(1);
++  }
+   lsize = atol(p + 1);
+-  s = sizeof(struct exec);
++  /* rosco: read and write only the short header (A_MINHDR): this port's
++   * programs (mkminix.py) have a 32 byte header and the text follows; the
++   * stack size is a_total, nothing else is changed
++   */
++  s = A_MINHDR;
+ 
+   if (lsize < 0) {
+ 	error(p + 1, "is negative");
+@@ -60,16 +74,19 @@
+   while (--argc) {
+ 	++argv;
+ 	fd = open(*argv, O_RDWR);
++	/* rosco: errors exited 0 and left the file open (OPEN_MAX) */
+ 	if (fd < 0) {
+ 		error("can't open", *argv);
+ 		continue;
+ 	}
+ 	if (read(fd, (char *) &exec, s) != s) {
+ 		error("can't read header in", *argv);
++		close(fd);
+ 		continue;
+ 	}
+ 	if (BADMAG(exec)) {
+ 		error(*argv, "is not executable");
++		close(fd);
+ 		continue;
+ 	}
+ 	separate = (exec.a_flags & A_SEP ? 1 : 0);
+@@ -86,11 +103,13 @@
+ 	    case A_SPARC:	max = MAX_SPARC;	break;
+ 	    default:
+ 		error("bad CPU type in", *argv);
++		close(fd);
+ 		continue;
+ 	}
+ 
+ 	if (lsize > max) {
+ 		error("size is too large for", *argv);
++		close(fd);
+ 		continue;
+ 	}
+ 	olddynam = exec.a_total - exec.a_data - exec.a_bss;
+@@ -103,6 +122,20 @@
+ 	else if (*p == '-')
+ 		newdynam = olddynam - lsize;
+ 
++	/* rosco: "-" past 0 or "=0" made a negative or empty stack (size
++	 * showed -60000, exec "Not enough core"); "+" could overflow
++	 */
++	if (*p == '+' && lsize > max - olddynam) {
++		error("size is too large for", *argv);
++		close(fd);
++		continue;
++	}
++	if (newdynam <= 0) {
++		error("no room left for the stack of", *argv);
++		close(fd);
++		continue;
++	}
++
+ 	newtot = exec.a_data + exec.a_bss + newdynam;
+ 	if (separate == 0) newtot += exec.a_text;
+ 	overflow = (newtot > max ? newtot - max : 0);
+@@ -112,19 +145,21 @@
+ 	lseek(fd, (long) 0, SEEK_SET);
+ 	if (write(fd, (char *) &exec, s) != s) {
+ 		error("can't modify", *argv);
++		close(fd);
+ 		continue;
+ 	}
+ 	printf("%s: Stack+malloc area changed from %ld to %ld bytes.\n",
+ 	       *argv, olddynam, newdynam);
+ 	close(fd);
+   }
+-  return(0);
++  return(status);
+ }
+ 
+ void error(s1, s2)
+ char *s1;
+ char *s2;
+ {
++  status = 1;
+   fprintf(stderr, "%s: %s ", progname, s1);
+   if (errno != 0)
+ 	perror(s2);

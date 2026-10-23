@@ -1,0 +1,82 @@
+--- orig/simple/nm.c
++++ new/simple/nm.c
+@@ -43,6 +43,7 @@
+ char io_buf[BUFSIZ];		/* io buffer */
+ struct exec header;		/* header of a.out file */
+ int stbl_elems;			/* #elements in symbol table */
++int status;			/* rosco: exit status, 1 after an error */
+ 
+ _PROTOTYPE(int main, (int argc, char **argv));
+ _PROTOTYPE(int nm_sort, (const void *tmp_stbl1, const void *tmp_stbl2));
+@@ -68,7 +69,7 @@
+ 		    case 'u':	u_flag = 1;	break;
+ 		    default:
+ 			fprintf(stderr, "illegal flag: -%c\n", **argv);
+-			exit(-1);
++			exit(1);	/* rosco: was exit(-1), status 255 */
+ 		}
+ 		*argv += 1;
+ 	}
+@@ -82,7 +83,10 @@
+ 		nm(*argv);
+ 		argv++;
+ 	}
+-  return(0);
++  /* rosco: errors (missing file, not an executable, unreadable symbol
++   * table) exited 0
++   */
++  return(status);
+ }
+ 
+ int nm_sort(tmp_stbl1, tmp_stbl2)
+@@ -129,36 +133,49 @@
+   fd = open(file, O_RDONLY);
+   if (fd == -1) {
+ 	fprintf(stderr, "can't open %s\n", file);
++	status = 1;
+ 	return;
+   }
+   if (read_header(fd)) {
+-	fprintf(stderr, "%s: no executable file\n", file);
++	/* rosco: ACK object files and archives (cc -c, /usr/ack) have
++	 * their own format: anm reads them
++	 */
++	fprintf(stderr, "%s: no executable file (ACK objects: anm)\n", file);
++	status = 1;
+ 	close(fd);
+ 	return;
+   }
+   if (header.a_syms == 0) {
++	/* rosco: said nothing; the programs of this system (mkminix.py, the
++	 * ACK cv) have no symbol table
++	 */
++	fprintf(stderr, "%s: no symbol table\n", file);
+ 	close(fd);
+ 	return;
+   }
+   if ((size_t) header.a_syms != header.a_syms) {
+ 	fprintf(stderr, "%s: symbol table too large to allocate\n", file);
++	status = 1;
+ 	close(fd);
+ 	return;
+   }
+   if ((int) header.a_syms != header.a_syms) {
+ 	/* This is necessary because we are too lazy to iterate the read. */
+ 	fprintf(stderr, "%s: symbol table too large to read\n", file);
++	status = 1;
+ 	close(fd);
+ 	return;
+   }
+   stbl = (struct nlist *) malloc((size_t) header.a_syms);
+   if (stbl == NULL) {
+ 	fprintf(stderr, "%s: can't allocate symbol table\n", file);
++	status = 1;
+ 	close(fd);
+ 	return;
+   }
+   if (read(fd, (char *) stbl, (unsigned) header.a_syms) != header.a_syms) {
+ 	fprintf(stderr, "%s: can't read symbol table\n", file);
++	status = 1;
+ 	free(stbl);
+ 	close(fd);
+ 	return;

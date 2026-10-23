@@ -1,0 +1,101 @@
+--- orig/simple/proto.c
++++ new/simple/proto.c
+@@ -16,6 +16,12 @@
+ #define ISCSYM(x) ((x) > 0 && (isalnum(x) || (x) == '_' ))
+ #define ABORTED ( (Word *) -1 )
+ #define MAXPARAM 20		/* max. number of parameters to a function */
++/* rosco: the symbol buffers were char buf[80] and getsym() stored any
++ * length: a 120 character identifier ran over the stack (sig=10 at
++ * pc=61616161).  Longer symbols are cut to SYMLEN - 1 characters, with a
++ * warning.
++ */
++#define SYMLEN	256
+ 
+ typedef struct word {
+   struct word *next;
+@@ -330,9 +336,19 @@
+ 	return 0;
+   }
+   symline = linenum;
+-  while (ISCSYM(c)) {
+-	*buf++ = c;
+-	c = nextch(f);
++  {
++	int n = 0;		/* rosco: at most SYMLEN - 1 characters */
++
++	while (ISCSYM(c)) {
++		if (n < SYMLEN - 1) {
++			*buf++ = c;
++		} else if (n == SYMLEN - 1) {
++			fprintf(stderr, "%s: line %ld: symbol cut to %d characters\n",
++				progname, linenum, SYMLEN - 1);
++		}
++		n++;
++		c = nextch(f);
++	}
+   }
+   *buf = 0;
+   glastc = c;
+@@ -370,7 +386,8 @@
+   int sawsomething;
+   int i;
+   int inparen = 0;
+-  char buf[80];
++  int toomany = 0;		/* rosco: more than MAXPARAM parameters */
++  char buf[SYMLEN];
+ 
+   for (i = 0; i < MAXPARAM; i++) typed[i] = 0;
+ 
+@@ -384,9 +401,14 @@
+ 	if (getsym(buf, f) < 0) return(NULL);
+ 	if (*buf == ')' && (--inparen < 0)) {
+ 		if (sawsomething) {	/* if we've seen an arg */
+-			pname[np] = plist;
++			/* rosco: np was not checked against MAXPARAM: 40
++			 * parameters wrote past pname[] (sig=8 at pc=0)
++			 */
++			if (np < MAXPARAM)
++				pname[np++] = plist;
++			else
++				toomany = 1;
+ 			plist = word_alloc("");
+-			np++;
+ 		}
+ 		break;
+ 	}
+@@ -395,9 +417,11 @@
+ 	}
+ 	sawsomething = 1;	/* there's something in the arg. list */
+ 	if (*buf == ',' && inparen == 0) {
+-		pname[np] = plist;
++		if (np < MAXPARAM)	/* rosco: see above */
++			pname[np++] = plist;
++		else
++			toomany = 1;
+ 		plist = word_alloc("");
+-		np++;
+ 	} else {
+ 		addword(plist, buf);
+ 		if (*buf == '(') inparen++;
+@@ -471,6 +495,12 @@
+ 	}
+   }
+ 
++  if (toomany) {			/* rosco: see above */
++	fprintf(stderr, "%s: line %ld: more than %d parameters, skipped\n",
++		progname, linenum, MAXPARAM);
++	return ABORTED;
++  }
++
+   /* Now take the info we have and build a prototype list */
+ 
+   /* Empty parameter list means "void" */
+@@ -550,7 +580,7 @@
+ FILE *f;
+ {
+   Word *plist, *wlist = NULL;
+-  char buf[80];
++  char buf[SYMLEN];		/* rosco: was 80, see SYMLEN */
+   int sawsomething;
+   long startline = 0L;		/* line where declaration started */
+   int oktoprint;

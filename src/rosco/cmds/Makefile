@@ -753,6 +753,9 @@ FIX0	+= zmodem/sz.c zmodem/rbsb.c zmodem/zm.c zmodem/zmodem.h simple/stty.c \
 # system (group 8): leave, last, cleantmp, synctree, remsync (ps: above)
 FIX0	+= simple/leave.c simple/last.c simple/cleantmp.c simple/synctree.c \
 	  simple/remsync.c
+# development (group 7): nm, strip, chmem, mkproto, proto, ci, co, fix
+FIX0	+= simple/nm.c simple/strip.c simple/chmem.c simple/mkproto.c \
+	  simple/proto.c simple/ci.c simple/co.c simple/fix.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -877,6 +880,9 @@ obj/inodes.o obj/ncheck.o obj/isoread.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -I$c/simple -c -o $@ $<
 obj/stty.o obj/term.o obj/termcap.o obj/clr.o obj/tget.o:	obj/%.o: \
 		obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+obj/nm.o obj/strip.o obj/chmem.o obj/mkproto.o obj/proto.o obj/ci.o obj/co.o \
+obj/fix.o:	obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)

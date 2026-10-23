@@ -1,0 +1,213 @@
+--- orig/simple/fix.c
++++ new/simple/fix.c
+@@ -38,20 +38,61 @@
+ 
+ char *prog = 0, *processing = 0;
+ 
++/* rosco: line numbers were int (16 bits): a diff of line 40000 was taken
++ * as line -25536 ("delete line conflict" against line 1).  Lines were
++ * read with fgets() into 1024 byte buffers: a longer line counted as two
++ * or more, and the next change went to the wrong place (an "a" put the new
++ * line into the middle of the long one).  Lines now go into buffers that
++ * grow (up to 32K).
++ */
++typedef struct {
++  char *b;			/* the line */
++  unsigned size;		/* size of b */
++} Line;
++
++Line oline, nline, cline;	/* the file, the diff list, a command */
++
+ _PROTOTYPE(int main, (int argc, char **argv));
+-_PROTOTYPE(char *getline, (FILE *fp, char *b));
+-_PROTOTYPE(char *range, (char *s, int *p1, int *p2));
+-_PROTOTYPE(int getcommand, (FILE *fp, int *o1, int *o2, char *pcmd, int *n1, int *n2));
++_PROTOTYPE(char *readline, (FILE *fp, Line *l));
++_PROTOTYPE(char *getline, (FILE *fp, Line *l));
++_PROTOTYPE(char *range, (char *s, long *p1, long *p2));
++_PROTOTYPE(int getcommand, (FILE *fp, long *o1, long *o2, char *pcmd, long *n1, long *n2));
+ _PROTOTYPE(void fatal, (char *s, ...));
+ _PROTOTYPE(int strwcmp, (char *s1, char *s2));
+ _PROTOTYPE(int whitespace, (int ch));
+ 
++/* rosco: read a whole line into l; NULL at the end of the file */
++char *readline(fp, l)
++FILE *fp;
++Line *l;
++{
++  unsigned n = 0;
++
++  if (l->b == NULL) {
++	l->size = LINELEN;
++	if ((l->b = (char *) malloc(l->size)) == NULL) fatal("out of memory");
++  }
++  for (;;) {
++	if (fgets(l->b + n, (int) (l->size - n), fp) == NULL)
++		return(n == 0 ? (char *) NULL : l->b);
++	n += strlen(l->b + n);
++	if (n > 0 && l->b[n - 1] == '\n') return(l->b);
++	if (n + 1 < l->size) return(l->b);	/* last line, no newline */
++	if (l->size >= 0x8000) fatal("line longer than %u characters", l->size - 1);
++	l->size *= 2;
++	if ((l->b = (char *) realloc(l->b, l->size)) == NULL)
++		fatal("out of memory");
++  }
++}
++
+ char *
+- getline(fp, b)
++ getline(fp, l)
+ FILE *fp;
+-char *b;
++Line *l;
+ {
+-  if (fgets(b, LINELEN, fp) == NULL) fatal("unexpected eof");
++  char *b;
++
++  if ((b = readline(fp, l)) == NULL) fatal("unexpected eof");
+ 
+   return b;
+ }
+@@ -62,8 +103,8 @@
+ int argc;
+ char **argv;
+ {
+-  char cmd, *fl, *fd, obuf[LINELEN], nbuf[LINELEN];
+-  int o1, o2, n1, n2, here;
++  char cmd, *fl, *fd;
++  long o1, o2, n1, n2, here;
+   FILE *fpf, *fpd;
+ 
+   prog = argv[0];
+@@ -73,60 +114,90 @@
+   if ((fpd = fopen(argv[2], "r")) == NULL) fatal("can't read %s", argv[2]);
+   here = 0;
+   while (getcommand(fpd, &o1, &o2, &cmd, &n1, &n2)) {
+-	while (here < o1 - 1) {
++	/* rosco: "0a1" (lines before the first one) copied line 1 first,
++	 * and appended after it.  An append after line o1 copies up to
++	 * line o1, a change or delete of line o1 up to line o1 - 1.  A
++	 * change before the current line (chunks out of order) went
++	 * wrong silently.
++	 */
++	if (cmd == 'a' ? o1 < here : o1 <= here)
++		fatal("chunks out of order at line %ld", o1);
++	while (here < (cmd == 'a' ? o1 : o1 - 1)) {
+ 		here++;
+-		copy(getline(fpf, obuf));
++		copy(getline(fpf, &oline));
+ 	}
+ 	switch (cmd) {
+ 	    case 'c':
+ 	    case 'd':
+ 		if (cmd == 'd' && n1 != n2) fatal("delete count conflict");
+ 		while (o1 <= o2) {
+-			fl = getline(fpf, obuf);
++			fl = getline(fpf, &oline);
+ 			here++;
+-			fd = getline(fpd, nbuf);
++			fd = getline(fpd, &nline);
+ 			if (strncmp(fd, "<", (size_t)1))
+ 				fatal("illegal delete line");
+-			if (strcmp(fl, fd + 2))
++			/* rosco: "<" + newline (a diff that lost its
++			 * trailing blanks): fd + 2 was past the line
++			 */
++			if (fd[1] == '\n' || fd[1] == '\0')
++				fd++;
++			else
++				fd += 2;
++			if (strcmp(fl, fd))
+ 				fatal("delete line conflict");
+ 			o1++;
+ 		}
+ 		if (cmd == 'd') break;
+-		if (strcmp(getline(fpd, nbuf), "---\n"))
++		if (strcmp(getline(fpd, &nline), "---\n"))
+ 			fatal("illegal separator in chunk");
+ 		/* FALLTHROUGH */
+ 	    case 'a':
+ 		if (cmd == 'a') {
+ 			if (o1 != o2) fatal("append count conflict");
+-			copy(getline(fpf, obuf));
+-			here++;
+ 		}
+ 		while (n1 <= n2) {
+-			if (strncmp(getline(fpd, nbuf), ">", (size_t)1))
++			if (strncmp(getline(fpd, &nline), ">", (size_t)1))
+ 				fatal("illegal append line");
+-			copy(nbuf + 2);
++			/* rosco: ">" + newline: nline + 2 was past the
++			 * newline, the empty line was lost
++			 */
++			if (nline.b[1] == '\n' || nline.b[1] == '\0')
++				copy(nline.b[1] == '\n' ? "\n" : "");
++			else
++				copy(nline.b + 2);
+ 			n1++;
+ 		}
+ 		break;
+ 	}
+   }
+-  while (fgets(obuf, LINELEN, fpf) != NULL) copy(obuf);
++  while (readline(fpf, &oline) != NULL) copy(oline.b);
++  /* rosco: write errors (a full disk) exited 0 */
++  if (fflush(stdout) == EOF || ferror(stdout)) fatal("write error");
+   return(0);
+ }
+ 
+ char *
+  range(s, p1, p2)
+ char *s;
+-int *p1, *p2;
++long *p1, *p2;
+ {
+-  register int v1 = 0, v2;
++  register long v1 = 0, v2;
+ 
+-  while (isdigit(*s)) v1 = 10 * v1 + *s++ - '0';
++  /* rosco: a missing number was taken as 0; isdigit() of a signed char */
++  if (!isdigit((unsigned char) *s)) fatal("illegal command");
++  while (isdigit((unsigned char) *s)) {
++	v1 = 10 * v1 + *s++ - '0';
++	if (v1 > 99999999L) fatal("illegal line number");
++  }
+   v2 = v1;
+   if (*s == ',') {
+ 	s++;
+ 	v2 = 0;
+-	while (isdigit(*s)) v2 = 10 * v2 + *s++ - '0';
++	if (!isdigit((unsigned char) *s)) fatal("illegal command");
++	while (isdigit((unsigned char) *s)) {
++		v2 = 10 * v2 + *s++ - '0';
++		if (v2 > 99999999L) fatal("illegal line number");
++	}
+   }
+   if (v1 > v2) fatal("illegal range");
+   *p1 = v1;
+@@ -136,19 +207,21 @@
+ 
+ int getcommand(fp, o1, o2, pcmd, n1, n2)
+ FILE *fp;
+-int *o1, *o2, *n1, *n2;
++long *o1, *o2, *n1, *n2;
+ char *pcmd;
+ {
+-  char buf[LINELEN];
+   register char *s;
+   char cmd;
+ 
+-  if ((s = fgets(buf, LINELEN, fp)) == NULL) return 0;
++  if ((s = readline(fp, &cline)) == NULL) return 0;
+   s = range(s, o1, o2);
+   if ((cmd = *s++) != 'a' && cmd != 'c' && cmd != 'd')
+ 	fatal("illegal command");
+   s = range(s, n1, n2);
+-  if (*s != '\n' && s[1] != '\0')
++  /* rosco: was (*s != '\n' && s[1] != '\0'), which let one character
++   * through and read past the end of a command without a newline
++   */
++  if (*s != '\n' && *s != '\0')
+ 	fatal("extra characters at end of command: %s", s);
+   *pcmd = cmd;
+   return 1;
