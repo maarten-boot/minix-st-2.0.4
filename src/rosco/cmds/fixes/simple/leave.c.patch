@@ -1,0 +1,49 @@
+--- orig/simple/leave.c
++++ new/simple/leave.c
+@@ -77,6 +77,14 @@
+ {
+   int hour_min;
+   int just_min = 0;
++  size_t n;
++
++  /* rosco: %d of 5 or more digits overflowed the 16-bit int (leave
++   * +66766 set the alarm 12:30 from now): at most hhmm or hh:mm
++   */
++  n = strspn(when, "0123456789");
++  if (n == 0 || n > 4 || (when[n] == ':'
++		&& strspn(when + n + 1, "0123456789") > 2)) Usage();
+ 
+   switch (sscanf(when, "%d:%d", &hour_min, &just_min)) {
+       case 1:
+@@ -132,7 +140,12 @@
+   int hour, min;
+   int pid, i;
+   char *user = cuserid( (char *)NULL);
+-  char *tty = ttyname(0) + 5;
++  char *tty = ttyname(0);
++
++  /* rosco: ttyname(0) + 5 made a NULL (standard input closed) into
++   * (char *) 5, which passed the NULL test below
++   */
++  if (tty != NULL) tty += 5;
+ 
+   /* get the argument string "when" either from stdin, or argv */
+   if (argc <= 1) {
+@@ -140,6 +153,9 @@
+ 	fflush(stdout);
+ 	if (fgets(when, STRING, stdin) == NULL || when[0] == '\n') exit(0);
+   } else {
++	/* rosco: strcpy/strcat into when[80] unchecked */
++	if (strlen(argv[1]) + (argc > 2 ? strlen(argv[2]) : 0) >= STRING)
++		Usage();
+ 	strcpy(when, argv[1]);
+ 	if (argc > 2) strcat(when, argv[2]);
+   }
+@@ -154,6 +170,7 @@
+   } else {
+ 	/* user entered an absolute time */
+ 	Get_Hour_Min(&when[0], &hour, &min);
++	if (hour > 23) Usage();	/* rosco: 2500 was tomorrow 01:00 */
+ 	tm->tm_hour = hour;
+ 	tm->tm_min = min;
+ 	leave = mktime(tm);

@@ -157,9 +157,16 @@ bin/ps:	obj/ps.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	$(CC) $(LDFLAGS) -o obj/ps.elf $L/crtso.o obj/ps.o $(LIBS)
 	$(MKMINIX) -S 24kw obj/ps.elf $@
 
-obj/ps.o:	../../sttools/ps.c
+# compiled from a fixed copy (Source fixes, fixes/sttools/ps.c.patch); its
+# "../kernel/...", "../mm/..." includes are found through -I../../kernel
+obj/fix/sttools/ps.c:	../../sttools/ps.c execl0.sed fixes/sttools/ps.c.patch
+	@mkdir -p $(@D)
+	sed -f execl0.sed ../../sttools/ps.c > $@
+	patch -s $@ fixes/sttools/ps.c.patch
+
+obj/ps.o:	obj/fix/sttools/ps.c
 	@mkdir -p obj
-	$(CC) $(CFLAGS) -I../../kernel -c -o $@ ../../sttools/ps.c
+	$(CC) $(CFLAGS) -I../../kernel -c -o $@ obj/fix/sttools/ps.c
 
 # aal (ar): the ACK archiver, commands/aal (64k in the ACK build).
 AALOBJ	= $(addprefix obj/aal/,archiver.o print.o rd.o rd_arhdr.o rd_unsig2.o \
@@ -735,6 +742,17 @@ FIX0	+= simple/tar.c simple/compress.c simple/decomp16.c simple/backup.c \
 # small programs (group 11): fortune, banner, cal, calendar, factor, ic
 FIX0	+= simple/fortune.c simple/banner.c simple/cal.c simple/calendar.c \
 	  simple/factor.c ic/ic.c
+# disks (group 8): fsck, mkfs, mkswap, readall, badblocks, inodes, ncheck,
+# isoread (dosread has its own dosread.patch)
+FIX0	+= simple/fsck.c simple/mkfs.c simple/mkswap.c simple/readall.c \
+	  simple/badblocks.c simple/inodes.c simple/ncheck.c simple/isoread.c
+# serial and terminals (group 10): rz, sz (both include rbsb.c, zm.c and
+# zmodem.h), stty, term, termcap, clr, tget
+FIX0	+= zmodem/sz.c zmodem/rbsb.c zmodem/zm.c zmodem/zmodem.h simple/stty.c \
+	  simple/term.c simple/termcap.c simple/clr.c simple/tget.c
+# system (group 8): leave, last, cleantmp, synctree, remsync (ps: above)
+FIX0	+= simple/leave.c simple/last.c simple/cleantmp.c simple/synctree.c \
+	  simple/remsync.c
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -765,7 +783,11 @@ obj/bc/bc.o obj/bc/number.o obj/bc/execute.o obj/bc/load.o obj/bc/storage.o \
 obj/bc/util.o:	obj/bc/%.o:	obj/fix/bc/%.c
 	@mkdir -p obj/bc
 	$(CC) $(CFLAGS) -Dconst= -I$c/bc -c -o $@ $<
-obj/zmodem/rz.o:	obj/fix/zmodem/rz.c $c/zmodem/rbsb.c $c/zmodem/zm.c $c/zmodem/zmodem.h
+# rz.c and sz.c #include rbsb.c, zm.c and zmodem.h: the fixed copies beside
+# them in obj/fix/zmodem are found first
+obj/zmodem/rz.o obj/zmodem/sz.o:	obj/zmodem/%.o:	obj/fix/zmodem/%.c \
+		obj/fix/zmodem/rbsb.c obj/fix/zmodem/zm.c \
+		obj/fix/zmodem/zmodem.h $c/zmodem/crctab.c
 	@mkdir -p obj/zmodem
 	$(CC) $(CFLAGS) -I$c/zmodem -DPOSIX -c -o $@ $<
 obj/reboot/halt.o obj/reboot/shutdown.o obj/reboot/log.o obj/reboot/sh_wall.o: \
@@ -842,9 +864,20 @@ obj/aal/archiver.o obj/aal/print.o obj/aal/rd.o:	obj/aal/%.o:	obj/fix/aal/%.c
 obj/fortune.o obj/banner.o obj/cal.o obj/calendar.o obj/factor.o: \
 		obj/%.o:	obj/fix/simple/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+obj/leave.o obj/last.o obj/cleantmp.o obj/synctree.o obj/remsync.o: \
+		obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 obj/ic/ic.o:	obj/fix/ic/ic.c $c/ic/ic.h
 	@mkdir -p obj/ic
 	$(CC) $(CFLAGS) -I$c/ic -c -o $@ $<
+# disks (group 8); -I$c/simple: fsck, mkfs and badblocks include
+# "../../fs/..." (src/fs) relative to their own directory
+obj/fsck.o obj/mkfs.o obj/mkswap.o obj/readall.o obj/badblocks.o \
+obj/inodes.o obj/ncheck.o obj/isoread.o:	obj/%.o:	obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -I$c/simple -c -o $@ $<
+obj/stty.o obj/term.o obj/termcap.o obj/clr.o obj/tget.o:	obj/%.o: \
+		obj/fix/simple/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 # asktime: rosco's own, asks for the time at boot (/etc/rc)
 bin/asktime:	obj/asktime.o $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py

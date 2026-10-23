@@ -1,0 +1,234 @@
+--- orig/simple/mkfs.c
++++ new/simple/mkfs.c
+@@ -76,7 +76,12 @@
+ extern char *optarg;
+ extern int optind;
+ 
+-int next_zone, next_inode, zone_size, zone_shift = 0, zoff;
++/* rosco: next_zone and next_inode long; as 16 bit ints the zone numbers
++ * went negative after 32767 (sign extended to a huge zone_t: "File system
++ * not big enough" with a 32M proto) and next_inode wrapped to inode 0
++ */
++long next_zone, next_inode;
++int zone_size, zone_shift = 0, zoff;
+ block_t nrblocks;
+ int inode_offset, lct = 0, disk, fd, print = 0, file = 0;
+ unsigned int nrinodes;
+@@ -108,7 +113,7 @@
+ _PROTOTYPE(void add_z_1, (Ino_t n, zone_t z, long bytes, long cur_time));
+ _PROTOTYPE(void add_z_2, (Ino_t n, zone_t z, long bytes, long cur_time));
+ _PROTOTYPE(void incr_link, (Ino_t n));
+-_PROTOTYPE(void insert_bit, (block_t block, int bit));
++_PROTOTYPE(void insert_bit, (block_t block, bit_t bit));
+ _PROTOTYPE(int mode_con, (char *p));
+ _PROTOTYPE(void getline, (char line[LINE_LEN], char *parse[MAX_TOKENS]));
+ _PROTOTYPE(void check_mtab, (char *devname));
+@@ -185,7 +190,15 @@
+ 	}
+ 
+   /* Determine the size of the device if not specified as -b or proto. */
+-  if (argc - optind == 1 && blocks == 0) blocks = sizeup(argv[optind]);
++  if (argc - optind == 1 && blocks == 0) {
++	blocks = sizeup(argv[optind]);
++	/* rosco: say why instead of the usage message */
++	if (blocks == 0) {
++		fprintf(stderr, "%s: can't determine the size of %s (use -b)\n",
++			progname, argv[optind]);
++		exit(1);
++	}
++  }
+ 
+   /* The remaining args must be 'special proto', or just 'special' if the
+    * block size has already been specified.
+@@ -204,6 +217,8 @@
+ 
+ 	/* Read the line with the block and inode counts. */
+ 	getline(line, token);
++	/* rosco: a short line gave NULL tokens (atol(NULL)) */
++	if (token[1] == NULL) pexit("Bad line: block and inode count");
+ 	blocks = atol(token[0]);
+ 	if (blocks > max_nrblocks) pexit("Block count too large");
+ 	if (sizeof(char *) == 2 && blocks > N_BLOCKS16) {
+@@ -211,10 +226,18 @@
+ 		"%s: warning: FS is larger than the %dM that fsck can check!\n",
+ 			progname, (int) (N_BLOCKS16 / (1024L * 1024)));
+ 	}
+-	inodes = atoi(token[1]);
++	/* rosco: atol and a range check; atoi() wrapped in 16 bits */
++	i = atol(token[1]);
++	if (i < 1) pexit("Inode count too small");
++	if (i > INODE_MAX) pexit("Inode count too large");
++	if (blocks < 5) pexit("Block count too small");
++	inodes = (ino_t) i;
+ 
+ 	/* Process mode line for root directory. */
+ 	getline(line, token);
++	/* rosco: a short line gave NULL tokens */
++	if (token[2] == NULL || strlen(token[0]) != 6)
++		pexit("Bad line: mode uid gid");
+ 	mode = mode_con(token[0]);
+ 	usrid = atoi(token[1]);
+ 	grpid = atoi(token[2]);
+@@ -370,11 +393,18 @@
+ 	sup->s_nzones = 0;	/* not used in V2 - 0 forces errors early */
+ 	sup->s_zones = zones;
+   }
+-  sup->s_imap_blocks = bitmapsize((bit_t) (1 + inodes));
++  /* rosco: 1 + inodes and inodes + inodes_per_block - 1 in long: in the 16
++   * bit unsigned int they wrapped above 65534 and 65520 inodes (mkfs -i 65535
++   * made 0 inode map blocks and 0 inode table blocks)
++   */
++  sup->s_imap_blocks = bitmapsize((bit_t) 1 + inodes);
+   sup->s_zmap_blocks = bitmapsize((bit_t) zones);
+   inode_offset = sup->s_imap_blocks + sup->s_zmap_blocks + 2;
+-  inodeblks = (inodes + inodes_per_block - 1) / inodes_per_block;
++  inodeblks = ((long) inodes + inodes_per_block - 1) / inodes_per_block;
+   initblks = inode_offset + inodeblks;
++  /* rosco: the maps and inodes must leave room for the root directory */
++  if ((block_t) initblks + (1 << zone_shift) > nrblocks)
++	pexit("Too many inodes for the file system size");
+   initzones = (initblks + (1 << zone_shift) - 1) >> zone_shift;
+   nrzones = nrblocks >> zone_shift;
+   sup->s_firstdatazone = (initblks + (1 << zone_shift) - 1) >> zone_shift;
+@@ -442,8 +472,16 @@
+   while (1) {
+ 	getline(line, token);
+ 	p = token[0];
++	/* rosco: a line with too few fields gave NULL tokens */
++	if (p == NULL) pexit("Empty line");
+ 	if (*p == '$') return;
++	if (token[3] == NULL) pexit("Bad line: name mode uid gid ...");
+ 	p = token[1];
++	if (strlen(p) != 6) pexit("Bad mode (6 characters)");
++	if ((*p == 'b' || *p == 'c') && token[5] == NULL)
++		pexit("Bad line: special file needs major and minor");
++	if (*p != 'd' && *p != 'b' && *p != 'c' && token[4] == NULL)
++		pexit("Bad line: file needs a source file");
+ 	mode = mode_con(p);
+ 	usrid = atoi(token[2]);
+ 	grpid = atoi(token[3]);
+@@ -501,7 +539,10 @@
+   do {
+ 	for (i = 0, j = 0; i < zone_size; i++, j += ct) {
+ 		for (k = 0; k < BLOCK_SIZE; k++) buf[k] = 0;
+-		if ((ct = read(f, buf, BLOCK_SIZE)) > 0) {
++		/* rosco: a read error (-1) went on as data */
++		if ((ct = read(f, buf, BLOCK_SIZE)) < 0)
++			pexit("Read error on a proto file");
++		if (ct > 0) {
+ 			if (i == 0) z = alloc_zone();
+ 			put_block((z << zone_shift) + i, buf);
+ 		}
+@@ -747,8 +788,10 @@
+   int off;
+   block_t b;
+ 
++  /* rosco: tested before the 16 bit ino_t can wrap to inode 0 */
++  if (next_inode > (long) nrinodes)
++	pexit("File system does not have enough inodes");
+   num = next_inode++;
+-  if (num > nrinodes) pexit("File system does not have enough inodes");
+   b = ((num - 1) / inodes_per_block) + inode_offset;
+   off = (num - 1) % inodes_per_block;
+   if (fs_version == 1) {
+@@ -770,8 +813,10 @@
+   }
+ 
+   /* Set the bit in the bit map. */
+-  /* DEBUG FIXME.  This assumes the bit is in the first inode map block. */
+-  insert_bit((block_t) INODE_MAP, (int) num);
++  /* rosco: insert_bit() now finds the map block; this assumed the first
++   * map block (8191 inodes) and an int bit number
++   */
++  insert_bit((block_t) INODE_MAP, (bit_t) num);
+   return(num);
+ }
+ 
+@@ -790,8 +835,10 @@
+ 	pexit("File system not big enough for all the files");
+   for (i = 0; i < zone_size; i++)
+ 	put_block(b + i, zero);	/* give an empty zone */
+-  /* DEBUG FIXME.  This assumes the bit is in the first zone map block. */
+-  insert_bit(zone_map, (int) (z - zoff));	/* lint, NOT OK because
++  /* rosco: insert_bit() now finds the map block; this assumed the first
++   * map block: past 8191 zones it wrote past its 1K buffer on the stack
++   */
++  insert_bit(zone_map, (bit_t) (z - zoff));	/* lint, NOT OK because
+ 						 * z hasn't been broken
+ 						 * up into block +
+ 						 * offset yet. */
+@@ -801,13 +848,15 @@
+ 
+ void insert_bit(block, bit)
+ block_t block;
+-int bit;
++bit_t bit;
+ {
+   /* Insert 'count' bits in the bitmap */
+   int w, s;
+   short buf[BLOCK_SIZE / sizeof(short)];
+ 
+-  if (block < 0) pexit("insert_bit called with negative argument");
++  /* rosco: the bit in a later map block (8192 bits per block) */
++  block += bit / (8L * BLOCK_SIZE);
++  bit %= 8L * BLOCK_SIZE;
+   get_block(block, (char *) buf);
+   w = bit / (8 * sizeof(short));
+   s = bit % (8 * sizeof(short));
+@@ -857,7 +906,8 @@
+   parse[0] = 0;
+   p = line;
+   while (1) {
+-	if (++k > LINE_LEN) pexit("Line too long");
++	/* rosco: >=, a line of LINE_LEN wrote its '\n' one past line[] */
++	if (++k >= LINE_LEN) pexit("Line too long");
+ 	d = fgetc(proto);
+ 	if (d == EOF) pexit("Unexpected end-of-file");
+ 	*p = d;
+@@ -878,6 +928,8 @@
+ 	c = *p++;
+ 	if (c == '\n') return;
+ 	if (c == 0) continue;
++	/* rosco: more than MAX_TOKENS fields wrote past parse[] */
++	if (k >= MAX_TOKENS) pexit("Too many fields");
+ 	parse[k++] = p - 1;
+ 	do {
+ 		c = *p++;
+@@ -989,7 +1041,8 @@
+ 				get_block(inode1[i].d1_zone[0], (char *) dir);
+ 				for (j = 0; j < NR_DIR_ENTRIES; j++)
+ 					if (dir[j].d_ino)
+-						printf("\tInode %2d: %s\n", dir[j].d_ino, dir[j].d_name);
++						/* rosco: %.14s, names of 14 have no 0 */
++						printf("\tInode %2u: %.14s\n", dir[j].d_ino, dir[j].d_name);
+ 			}
+ 		} else {
+ 			if (inode2[i].d2_mode != 0) {
+@@ -1005,13 +1058,15 @@
+ 				get_block(inode2[i].d2_zone[0], (char *) dir);
+ 				for (j = 0; j < NR_DIR_ENTRIES; j++)
+ 					if (dir[j].d_ino)
+-						printf("\tInode %2d: %s\n", dir[j].d_ino, dir[j].d_name);
++						/* rosco: %.14s, names of 14 have no 0 */
++						printf("\tInode %2u: %.14s\n", dir[j].d_ino, dir[j].d_name);
+ 			}
+ 		}
+ 	}
+   }
+ 
+-  printf("%d inodes used.     %d zones used.\n", next_inode - 1, next_zone);
++  /* rosco: %ld, next_inode and next_zone are long now */
++  printf("%ld inodes used.     %ld zones used.\n", next_inode - 1, next_zone);
+ }
+ 
+ 
+@@ -1022,7 +1077,8 @@
+  * been a write.  This routine checks to see if a block has been accessed.
+  */
+ 
+-  int w, s, mask, r;
++  long w;	/* rosco: long, n / 8 went negative past 256M (umap[-x]) */
++  int s, mask, r;
+ 
+   if (sizeof(char *) == 2 && n >= MAX_INIT) pexit("can't initialize past 128M");
+   w = n / 8;

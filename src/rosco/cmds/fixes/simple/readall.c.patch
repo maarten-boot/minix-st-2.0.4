@@ -1,0 +1,14 @@
+--- orig/simple/readall.c
++++ new/simple/readall.c
+@@ -66,6 +66,11 @@
+ 	i++;
+ 	name = argv[i];
+   }
++  /* rosco: "readall -b" or "-t" without a file opened argv[2], NULL */
++  if (i >= argc) {
++	fprintf(stderr, "Usage: readall [-b | -t] file\n");
++	exit(1);
++  }
+   fd = open(argv[i], O_RDONLY);
+   if (fd < 0) {
+ 	fprintf(stderr, "%s is not readable\n", argv[i]);

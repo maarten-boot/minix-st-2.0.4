@@ -1,0 +1,77 @@
+--- orig/simple/ncheck.c
++++ new/simple/ncheck.c
+@@ -17,6 +17,7 @@
+ char *filesystem = NULL;
+ char *mnt_point = NULL;
+ char path[PATH_MAX];
++int mounted = 0;	/* rosco: set once our mount() worked */
+ 
+ extern int optind;
+ extern char *optarg;
+@@ -33,7 +34,10 @@
+ void myexit(n)		/* maybe I could use something like _cleanup() */
+ int n;
+ {
+-  if (filesystem != NULL)
++  /* rosco: only our own mount; after a failed mount (the device mounted
++   * elsewhere) this unmounted the user's mount
++   */
++  if (mounted)
+ 	umount(filesystem);
+   if (mnt_point != NULL)
+ 	rmdir(mnt_point);
+@@ -51,7 +55,10 @@
+ void readilist(p)
+ char *p;
+ {
+-  ilist = (ino_t *)malloc(strlen(p)/2+1);
++  /* rosco: times sizeof(ino_t); strlen/2+1 bytes held half the numbers of
++   * "-i 1,2,3,4" and the rest was written past the block
++   */
++  ilist = (ino_t *)malloc((strlen(p)/2+1) * sizeof(ino_t));
+   if (ilist == NULL) {
+ 	fprintf(stderr, "couldn't malloc i-node list\n");
+ 	myexit(1);
+@@ -62,7 +69,7 @@
+ 		fprintf(stderr, "malformed i-node list\n");
+ 		myexit(1);
+ 	}
+-	ilist[nr_inodes++] = atoi(p);
++	ilist[nr_inodes++] = (ino_t) strtoul(p, (char **) NULL, 10);	/* rosco */
+   } while ((p = strchr(p, ',')) != NULL);
+ }
+ 
+@@ -112,7 +119,10 @@
+   int len;
+ 
+   len = strlen(dirname);
+-  if (stat(dirname, &statbuf) < 0) {
++  /* rosco: lstat; stat followed symbolic links out of the file system (and
++   * a link to a parent directory looped until the path overflowed)
++   */
++  if (lstat(dirname, &statbuf) < 0) {
+ 	fprintf(stderr, "could not stat %s: %s\n", dirname, strerror(errno));
+ 	return;
+   }
+@@ -127,6 +137,13 @@
+ 	}
+ 	dirname[len++] = '/';
+ 	while ((dirent = readdir(dir)) != NULL) {
++		/* rosco: the path[PATH_MAX] was overrun by deep trees */
++		if (len + strlen(dirent->d_name) >= PATH_MAX) {
++			dirname[len] = '\0';
++			fprintf(stderr, "path too long: %s%s\n", dirname,
++				dirent->d_name);
++			continue;
++		}
+ 		strcpy(dirname+len, dirent->d_name);
+ 		traverse(dirname);
+ 	}
+@@ -167,6 +184,7 @@
+ 	perror("mount");
+ 	myexit(1);
+   }
++  mounted = 1;	/* rosco */
+   strcpy(path, mnt_point);
+   skip_len = strlen(path);
+   

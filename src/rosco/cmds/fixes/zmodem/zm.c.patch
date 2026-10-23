@@ -1,0 +1,23 @@
+--- orig/zmodem/zm.c
++++ new/zmodem/zm.c
+@@ -346,7 +346,8 @@
+ char *hdr;
+ int eflag;
+ {
+-	register int c, n, cancount;
++	register int c, cancount;
++	register long n;	/* rosco: Zrwindow + Baudrate (now a long) */
+ 
+ 	n = Zrwindow + Baudrate;	/* Max bytes before start of frame */
+ 	Rxframeind = Rxtype = 0;
+@@ -452,7 +453,9 @@
+ 		zperr("Got %s", frametypes[c+FTOFFSET]);
+ 	/* **** FALL THRU TO **** */
+ 	default:
+-		if (c >= -3 && c <= FRTYPES)
++		/* rosco: was c <= FRTYPES, two past the end of frametypes[] */
++		if (c >= -3 && c+FTOFFSET <
++			(int) (sizeof(frametypes) / sizeof(frametypes[0])))
+ 			vfile("zgethdr: %s %lx", frametypes[c+FTOFFSET], Rxpos);
+ 		else
+ 			vfile("zgethdr: %d %lx", c, Rxpos);

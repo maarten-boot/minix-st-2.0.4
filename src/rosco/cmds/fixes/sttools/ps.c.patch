@@ -1,0 +1,95 @@
+--- orig/sttools/ps.c
++++ new/sttools/ps.c
+@@ -156,6 +156,13 @@
+   time_t ps_stime;		/* accumulated system time */
+   char *ps_args;		/* concatenated argument string */
+   vir_bytes ps_procargs;	/* initial stack frame from MM */
++#if (SHADOWING == 1)
++  /* rosco: a shadowed process (fork() without an MMU, kernel/stshadow.c)
++   * has its data and stack at p_shadow; the memory at its map belongs to
++   * the process it shares it with.  This is what to add to read its own.
++   */
++  long ps_shoff;		/* shadow offset (in bytes), 0 if none */
++#endif
+ };
+ 
+ /* Ps_state field values in pstat struct above */
+@@ -394,7 +401,10 @@
+ 	vir_bytes stk_i;
+ 	char *stk_cp;
+ 	char stk_c;
+-  } stk[ARG_MAX / sizeof(char *)];
++  } stk[ARG_MAX / sizeof(char *) + 1];	/* rosco: + 1: the loop below
++					 * can end at stk[cnt] with cnt ==
++					 * ARG_MAX and puts a '\0' there
++					 */
+   union stack *sp;
+ 
+   /* Phys address of the original stack frame. */
+@@ -403,7 +413,12 @@
+   /* Calculate the number of bytes to read from user stack */
+   l = (phys_bytes) bufp->ps_ssize - (iframe - bufp->ps_stack);
+   if (l > ARG_MAX) l = ARG_MAX;
++  /* rosco: a frame outside the stack (l < 0) read with a negative count */
++  if (l < 2 * (long) sizeof(char *)) return NULL;
+   cnt = l;
++#if (SHADOWING == 1)
++  iframe += bufp->ps_shoff;	/* rosco: read a shadowed process's own copy */
++#endif
+ 
+   /* Get cnt bytes from user initial stack to local stack buffer */
+   if ((long)lseek(memfd, (off_t) iframe, 0) < 0)
+@@ -450,8 +465,11 @@
+ 
+   if (p_nr < -nr_tasks || p_nr >= nr_procs) return -1;
+ 
++  /* rosco: tasks (p_nr < 0) have no mproc slot: ps_mproc[p_nr] was read
++   * before the table for an empty task slot
++   */
+   if ((ps_proc[p_ki].p_priority == PPRI_NONE)
+-  				&& !(ps_mproc[p_nr].mp_flags & IN_USE))
++  		&& (p_nr < 0 || !(ps_mproc[p_nr].mp_flags & IN_USE)))
+ 	return -1;
+ 
+   bufp->ps_flags = ps_proc[p_ki].p_flags;
+@@ -499,9 +517,14 @@
+ 		bufp->ps_state = W_STATE;	/* other i.e. waiting */
+   }
+ 
+-  bufp->ps_tsize = (size_t) ps_proc[p_ki].p_map[T].mem_len << CLICK_SHIFT;
+-  bufp->ps_dsize = (size_t) ps_proc[p_ki].p_map[D].mem_len << CLICK_SHIFT;
+-  bufp->ps_ssize = (size_t) ps_proc[p_ki].p_map[S].mem_len << CLICK_SHIFT;
++  /* rosco: shifted as vir_bytes (32 bits), not size_t: with -mshort a
++   * segment of 64K or more (256 clicks of 256 bytes) lost its high bits:
++   * SZ was too small and the arguments of a process with a big stack
++   * (ed, mined, ls, cp) were not found
++   */
++  bufp->ps_tsize = (vir_bytes) ps_proc[p_ki].p_map[T].mem_len << CLICK_SHIFT;
++  bufp->ps_dsize = (vir_bytes) ps_proc[p_ki].p_map[D].mem_len << CLICK_SHIFT;
++  bufp->ps_ssize = (vir_bytes) ps_proc[p_ki].p_map[S].mem_len << CLICK_SHIFT;
+   bufp->ps_vtext = (off_t) ps_proc[p_ki].p_map[T].mem_vir << CLICK_SHIFT;
+   bufp->ps_vdata = (off_t) ps_proc[p_ki].p_map[D].mem_vir << CLICK_SHIFT;
+   bufp->ps_vstack = (off_t) ps_proc[p_ki].p_map[S].mem_vir << CLICK_SHIFT;
+@@ -514,7 +537,12 @@
+   bufp->ps_utime = ps_proc[p_ki].user_time;
+   bufp->ps_stime = ps_proc[p_ki].sys_time;
+ 
+-  bufp->ps_procargs = ps_mproc[p_nr].mp_procargs;
++  bufp->ps_procargs = p_nr >= 0 ? ps_mproc[p_nr].mp_procargs : 0; /* rosco */
++#if (SHADOWING == 1)
++  bufp->ps_shoff = ps_proc[p_ki].p_shadow == 0 ? 0 :
++	((long) ps_proc[p_ki].p_shadow - (long) ps_proc[p_ki].p_map[D].mem_phys)
++							<< CLICK_SHIFT;
++#endif
+ 
+   if (bufp->ps_state == Z_STATE)
+ 	bufp->ps_args = "<defunct>";
+@@ -577,6 +605,8 @@
+ 
+   index = 0;
+   while ((ttyp = getttyent()) != NULL) {
++	/* rosco: a name longer than NAME_MAX overran path[] and tty_name */
++	if (strlen(ttyp->ty_name) > NAME_MAX) continue;
+ 	strcpy(path, dev_path);
+ 	strcat(path, ttyp->ty_name);
+ 	if (stat(path, &statbuf) == -1 || !S_ISCHR(statbuf.st_mode))

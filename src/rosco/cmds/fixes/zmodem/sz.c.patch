@@ -1,0 +1,74 @@
+--- orig/zmodem/sz.c
++++ new/zmodem/sz.c
+@@ -95,6 +95,7 @@
+ #include <unistd.h>
+ #include <utime.h>
+ #include <stdio.h>
++#include <stdarg.h>	/* rosco: vfile() */
+ 
+ #define PATHLEN 256
+ #define OK 0
+@@ -122,7 +123,8 @@
+ 
+ #define HOWMANY 2
+ int Zmodem=0;		/* ZMODEM protocol requested by receiver */
+-unsigned Baudrate=2400;	/* Default, should be set by first mode() call */
++long Baudrate=2400;	/* Default, should be set by first mode() call */
++			/* rosco: was unsigned (16 bits): 115200 */
+ unsigned Txwindow;	/* Control the size of the transmitted window */
+ unsigned Txwspac;	/* Spacing between zcrcq requests */
+ unsigned Txwcnt;	/* Counter used to space ack requests */
+@@ -538,6 +540,12 @@
+ 	struct stat f;
+ 	char name[PATHLEN];
+ 
++	/* rosco: strcpy() overran name[256] with a longer argument */
++	if (strlen(oname) >= PATHLEN) {
++		fprintf(stderr, "\r\nsz: %.60s...: name too long\r\n", oname);
++		++errcnt;
++		return OK;
++	}
+ 	strcpy(name, oname);
+ 
+ 	if (Restricted) {
+@@ -551,7 +559,8 @@
+ 	}
+ 
+ 	if ( !strcmp(oname, "-")) {
+-		if ((p = getenv("ONAME")) && *p)
++		/* rosco: ONAME of 256 bytes or more overran name[] */
++		if ((p = getenv("ONAME")) && *p && strlen(p) < PATHLEN)
+ 			strcpy(name, p);
+ 		else
+ 			sprintf(name, "s%d.sz", getpid());
+@@ -600,6 +609,9 @@
+ 	char name2[PATHLEN];
+ 	struct stat f;
+ 
++	/* rosco: f was used uninitialised below for stdin and -a */
++	f.st_size = 0;
++
+ 	if (Modem2) {
+ 		if ((in!=stdin) && *name && fstat(fileno(in), &f)!= -1) {
+ 			fprintf(stderr, "Sending %s, %ld blocks: ",
+@@ -948,12 +960,16 @@
+ #endif
+ 
+ 
+-/* VARARGS1 */
+-void vfile(f, a, b, c)
+-register char *f,*a,*b,*c;
++/* rosco: was vfile(f, a, b, c) with three char * parameters: an int
++ * argument before another one ("%d %ld", "%d %s") shifted the rest (-vvv) */
++void vfile(char *f, ...)
+ {
++	va_list ap;
++
+ 	if (Verbose > 2) {
+-		fprintf(stderr, f, a, b, c);
++		va_start(ap, f);
++		vfprintf(stderr, f, ap);
++		va_end(ap);
+ 		fprintf(stderr, "\n");
+ 	}
+ }

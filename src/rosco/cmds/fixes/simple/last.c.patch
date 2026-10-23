@@ -1,0 +1,20 @@
+--- orig/simple/last.c
++++ new/simple/last.c
+@@ -83,7 +83,7 @@
+ char boot_limit = FALSE;	/* stop on latest reboot */
+ char count_limit = FALSE;	/* stop after print_count */
+ char tell_uptime = FALSE;	/* tell uptime since last reboot */
+-int print_count;
++long print_count;	/* rosco: was int (atoi): -70000 printed 4464 */
+ char *prog;			/* name of this program */
+ int arg_count;			/* used to select specific */
+ char **args;			/* users and ttys */
+@@ -401,7 +401,7 @@
+ 		wtmp_file = argv[1];
+ 		--argc;
+ 		++argv;
+-	} else if ((print_count = atoi(argv[0] + 1)) > 0)
++	} else if ((print_count = atol(argv[0] + 1)) > 0)
+ 		count_limit = TRUE;
+ 	else
+ 		usage();

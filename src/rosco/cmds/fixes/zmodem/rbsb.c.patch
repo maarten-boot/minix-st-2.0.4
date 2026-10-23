@@ -1,0 +1,69 @@
+--- orig/zmodem/rbsb.c
++++ new/zmodem/rbsb.c
+@@ -49,7 +49,7 @@
+ 
+ #include "zmodem.h"
+ 
+-_PROTOTYPE(static unsigned getspeed , (int code ));
++_PROTOTYPE(static long getspeed , (unsigned code ));
+ 
+ #if HOWMANY  > 255
+ Howmany must be 255 or less
+@@ -78,9 +78,12 @@
+ }
+ 
+ 
++/* rosco: the speeds as long (57600 and 115200 do not fit a 16-bit int),
++ * with the POSIX codes above 9600 (rz/sz use the speed for the subpacket
++ * length and the garbage count) */
+ struct {
+-	unsigned baudr;
+-	int speedcode;
++	long baudr;
++	unsigned speedcode;
+ } speeds[] = {
+ 	110,	B110,
+ 	300,	B300,
+@@ -95,6 +98,18 @@
+ 	19200,	EXTA,
+ 	38400,	EXTB,
+ #endif
++#ifdef B19200
++	19200,	B19200,
++#endif
++#ifdef B38400
++	38400,	B38400,
++#endif
++#ifdef B57600
++	57600,	B57600,
++#endif
++#ifdef B115200
++	115200,	B115200,
++#endif
+ 	0,
+ };
+ 
+@@ -137,9 +152,9 @@
+ #endif
+ 
+ 
+-static unsigned
++static long
+ getspeed(code)
+-int code;
++unsigned code;
+ {
+ 	register n;
+ 
+@@ -224,7 +239,10 @@
+ 		tty.c_cc[VTIME] = 1;	/* or in this many tenths of seconds */
+ 		(void) tcsetattr(iofd, TCSANOW, &tty);
+ 		did0 = TRUE;
+-		Baudrate = cfgetospeed(&tty);
++		/* rosco: was the speed code itself (B38400 is 0xF000, B115200
++		 * 0x200): sz chose 256-byte subpackets at 115200 and 128 at
++		 * 57600, 1024 at 1200 */
++		Baudrate = getspeed(cfgetospeed(&tty));
+ 		return OK;
+ #endif
+ #ifdef USG

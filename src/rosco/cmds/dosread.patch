@@ -8,7 +8,15 @@
  _PROTOTYPE(unsigned short free_cluster, (BOOL leave_fl) );
  _PROTOTYPE(void link_fat, (unsigned int cl_1, unsigned int cl_2) );
  _PROTOTYPE(unsigned short next_cluster, (unsigned int cl_no) );
-@@ -221,6 +222,9 @@
+@@ -142,6 +143,7 @@
+ _PROTOTYPE(void disk_io, (BOOL op, unsigned long seek, void *address, unsigned bytes) );
+ _PROTOTYPE(void flush_fat, (void));
+ _PROTOTYPE(void read_fat, (unsigned int cl_no));
++_PROTOTYPE(unsigned fat_chunk, (void));
+ _PROTOTYPE(BOOL free_range, (unsigned short *first, unsigned short *last));
+ _PROTOTYPE(long lmin, (long a, long b));
+ 
+@@ -221,6 +223,9 @@
    hiddensec = c2u2(boot.chiddensec);
    if (hiddensec == 0) hiddensec = c2u2 (boot.dos4hidd2);
  
@@ -18,7 +26,20 @@
    /* Safety checking */
    if (boot_magic != 0xAA55) {
  	fprintf (stderr, "%s: magic != 0xAA55\n", cmnd);
-@@ -358,6 +362,7 @@
+@@ -271,6 +276,12 @@
+   data_start = (long) bytepers + (long) boot.fats * fat_size
+ 	+ (long) dirents *32L;
+   root_entries = dirents;
++  /* rosco: the root directory is read into root[MAX_ROOT_ENTRIES] */
++  if (root_entries > MAX_ROOT_ENTRIES) {
++	fprintf (stderr, "%s: more than %d root directory entries\n", cmnd,
++		 MAX_ROOT_ENTRIES);
++	++errcount;
++  }
+   sub_entries = boot.secpclus * bytepers / 32;
+   if (total_clusters > 4096) fat_16 = 1;
+ 
+@@ -358,6 +369,7 @@
    }
    determine();
    disk_io(READ, ROOTADDR, root, DIR_SIZE * root_entries);
@@ -26,7 +47,48 @@
  
    if (dos_dir && Lflag) {
  	entry = label();
-@@ -678,7 +683,13 @@
+@@ -448,6 +460,10 @@
+   DIRECTORY *mem = NIL_DIR;
+   unsigned short cl_no = dir->d_cluster;
+   unsigned short type, last = 0;
++  /* rosco: a loop in the chain of this directory listed it without end;
++   * tcl follows the chain at half speed (Floyd), cl_no meets it in a loop
++   */
++  unsigned short nclus = 0, tcl = cl_no;
+   char file_name[14];
+   char *name;
+   int i = 0;
+@@ -473,6 +489,13 @@
+ 		mem = dir_ptr = read_cluster(cl_no);
+ 		last = cl_no;
+ 		cl_no = next_cluster(cl_no);
++		/* rosco: see tcl */
++		if ((++nclus & 1) == 0) tcl = next_cluster(tcl);
++		if (cl_no == tcl && cl_no >= 2 && cl_no < total_clusters) {
++			fflush (stdout);
++			fprintf (stderr, "%s: directory cluster chain loops.\n", cmnd);
++			exit(1);
++		}
+ 	}
+ 	for (i = 0; i < entries; i++, dir_ptr++) {
+ 		type = dir_ptr->d_name[0] & 0x0FF;
+@@ -575,6 +598,15 @@
+ 	return;
+ 
+   do {
++	/* rosco: a free or out of range cluster in the chain (a damaged
++	 * FAT) read the FAT or root directory area as file data
++	 */
++	if (cl_no < 2 || cl_no >= total_clusters) {
++		fflush (stdout);
++		fprintf (stderr, "%s: bad cluster number %u in the chain.\n",
++			 cmnd, cl_no);
++		exit (1);
++	}
+ 	disk_io(READ, clus_add(cl_no), buffer, cluster_size);
+ 	rest = (entry->d_size > (long) cluster_size) ? cluster_size : (short) entry->d_size;
+ 
+@@ -678,7 +710,13 @@
    if (entry->d_cluster != 0) link_fat(cl_no, LAST_CLUSTER);
    entry->d_size = size;
    fill_date(entry);
@@ -41,7 +103,68 @@
  
    if (fat_dirty) flush_fat ();
  
-@@ -866,10 +877,31 @@
+@@ -827,14 +865,35 @@
+   printf ( "\t%s%s", bname, strlen(bname) < 8 ? "\t\t" : "\t");
+   i = 1;
+   if (is_dir(dir_ptr)) {
+-	next = dir_ptr->d_cluster;
+-	while ((next = next_cluster(next)) != LAST_CLUSTER) i++;
+-	printf ("%8ld", (long) i * (long) cluster_size);
++	unsigned short tcl;
++	long n = 1;
++	BOOL looped = FALSE;
++
++	/* rosco: stop at a cluster out of range (it indexed past the FAT
++	 * cache) and at a loop in the chain (it never ended; tcl follows
++	 * at half speed, as in directory())
++	 */
++	next = tcl = dir_ptr->d_cluster;
++	while (next >= 2 && next < total_clusters &&
++	       (next = next_cluster(next)) != LAST_CLUSTER) {
++		if ((++n & 1) == 0) tcl = next_cluster(tcl);
++		if (next == tcl) {
++			looped = TRUE;
++			break;
++		}
++	}
++	if (looped)
++		printf ("%8s", "loop");
++	else
++		printf ("%8ld", n * (long) cluster_size);
+   } else
+ 	printf ("%8ld", dir_ptr->d_size);
++  /* rosco: month 0 or 13-15 (no date) indexed month[-1] etc. */
+   printf (" %02d:%02d %2d %s %d\n", ((e_time & HOUR) >> 11),
+ 	     ((e_time & MIN) >> 5), (e_date & DAY),
+-   month[((e_date & MONTH) >> 5) - 1], ((e_date & YEAR) >> 9) + 1980);
++   (((e_date & MONTH) >> 5) >= 1 && ((e_date & MONTH) >> 5) <= 12) ?
++	month[((e_date & MONTH) >> 5) - 1] : "???",
++   ((e_date & YEAR) >> 9) + 1980);
+ }
+ 
+ void free_blocks()
+@@ -860,16 +919,52 @@
+ register unsigned int cluster;
+ {
+   register DIRECTORY *sub_dir;
++  static long nread;	/* rosco: clusters read, all directories (-r) */
++
++  /* rosco: a damaged directory chain: a cluster out of range read the
++   * FAT area as entries, a loop in the chain never ended
++   */
++  if (cluster < 2 || cluster >= total_clusters) {
++	fflush (stdout);
++	fprintf (stderr, "%s: bad directory cluster number %u.\n", cmnd, cluster);
++	exit(1);
++  }
++  if (++nread > 4L * total_clusters) {	/* -r reads each twice */
++	fflush (stdout);
++	fprintf (stderr, "%s: directory cluster chain loops.\n", cmnd);
++	exit(1);
++  }
+ 
+   if ((sub_dir = malloc(cluster_size)) == NULL) {
+ 	fprintf (stderr, "%s: Cannot set break!\n", cmnd);
  	exit(1);
    }
    disk_io(READ, clus_add(cluster), sub_dir, cluster_size);
@@ -73,7 +196,25 @@
  static unsigned short cl_index = 2;
  
  /* find a range of consecutive free clusters. Return TRUE if found
-@@ -929,7 +961,11 @@
+@@ -916,6 +1011,17 @@
+ }
+ 
+ 
++/* rosco: the number of FAT entries of the cache that are in the FAT: the
++ * last chunk of a cached FAT ends past it, and writing all of it ran over
++ * the second FAT copy and the root directory
++ */
++unsigned fat_chunk ()
++{
++  if ((long) fat_low + cache_size > (long) (fat_size / 2))
++	return (unsigned) (fat_size / 2 - fat_low);
++  return cache_size;
++}
++
+ /* read a portion of the fat containing |cl_no| into the cache
+  */
+ void read_fat (cl_no) 
+@@ -929,7 +1035,14 @@
    	if (fat_16) {
  		/* FAT consists of little endian shorts. Easy to convert
  		 */
@@ -81,12 +222,39 @@
 +		/* rosco: malloc() takes a 16 bit size_t here; a FAT of
 +		 * more than 64k would be truncated, use the cache then
 +		 */
-+		if (fat_size > 0xFFFFL ||
++		/* rosco: and the whole FAT is read and written at once,
++		 * read()/write() of more than 32767 bytes fail: 0x7FFF
++		 */
++		if (fat_size > 0x7FFFL ||
 +		    (cooked_fat = malloc ((size_t) fat_size)) == NULL) {
  			/* Oops, FAT doesn't fit into memory, just read
  			 * a chunk
  			 */
-@@ -1010,12 +1046,24 @@
+@@ -946,7 +1059,10 @@
+ 		/* 12 bit FAT. Difficult encoding, but small. Keep
+ 		 * both raw FAT and cooked version in memory.
+ 		 */
+-		if ((cooked_fat = malloc (total_clusters * sizeof (short))) == NULL ||
++		/* rosco: + 1, the loop below converts pairs and wrote one
++		 * entry past the block for an odd number of clusters
++		 */
++		if ((cooked_fat = malloc ((total_clusters + 1) * sizeof (short))) == NULL ||
+ 		    (raw_fat = malloc (fat_size)) == NULL) {
+ 			fprintf (stderr, "%s: not enough memory for FAT cache. Use chmem\n",
+ 				 cmnd);
+@@ -981,7 +1097,10 @@
+ 	assert (sizeof (short) == 2);
+ 	assert (CHAR_BIT == 8);		/* just in case */
+ 
+-	disk_io (READ, FAT_START + fat_low * 2, (void *)cooked_fat, cache_size * 2);
++	/* rosco: (long) fat_low * 2; fat_low * 2 wrapped in the 16 bit
++	 * unsigned int from cluster 32768: the cache got entries 0-4095
++	 */
++	disk_io (READ, FAT_START + (long) fat_low * 2, (void *)cooked_fat, fat_chunk() * 2);
+ 	if (big_endian) {
+ 		unsigned short	*cp;
+ 		unsigned char	*rp;
+@@ -1010,12 +1129,27 @@
  		for (i = 0, rp = (unsigned char *)cooked_fat /* sic */, cp = cooked_fat;
  		     i < cache_size;
  		     rp += 2, cp ++, i ++) {
@@ -101,8 +269,13 @@
 +		     	*(rp + 1) = v >> 8;
  		}
  	}
- 	disk_io (WRITE, FAT_START + fat_low * 2, (void *)cooked_fat, cache_size * 2);
- 	disk_io (WRITE, FAT_START + fat_size + fat_low * 2, (void *)cooked_fat, cache_size * 2);
+-	disk_io (WRITE, FAT_START + fat_low * 2, (void *)cooked_fat, cache_size * 2);
+-	disk_io (WRITE, FAT_START + fat_size + fat_low * 2, (void *)cooked_fat, cache_size * 2);
++	/* rosco: (long) fat_low * 2, see read_fat(); this wrote the cache of
++	 * clusters 32768-36863 over the FAT entries 0-4095
++	 */
++	disk_io (WRITE, FAT_START + (long) fat_low * 2, (void *)cooked_fat, fat_chunk() * 2);
++	disk_io (WRITE, FAT_START + fat_size + (long) fat_low * 2, (void *)cooked_fat, fat_chunk() * 2);
 +	if (big_endian) {	/* rosco: the cache back in native order */
 +		unsigned short	*cp;
 +		unsigned short	i;
@@ -113,3 +286,40 @@
    } else {
    	unsigned short	*cp;
    	unsigned char	*rp;
+@@ -1053,11 +1187,24 @@
+ unsigned short next_cluster(cl_no)
+ register unsigned int cl_no;
+ {
++  unsigned short v;
++
+   if (cl_no < fat_low || cl_no > fat_high) {
+   	if (fat_dirty) flush_fat ();
+   	read_fat (cl_no);
+   }
+-  return cooked_fat [cl_no - fat_low];
++  /* rosco: every end of chain mark (FFF8-FFFF, FF8-FFF) is the end, and
++   * FFF7/FF7 bad; only FFFF/FFF ended a chain and FFF0/FF0 was bad
++   */
++  v = cooked_fat [cl_no - fat_low];
++  if (fat_16) {
++	if (v >= 0xFFF8) v = LAST_CLUSTER;
++	else if (v == 0xFFF7) v = BAD16;
++  } else {
++	if (v >= 0xFF8 && v <= 0xFFF) v = LAST_CLUSTER;
++	else if (v == 0xFF7) v = BAD16;
++  }
++  return v;
+ }
+ 
+ char *slash(str)
+@@ -1111,7 +1258,9 @@
+   }
+ 
+   if (r != bytes) {
+-  	fprintf (stderr, "%s: read error: %s\n", cmnd, strerror (errno));
++	/* rosco: "write error" for writes */
++  	fprintf (stderr, "%s: %s error: %s\n", cmnd,
++		 op == READ ? "read" : "write", strerror (errno));
+   	exit (1);
+   }
+ }

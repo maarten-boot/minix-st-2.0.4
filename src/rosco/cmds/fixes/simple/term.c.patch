@@ -1,0 +1,13 @@
+--- orig/simple/term.c
++++ new/simple/term.c
+@@ -503,7 +503,9 @@
+ 		tcp->c_cflag |= param->value;
+ 		break;
+ 	    case PARITY:
+-		tcp->c_cflag &= PARENB | PARODD;
++		/* rosco: was "&= PARENB | PARODD", which cleared everything
++		 * else: CREAD (no input), CSIZE (5 bits), HUPCL, CLOCAL */
++		tcp->c_cflag &= ~(PARENB | PARODD);
+ 		tcp->c_cflag |= param->value;
+ 		break;
+ 	    case SPEED:

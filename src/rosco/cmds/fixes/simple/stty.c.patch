@@ -1,0 +1,260 @@
+--- orig/simple/stty.c
++++ new/simple/stty.c
+@@ -84,6 +84,9 @@
+ 
+ char *prog_name;
+ struct termios termios;
++/* rosco: a bad argument was reported, but stty went on, set the rest and
++ * exited 0; now nothing is changed and the exit status is 1 */
++int bad= 0;
+ int column= 0, max_column=80;		/* Assume 80 character terminals. */
+ #ifdef __minix
+ struct winsize winsize;
+@@ -156,6 +159,7 @@
+   /* Process the options specified. */
+   for (k= 1; k < argc; k++)
+ 	k += option(argv[k], k+1 < argc ? argv[k+1] : "");
++  if (bad) exit(1);
+ 
+ #ifdef __minix
+   if (ioctl(0, TIOCSWINSZ, &winsize) == -1)
+@@ -443,13 +447,15 @@
+ 	return 0;
+   }
+ 
++  /* rosco: an empty argument ("") was taken as speed 0 (hang up) */
+   num= strtol(opt, &check, 10);
+-  if (check[0] == '\0')
++  if (opt[0] != '\0' && check[0] == '\0')
+   {
+ 	speed= long2speed(num);
+ 	if (speed == (speed_t)-1)
+ 	{
+ 		fprintf(stderr, "%s: illegal speed: '%s'\n", prog_name, opt);
++		bad= 1;
+ 		return 0;
+ 	}
+ 	/* Speed OK */
+@@ -459,14 +465,18 @@
+   }
+ 
+   if (match(opt, "ispeed")) {
++	/* rosco: "check != '\0'" compared the pointer, so any argument
++	 * (abc, or none) was taken: strtol gave 0, speed 0 (hang up); the
++	 * message named the option, not the speed */
+ 	num= strtol(next, &check, 10);
+-	if (check != '\0')
++	if (next[0] != '\0' && check[0] == '\0')
+ 	{
+ 		speed= long2speed(num);
+ 		if (speed == (speed_t)-1)
+ 		{
+ 			fprintf(stderr, "%s: illegal speed: '%s'\n", prog_name, 
+-									opt);
++									next);
++			bad= 1;
+ 			return 1;
+ 		}
+ 		cfsetispeed(&termios, speed);
+@@ -476,19 +486,24 @@
+ 	{
+ 		fprintf(stderr, "%s: invalid argument to ispeed: '%s'\n", 
+ 			prog_name, next);
++		bad= 1;
+ 		return 1;
+ 	}
+   }
+ 
+   if (match(opt, "ospeed")) {
++	/* rosco: "check != '\0'" compared the pointer, so any argument
++	 * (abc, or none) was taken: strtol gave 0, speed 0 (hang up); the
++	 * message named the option, not the speed */
+ 	num= strtol(next, &check, 10);
+-	if (check != '\0')
++	if (next[0] != '\0' && check[0] == '\0')
+ 	{
+ 		speed= long2speed(num);
+ 		if (speed == (speed_t)-1)
+ 		{
+ 			fprintf(stderr, "%s: illegal speed: '%s'\n", prog_name, 
+-									opt);
++									next);
++			bad= 1;
+ 			return 1;
+ 		}
+ 		cfsetospeed(&termios, speed);
+@@ -498,6 +513,7 @@
+ 	{
+ 		fprintf(stderr, "%s: invalid argument to ospeed: %s\n", 
+ 			prog_name, next);
++		bad= 1;
+ 		return 1;
+ 	}
+   }
+@@ -919,10 +935,12 @@
+   if (match(opt, "cols"))
+   {
+   	num= strtol(next, &check, 0);
+-  	if (check[0] != '\0')
++  	/* rosco: also the range of the unsigned short (70000 became 4464) */
++  	if (next[0] == '\0' || check[0] != '\0' || num < 0 || num > 65535L)
+   	{
+   		fprintf(stderr, "%s: illegal parameter to cols: '%s'\n", 
+   							prog_name, next);
++  		bad= 1;
+   		return 1;
+   	}
+   	winsize.ws_col= num;
+@@ -932,10 +950,12 @@
+   if (match(opt, "rows"))
+   {
+   	num= strtol(next, &check, 0);
+-  	if (check[0] != '\0')
++  	/* rosco: also the range of the unsigned short (70000 became 4464) */
++  	if (next[0] == '\0' || check[0] != '\0' || num < 0 || num > 65535L)
+   	{
+   		fprintf(stderr, "%s: illegal parameter to rows: '%s'\n", 
+   							prog_name, next);
++  		bad= 1;
+   		return 1;
+   	}
+   	winsize.ws_row= num;
+@@ -945,10 +965,12 @@
+   if (match(opt, "xpixels"))
+   {
+   	num= strtol(next, &check, 0);
+-  	if (check[0] != '\0')
++  	/* rosco: also the range of the unsigned short (70000 became 4464) */
++  	if (next[0] == '\0' || check[0] != '\0' || num < 0 || num > 65535L)
+   	{
+   		fprintf(stderr, "%s: illegal parameter to xpixels: '%s'\n", 
+   							prog_name, next);
++  		bad= 1;
+   		return 1;
+   	}
+   	winsize.ws_xpixel= num;
+@@ -958,10 +980,12 @@
+   if (match(opt, "ypixels"))
+   {
+   	num= strtol(next, &check, 0);
+-  	if (check[0] != '\0')
++  	/* rosco: also the range of the unsigned short (70000 became 4464) */
++  	if (next[0] == '\0' || check[0] != '\0' || num < 0 || num > 65535L)
+   	{
+   		fprintf(stderr, "%s: illegal parameter to ypixels: '%s'\n", 
+   							prog_name, next);
++  		bad= 1;
+   		return 1;
+   	}
+   	winsize.ws_ypixel= num;
+@@ -970,6 +994,7 @@
+ #endif /* __minix */
+ 
+   fprintf(stderr, "%s: unknown mode: %s\n", prog_name, opt);
++  bad= 1;
+   return 0;
+ }
+ 
+@@ -1146,6 +1171,7 @@
+ 	if (check[0] != ':')
+ 	{
+ 		fprintf(stderr, "error in saved settings '%s'\n", opt);
++		bad= 1;
+ 		return;
+ 	}
+ 	c_iflag= num;
+@@ -1154,6 +1180,7 @@
+ 	if (check[0] != ':')
+ 	{
+ 		fprintf(stderr, "error in saved settings '%s'\n", opt);
++		bad= 1;
+ 		return;
+ 	}
+ 	c_oflag= num;
+@@ -1162,6 +1189,7 @@
+ 	if (check[0] != ':')
+ 	{
+ 		fprintf(stderr, "error in saved settings '%s'\n", opt);
++		bad= 1;
+ 		return;
+ 	}
+ 	c_cflag= num;
+@@ -1170,6 +1198,7 @@
+ 	if (check[0] != ':')
+ 	{
+ 		fprintf(stderr, "error in saved settings '%s'\n", opt);
++		bad= 1;
+ 		return;
+ 	}
+ 	c_lflag= num;
+@@ -1178,6 +1207,7 @@
+ 	if (check[0] != ':')
+ 	{
+ 		fprintf(stderr, "error in saved settings '%s'\n", opt);
++		bad= 1;
+ 		return;
+ 	}
+ 	ispeed= num;
+@@ -1186,6 +1216,7 @@
+ 	if (check[0] != ':')
+ 	{
+ 		fprintf(stderr, "error in saved settings '%s'\n", opt);
++		bad= 1;
+ 		return;
+ 	}
+ 	ospeed= num;
+@@ -1196,6 +1227,7 @@
+ 		if (check[0] != ':')
+ 		{
+ 			fprintf(stderr, "error in saved settings '%s'\n", opt);
++			bad= 1;
+ 			return;
+ 		}
+ 		c_cc[i]= num;
+@@ -1203,6 +1235,7 @@
+ 	if (check[1] != '\0')
+ 	{
+ 		fprintf(stderr, "error in saved settings '%s'\n", opt);
++		bad= 1;
+ 		return;
+ 	}
+ 	termios.c_iflag= c_iflag;
+@@ -1234,16 +1267,19 @@
+ 	} else if (match(value, "^?"))
+ 		chr= '\177';
+ 	else if (strlen(value) == 2 && value[0] == '^') {
+-		chr= toupper(value[1]) - '@';
++		/* rosco: toupper() of a signed char (0200-0377) */
++		chr= toupper((unsigned char) value[1]) - '@';
+ 		if (chr < 0 || chr >= 32) {
+ 			fprintf(stderr, "stty: illegal option value: '%s'\n",
+ 				value);
++			bad= 1;
+ 			return;
+ 		}
+ 	} else if (strlen(value) == 1)
+-		chr= value[0];
++		chr= (unsigned char) value[0];
+ 	else {
+ 		fprintf(stderr, "stty: illegal option value: '%s'\n", value);
++		bad= 1;
+ 		return;
+ 	}
+ 
+@@ -1259,13 +1295,15 @@
+ 	char *check;
+ 
+ 	num= strtol(value, &check, 0);
+-	if (check[0] != '\0') {
++	if (value[0] == '\0' || check[0] != '\0') {
+ 		fprintf(stderr, "stty: illegal option value: '%s'\n", value);
++		bad= 1;
+ 		return;
+ 	}
+ 
+ 	if ((cc_t)num != num) {
+ 		fprintf(stderr, "stty: illegal option value: '%s'\n", value);
++		bad= 1;
+ 		return;
+ 	}
+ 	assert(option >= 0 && option < NCCS);

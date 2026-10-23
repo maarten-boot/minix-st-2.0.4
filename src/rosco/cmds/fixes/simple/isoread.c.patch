@@ -1,0 +1,127 @@
+--- orig/simple/isoread.c
++++ new/simple/isoread.c
+@@ -197,6 +197,7 @@
+  */
+   int i;
+   int len;
++  int nlen;	/* rosco */
+ 
+   /* First match the filename */
+   len = strlen(name);
+@@ -206,7 +207,14 @@
+     if (dir_ptr->name[i] == ';') return 1;	/* found end of a filename */ 
+     if (name[i] != LOWER_CASE(dir_ptr->name[i])) return 1; /* match failed */
+   }
+-  if (dir_ptr->name[i] != ';' && i != len) return 1; /* incomplete match */
++  /* rosco: i == len here always, so this never failed and a name matched
++   * every entry it is a prefix of ("read" found README.TXT); the entry
++   * must end here (";version", its length, or a "." before either)
++   */
++  nlen = iso_711(dir_ptr->name_length);
++  if (i < nlen && dir_ptr->name[i] != ';' &&
++      !(dir_ptr->name[i] == '.' && (i + 1 == nlen || dir_ptr->name[i+1] == ';')))
++	return 1; /* incomplete match */
+ 
+   /* The filename is ok, now look at the file type */
+   if (dir_flag && !IS_DIR(dir_ptr)) return 1;  /* File type not correct */
+@@ -301,6 +309,11 @@
+   
+   if (Read_File || Read_Dir)
+   {
++    /* rosco: path[] was overrun by a long name */
++    if (strlen(file_name) >= MAX_PATH_LENGTH) {
++      fprintf (STDERR, "%s: name too long\n", basename);
++      exit(1);
++    }
+     for (i=0; file_name[i] != '\0'; i++) 
+       path[i] = LOWER_CASE(file_name[i]);
+     path[i] = '\0';
+@@ -336,6 +349,12 @@
+     if (Read_Dir)
+       if (Recurse) recurse_dir(path,entry);
+       else list_dir(entry);
++    else if (IS_DIR(entry))
++    {
++      /* rosco: a directory was printed as file data (its raw entries) */
++      fprintf (STDERR, "%s is a directory\n", path);
++      exit(1);
++    }
+     else
+       list_file(entry);
+   }
+@@ -385,6 +404,8 @@
+     for (i = name_index; i < strlen(path); i++)
+     {
+       if (path[i] == '/') break;
++      /* rosco: name[] was overrun by a long path element */
++      if (i - name_index >= MAX_NAME_LENGTH) return NULL_DIR;
+       name[i - name_index] = path[i];
+     }
+     last_in_path = 
+@@ -433,7 +454,10 @@
+ {
+   /* Recursively descend all directories starting with dir_ptr */
+ 
+-  char tmp_path[MAX_PATH_LENGTH];
++  /* rosco: tmp_path on the heap; 1K of stack per level ended in a "Memory
++   * fault" for a tree of 20 levels (isodir -r, 16K stack)
++   */
++  char *tmp_path;
+   int i,j, path_length;
+   long block, saveblock, dblock;
+   int nr_of_blocks;
+@@ -477,6 +501,18 @@
+       if (IS_DIR(dir_ptr)  && !IS_DOT(dir_ptr) && !IS_DOT_DOT(dir_ptr))
+       {
+         /* setup path for next recursive call */
++        /* rosco: tmp_path[] was overrun by deep trees */
++        if (path_length + iso_711(dir_ptr->name_length) + 2 > MAX_PATH_LENGTH)
++        {
++          fprintf (STDERR, "path too long: %s...\n", path);
++          exit(1);
++        }
++        tmp_path = malloc(path_length + iso_711(dir_ptr->name_length) + 2);
++        if (tmp_path == NULL)
++        {
++          fprintf (STDERR, "out of memory\n");
++          exit(1);
++        }
+         for (i=0; i<path_length; i++) tmp_path[i] = path[i]; 
+         for (i=0;i<iso_711(dir_ptr->name_length) && dir_ptr->name[i] != ';';i++)
+           tmp_path[i+path_length] = LOWER_CASE(dir_ptr->name[i]);
+@@ -489,6 +525,7 @@
+   
+         /* And start all over again with this entry */
+         recurse_dir(tmp_path, (struct dir_entry *) Buffer);
++        free(tmp_path);
+ 
+         /* get the block we were looking at */
+         read_device(saveblock*BLOCK_SIZE, BLOCK_SIZE, Buffer);
+@@ -608,9 +645,10 @@
+   else
+ 	fprintf(STDOUT,"%.3s",&months[m*3]);
+ 
++  /* rosco: the year unsigned; a signed char made 2028 and later 1772.. */
+   fprintf (STDOUT, " %02d %04d %02d:%02d:%02d",
+            date[2],
+-           1900+date[0],
++           1900+iso_711(&date[0]),
+            date[3],
+            date[4],
+            date[5]);
+@@ -644,8 +682,13 @@
+     block++;
+   } else {
+     read_device(block*BLOCK_SIZE, BLOCK_SIZE, Buffer);
+-      for (i=0; ((i < size) && (i < BLOCK_SIZE)); i++)
+-        fprintf(STDOUT, "%c", Buffer[i]);
++    /* rosco: fwrite instead of a fprintf("%c") per byte, and write errors */
++    if (fwrite(Buffer, 1, size < BLOCK_SIZE ? (int) size : BLOCK_SIZE,
++	       STDOUT) != (size < BLOCK_SIZE ? (int) size : BLOCK_SIZE))
++    {
++      fprintf (STDERR, "write error: %s\n", strerror(errno));
++      exit(1);
++    }
+     size-= BLOCK_SIZE;
+     block++;
+   }

@@ -1,0 +1,26 @@
+--- orig/simple/mkswap.c
++++ new/simple/mkswap.c
+@@ -172,7 +172,10 @@
+     if (lseek(fd, SWAP_BOOTOFF, SEEK_SET) == -1
+ 	|| (r= read(fd, block, sizeof(block))) < BLOCK_SIZE
+     ) {
+-	fprintf(stderr, "mkswap: %s: %s\n", file,
++	/* rosco: file was passed twice, the message showed the name again
++	 * instead of the error
++	 */
++	fprintf(stderr, "mkswap: %s: %s\n",
+ 	    file, r >= 0 ? "End of file" : strerror(errno));
+ 	exit(1);
+     }
+@@ -184,7 +187,10 @@
+     if (lseek(fd, SWAP_BOOTOFF, SEEK_SET) == -1
+ 	|| (r= write(fd, block, sizeof(block))) < BLOCK_SIZE
+     ) {
+-	fprintf(stderr, "mkswap: %s: %s\n", file,
++	/* rosco: file was passed twice, the message showed the name again
++	 * instead of the error
++	 */
++	fprintf(stderr, "mkswap: %s: %s\n",
+ 	    file, r >= 0 ? "End of file" : strerror(errno));
+ 	exit(1);
+     }

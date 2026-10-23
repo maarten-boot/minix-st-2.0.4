@@ -1,0 +1,162 @@
+--- orig/simple/remsync.c
++++ new/simple/remsync.c
+@@ -834,6 +834,10 @@
+ 		/* If the old directory is ignored, then so are its entries. */
+ 		goto recurse;
+ 	}
++	/* rosco: an entry more than one level below the one before it used
++	 * trunc[depth - 1] that was never set
++	 */
++	if (trunc != nil && depth > entry.depth + 1) state_syntax(lineno);
+ 	entry.depth= depth;
+ 
+ 	splitline(line, &argv, &argc);
+@@ -850,7 +854,10 @@
+ 		entry.depth= 0;
+ 		trunc[0]= 0;
+ 	} else {
+-		if (entry.depth > trunc_len) {
++		/* rosco: was "if (entry.depth > trunc_len)": at depth 16
++		 * trunc[16] was written past the array
++		 */
++		while (entry.depth >= trunc_len) {
+ 			trunc= allocate(trunc,
+ 					(trunc_len*= 2) * sizeof(trunc[0]));
+ 		}
+@@ -1221,6 +1228,10 @@
+ 		report(file);
+ 		return;
+ 	}
++	/* rosco: chmod and chown follow a symlink: a "chmod" line for a
++	 * name that is a symlink here changed the file it points to
++	 */
++	if (S_ISLNK(st.st_mode)) return;
+ 	if ((st.st_mode & 07777) != mode) {
+ 		if (chmod(file, mode) < 0) {
+ 			report(file);
+@@ -1255,6 +1266,7 @@
+ 	int dirty;
+ 	struct stat st;
+ 	struct utimbuf utb;
++	ssize_t n;	/* rosco */
+ 
+ 	if (entry->ignore) return;
+ 
+@@ -1299,7 +1311,12 @@
+ 			size--;
+ 			*p++= c;
+ 			if (p == arraylimit(buf) || size == 0) {
+-				if (f >= 0 && write(f, buf, p - buf) < 0) {
++				/* rosco: a short write (disk full) was not
++				 * noticed: was "< 0"
++				 */
++				if (f >= 0 && (n= write(f, buf, p - buf))
++							!= p - buf) {
++					if (n >= 0) errno= ENOSPC;
+ 					report(file);
+ 					close(f);
+ 					f= -1;
+@@ -1392,6 +1409,45 @@
+ 	if (vflag) fprintf(stderr, "ln %s %s\n", file, path_name(pp));
+ }
+ 
++int unsafe(const char *path, size_t trunc)
++/* rosco: the names in a file of differences were used as they were: "add
++ * ../../etc/x", or a name under a symlink, wrote outside the tree (remsync
++ * is run as root to apply them).  True if a name below the tree has a
++ * "." or ".." component or goes through something that is not a
++ * directory.
++ */
++{
++	char *copy= copystr(path);
++	char *p= copy + trunc, *c;
++	struct stat st;
++	int bad= 0;
++
++	for (;;) {
++		while (*p == '/') p++;
++		if (*p == 0) break;
++		c= p;
++		while (*p != 0 && *p != '/') p++;
++		if ((p - c == 1 && c[0] == '.')
++			|| (p - c == 2 && c[0] == '.' && c[1] == '.')) {
++			bad= 1;
++			break;
++		}
++		if (*p == 0) break;
++		*p= 0;
++		if (lstat(copy, &st) == 0 && !S_ISDIR(st.st_mode)) {
++			bad= 1;
++			break;
++		}
++		*p= '/';
++	}
++	deallocate(copy);
++	if (bad) {
++		fprintf(stderr, "remsync: %s: unsafe name, skipped\n", path);
++		excode= 1;
++	}
++	return bad;
++}
++
+ void diff_syntax(const char *line)
+ {
+ 	fprintf(stderr, "remsync: %s: syntax error on this line: %s\n",
+@@ -1425,15 +1481,34 @@
+ 
+ 			if (argc < 3) diff_syntax(line);
+ 			path_add(&path, argv[1]);
++			/* rosco: getattributes() copies entry.path for a
++			 * hard link number; it was not set
++			 */
++			entry.path= path_name(&path) + trunc;
+ 			entry.ignore= (strcmp(argv[2], "ignore") == 0);
+ 			if (!entry.ignore && !getattributes(&entry,
+ 							argc - 2, argv + 2))
+ 				diff_syntax(line);
++			if (unsafe(path_name(&path), trunc)) {
++				/* rosco: skip the contents of a file */
++				off_t n= entry.ignore || entry.type != F_FILE
++							? 0 : entry.size;
++
++				while (n > 0 && getc(difffp) != EOF) n--;
++				if (n > 0) {
++					fprintf(stderr,
++					"remsync: %s: premature EOF\n",
++						diff_file);
++					exit(1);
++				}
++				continue;
++			}
+ 			apply_add(&path, &entry);
+ 		} else
+ 		if (strcmp(argv[0], "rm") == 0) {
+ 			if (argc != 2) diff_syntax(line);
+ 			path_add(&path, argv[1]);
++			if (unsafe(path_name(&path), trunc)) continue;
+ 			apply_remove(&path);
+ 		} else
+ 		if (strcmp(argv[0], "ln") == 0) {
+@@ -1441,11 +1516,14 @@
+ 			path_trunc(&link, trunc);
+ 			path_add(&link, argv[1]);
+ 			path_add(&path, argv[2]);
++			if (unsafe(path_name(&link), trunc)
++				|| unsafe(path_name(&path), trunc)) continue;
+ 			apply_link(path_name(&link), &path);
+ 		} else
+ 		if (strcmp(argv[0], "chmod") == 0) {
+ 			if (argc != 5) diff_syntax(line);
+ 			path_add(&path, argv[1]);
++			if (unsafe(path_name(&path), trunc)) continue;
+ 			apply_chmod(path_name(&path),
+ 				strtoul(argv[2], nil, 010),
+ 				strtoul(argv[3], nil, 10),
+@@ -1455,6 +1533,7 @@
+ 		if (strcmp(argv[0], "old") == 0) {
+ 			if (argc != 3) diff_syntax(line);
+ 			path_add(&path, argv[1]);
++			if (unsafe(path_name(&path), trunc)) continue;
+ 			apply_mkold(path_name(&path), argv[2]);
+ 		} else
+ 		if (strcmp(argv[0], "end") == 0) {

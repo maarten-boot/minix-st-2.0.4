@@ -1,0 +1,14 @@
+--- orig/simple/tget.c
++++ new/simple/tget.c
+@@ -23,7 +23,10 @@
+ void main(int argc, char **argv)
+ {
+ 	char termbuf[1024];
+-	char string[256], *pstr;
++	/* rosco: tgetstr() copies the whole capability; a string of 256 or
++	 * more bytes (a TERMCAP entry) overran string[256] on the stack */
++	static char string[1024];
++	char *pstr;
+ 	char *term;
+ 	int i;
+ 	int excode= 0;

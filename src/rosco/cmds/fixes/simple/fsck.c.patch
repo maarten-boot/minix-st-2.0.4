@@ -1,0 +1,206 @@
+--- orig/simple/fsck.c
++++ new/simple/fsck.c
+@@ -96,7 +96,10 @@
+ #define N_SUPER		1
+ #define N_IMAP		(sb.s_imap_blocks)
+ #define N_ZMAP		(sb.s_zmap_blocks)
+-#define N_ILIST		((sb.s_ninodes+INODES_PER_BLOCK-1) / INODES_PER_BLOCK)
++/* rosco: in long; s_ninodes + 15 wrapped in the 16 bit unsigned int above
++ * 65520 inodes (N_ILIST 0)
++ */
++#define N_ILIST		(((long) sb.s_ninodes+INODES_PER_BLOCK-1) / INODES_PER_BLOCK)
+ #define N_DATA		(sb.s_zones - FIRST)
+ 
+ /* Block address of each type */
+@@ -122,7 +125,15 @@
+ char rwbuf[BLOCK_SIZE];		/* one block buffer cache */
+ block_nr thisblk;		/* block in buffer cache */
+ char nullbuf[BLOCK_SIZE];	/* null buffer */
+-nlink_t *count;			/* inode count */
++/* rosco: the inode reference counts in chunks of 8192 (16K each): one array
++ * of s_ninodes + 1 nlink_t (up to 128K) is more than malloc()'s 16 bit
++ * size_t can give, alloc(ninodes + 1, 2) wrapped above 32767 inodes and the
++ * counts were written past the end of a short block on the heap
++ */
++#define CNTSHIFT	13
++#define CNTCHUNK	(1 << CNTSHIFT)
++nlink_t *countv[(65536L + CNTCHUNK - 1) / CNTCHUNK];
++#define COUNT(i)	(countv[(unsigned) (i) >> CNTSHIFT][(unsigned) (i) & (CNTCHUNK - 1)])
+ int changed;			/* has the diskette been written to? */
+ struct stack {
+   dir_struct *st_dir;
+@@ -302,6 +313,10 @@
+ {
+   char *p;
+ 
++  /* rosco: the product in long; malloc() takes a 16 bit size_t and the
++   * product wrapped (a short block for bitmaps of 64 blocks and more)
++   */
++  if ((long) nelem * elsize > 0xFFFFL) fatal("file system too big (out of memory)");
+   if ((p = (char *)malloc((size_t)nelem * elsize)) == 0)fatal("out of memory");
+   memset((void *) p, 0, (size_t)nelem * elsize);
+   return(p);
+@@ -315,7 +330,10 @@
+   int c;
+ 
+   do {
+-	if ((c = *s) == 0) break;
++	/* rosco: unsigned; a name byte of 0x80 and more indexed the ctype
++	 * table below its start (isprint) and printed garbage
++	 */
++	if ((c = *s & 0xFF) == 0) break;
+ 	if (!isprint(c)) c = '?';
+ 	putchar(c);
+ 	s++;
+@@ -573,6 +591,13 @@
+ 
+   if (clist == 0) return;
+   while ((bit = getnumber(*clist++)) != NO_BIT) {
++	/* rosco: inode 0 or past s_ninodes read (and with -r wrote) a
++	 * slot before or after the inode table
++	 */
++	if (bit < 1 || bit > sb.s_ninodes) {
++		printf("inode number %ld out of range (ignored)\n", bit);
++		continue;
++	}
+ 	setbit(spec_imap, bit);
+ 	ino = bit;
+ 	do {
+@@ -750,7 +775,11 @@
+ /* Allocate an array to maintain the inode reference counts in. */
+ void getcount()
+ {
+-  count = (nlink_t *) alloc((unsigned) (sb.s_ninodes + 1), sizeof(nlink_t));
++  /* rosco: in chunks, see COUNT() */
++  long i;
++
++  for (i = 0; i <= (long) sb.s_ninodes; i += CNTCHUNK)
++	countv[i >> CNTSHIFT] = (nlink_t *) alloc(CNTCHUNK, sizeof(nlink_t));
+ }
+ 
+ /* The reference count for inode `ino' is wrong.  Ask if it should be adjusted. */
+@@ -764,10 +793,10 @@
+ 	firstcnterr = 0;
+   }
+   devread(inoaddr(ino), (char *) &inode, INODE_SIZE);
+-  count[ino] += inode.i_nlinks;	/* it was already subtracted; add it back */
+-  printf("%5u %5u %5u", ino, (unsigned) inode.i_nlinks, count[ino]);
++  COUNT(ino) += inode.i_nlinks;	/* it was already subtracted; add it back */
++  printf("%5u %5u %5u", ino, (unsigned) inode.i_nlinks, COUNT(ino));
+   if (yes(" adjust")) {
+-	if ((inode.i_nlinks = count[ino]) == 0) {
++	if ((inode.i_nlinks = COUNT(ino)) == 0) {
+ 		fatal("internal error (counterror)");
+ 		inode.i_mode = I_NOT_ALLOC;
+ 		clrbit(imap, (bit_nr) ino);
+@@ -788,14 +817,20 @@
+   register ino_t ino;
+ 
+   for (ino = 1; ino <= sb.s_ninodes && ino != 0; ino++)
+-	if (count[ino] != 0) counterror(ino);
++	if (COUNT(ino) != 0) counterror(ino);
+   if (!firstcnterr) printf("\n");
+ }
+ 
+ /* Deallocate the `count' array. */
+ void freecount()
+ {
+-  free((char *) count);
++  int i;
++
++  /* rosco: the chunks, see COUNT() */
++  for (i = 0; i < sizeof(countv) / sizeof(countv[0]); i++) {
++	if (countv[i] != 0) free((char *) countv[i]);
++	countv[i] = 0;
++  }
+ }
+ 
+ /* Print the inode permission bits given by mode and shift. */
+@@ -867,7 +902,7 @@
+ {
+   setbit(spec_imap, (bit_nr) dp->d_inum);
+   if (yes(". remove entry")) {
+-	count[dp->d_inum]--;
++	COUNT(dp->d_inum)--;
+ 	memset((void *) dp, 0, sizeof(dir_struct));
+ 	return(1);
+   }
+@@ -882,7 +917,8 @@
+ {
+   register int c;
+ 
+-  while (--n >= 0 && (c = *src++) != '\0') {
++  /* rosco: & 0xFF, see printname() */
++  while (--n >= 0 && (c = *src++ & 0xFF) != '\0') {
+ 	if (isprint(c) && c != '\\')
+ 		*dst++ = c;
+ 	else {
+@@ -928,9 +964,9 @@
+ 	setbit(spec_imap, (bit_nr) dp->d_inum);
+ 	setbit(spec_imap, (bit_nr) exp);
+ 	if (yes(". repair")) {
+-		count[dp->d_inum]--;
++		COUNT(dp->d_inum)--;
+ 		dp->d_inum = exp;
+-		count[exp]++;
++		COUNT(exp)++;
+ 		return(0);
+ 	}
+   } else if (pos != (dp->d_name[1] ? DIR_ENTRY_SIZE : 0)) {
+@@ -994,7 +1030,7 @@
+ 	}
+ 	return(1);
+   }
+-  if ((unsigned) count[dp->d_inum] == SHRT_MAX) {
++  if ((unsigned) COUNT(dp->d_inum) == SHRT_MAX) {
+ 	printf("too many links to ino %u\n", dp->d_inum);
+ 	printf("discovered at entry '");
+ 	printname(dp->d_name);
+@@ -1002,7 +1038,7 @@
+ 	printpath(0, 1);
+ 	if (Remove(dp)) return(0);
+   }
+-  count[dp->d_inum]++;
++  COUNT(dp->d_inum)++;
+   if (strcmp(dp->d_name, ".") == 0) {
+ 	ftop->st_presence |= DOT;
+ 	return(chkdots(ino, pos, dp, ino));
+@@ -1333,10 +1369,10 @@
+ 	printf("link count too big in ");
+ 	printpath(1, 0);
+ 	printf("cnt = %u)\n", (unsigned) ip->i_nlinks);
+-	count[ino] -= SHRT_MAX;
++	COUNT(ino) -= SHRT_MAX;
+ 	setbit(spec_imap, (bit_nr) ino);
+   } else {
+-	count[ino] -= (unsigned) ip->i_nlinks;
++	COUNT(ino) -= (unsigned) ip->i_nlinks;
+   }
+   return chkmode(ino, ip);
+ }
+@@ -1364,7 +1400,7 @@
+ 	if (!visited && !chkinode(ino, &inode)) {
+ 		setbit(spec_imap, (bit_nr) ino);
+ 		if (yes("remove")) {
+-			count[ino] += inode.i_nlinks - 1;
++			COUNT(ino) += inode.i_nlinks - 1;
+ 			clrbit(imap, (bit_nr) ino);
+ 			devwrite(inoaddr(ino), nullbuf, INODE_SIZE);
+ 			memset((void *) dp, 0, sizeof(dir_struct));
+@@ -1430,10 +1466,14 @@
+   getsuper();
+   chksuper();
+ 
+-  lsi(clist);
+-
++  /* rosco: the bitmaps first; lsi() marks the -c inodes in spec_imap, which
++   * was still NULL: "fsck -c N" set a bit at address N / 8 (no MMU: the
++   * vector table and the firmware data in low memory)
++   */
+   getbitmaps();
+ 
++  lsi(clist);
++
+   fillbitmap(spec_imap, (bit_nr) 1, (bit_nr) sb.s_ninodes + 1, ilist);
+   fillbitmap(spec_zmap, (bit_nr) FIRST, (bit_nr) sb.s_zones, zlist);
+ 

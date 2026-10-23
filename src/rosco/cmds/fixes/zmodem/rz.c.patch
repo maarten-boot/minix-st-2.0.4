@@ -1,0 +1,331 @@
+--- orig/zmodem/rz.c
++++ new/zmodem/rz.c
+@@ -84,6 +84,7 @@
+ #include <unistd.h>
+ #include <utime.h>
+ #include <stdio.h>
++#include <stdarg.h>	/* rosco: vfile() */
+ 
+ #define OK 0
+ #define FALSE 0
+@@ -125,6 +126,8 @@
+ _PROTOTYPE(void bttyout , (int c ));
+ _PROTOTYPE(int sys2 , (char *s ));
+ _PROTOTYPE(void exec2 , (char *s ));
++_PROTOTYPE(static int unsafe , (char *name ));
++_PROTOTYPE(static int pipesafe , (char *name ));
+ 
+ /*
+  * Max value for HOWMANY is 255.
+@@ -157,7 +160,7 @@
+ 
+ int Zmodem=0;		/* ZMODEM protocol requested */
+ int Nozmodem = 0;	/* If invoked as "rb" */
+-unsigned Baudrate = 2400;
++long Baudrate = 2400;	/* rosco: was unsigned (16 bits): 115200 */
+ 
+ #ifdef vax11c
+ #include "vrzsz.c"	/* most of the system dependent stuff here */
+@@ -184,6 +187,9 @@
+ int Eofseen;		/* indicates cpm eof (^Z) has been received */
+ int errors;
+ int Restricted=0;	/* restricted; no /.. or ../ in filenames */
++int Refused=0;		/* rosco: a remote command or an unsafe file name
++			 * was refused: exit status 1 */
++int Umask;		/* rosco: for the sender's file modes */
+ #ifdef ONEREAD
+ /* Sorry, Regulus and some others don't work right in raw mode! */
+ int Readnum = 1;	/* Number of bytes to ask for in read() from modem */
+@@ -214,7 +220,9 @@
+ int chinseg = 0;	/* Number of characters received in this data seg */
+ char secbuf[1+(SEGMENTS+1)*1024];
+ #else
+-char secbuf[1025];
++/* rosco: zrdata() may store 1025 bytes, and the file name and its size
++ * string are used as C strings: two more for the terminating NULs */
++char secbuf[1027];
+ #endif
+ 
+ 
+@@ -264,6 +272,7 @@
+ 
+ 	Rxtimeout = 100;
+ 	setbuf(stderr, (char *)NULL);
++	Umask = umask(0); umask(Umask);	/* rosco */
+ 	if ((cp=getenv("SHELL")) && (substr(cp, "rsh") || substr(cp, "rksh")))
+ 		Restricted=TRUE;
+ 
+@@ -361,6 +370,8 @@
+ 		canit();
+ 	}
+ 	mode(0);
++	if (Refused && !exitcode)
++		exitcode = 1;	/* rosco */
+ 	vfile("exitcode = %d\n",exitcode);
+ 	if (exitcode && !Zmodem)	/* bellow again with all thy might. */
+ 		canit();
+@@ -397,13 +408,17 @@
+ /*
+  *  Debugging information output interface routine
+  */
+-/* VARARGS1 */
+-void vfile(f, a, b, c)
+-register char *f,*a,*b,*c;
+-
++/* rosco: was vfile(f, a, b, c) with three char * parameters: an int
++ * argument before another one ("%d %s", "%d %lx") shifted the rest, and
++ * %s printed from a wrong address (-vvv) */
++void vfile(char *f, ...)
+ {
++	va_list ap;
++
+ 	if (Verbose > 2) {
+-		fprintf(stderr, f, a, b, c);
++		va_start(ap, f);
++		vfprintf(stderr, f, ap);
++		va_end(ap);
+ 		fprintf(stderr, "\n");
+ 	}
+ }
+@@ -448,7 +463,13 @@
+ 	} else {
+ 		Bytesleft = DEFBYTL; Filemode = 0; Modtime = 0L;
+ 
+-		procheader(""); strcpy(Pathname, *argp); checkpath(Pathname);
++		procheader("");
++		/* rosco: strcpy() overran Pathname[257] */
++		if (strlen(*argp) >= PATHLEN) {
++			fprintf(stderr, "rz: %.60s...: name too long\n", *argp);
++			return ERROR;
++		}
++		strcpy(Pathname, *argp); checkpath(Pathname);
+ 		fprintf(stderr, "\nrz: ready to receive %s\r\n", Pathname);
+ 		if ((fout=fopen(Pathname, "w")) == NULL)
+ 			return ERROR;
+@@ -734,6 +755,24 @@
+ char *name;
+ {
+ 	register char *openmode, *p;
++	static char noname[2];	/* rosco: "" and an empty size string */
++
++	/* rosco: rx called procheader(""): the size string was read from
++	 * whatever followed the "" literal */
++	if (*name == '\0')
++		name = noname;
++	/* rosco: the name came from the sender and was used as it was:
++	 * "../x" and "/etc/x" wrote anywhere (as root too: with -y or the
++	 * sender's clobber flag over existing files), and a name of 257 or
++	 * more bytes overran Pathname.  Such names are now skipped. */
++	if (*name && (strlen(name) + strlen(Progname) + 2 >= PATHLEN
++							|| unsafe(name))) {
++		Refused = 1;
++		if (Verbose)
++			fprintf(stderr, "\r\nrz: unsafe file name skipped: %.60s\r\n",
++			  name);
++		return ERROR;
++	}
+ 
+ 	/* set default parameters and overrides */
+ 	openmode = "w";
+@@ -751,12 +790,7 @@
+ 	else if (zmanag == ZMAPND)
+ 		openmode = "a";
+ 
+-#ifndef BIX
+-	/* Check for existing file */
+-	if (!Rxclob && (zmanag&ZMMASK) != ZMCLOB && (fout=fopen(name, "r"))) {
+-		fclose(fout);  return ERROR;
+-	}
+-#endif
++	/* rosco: the check for an existing file is below, at the fopen() */
+ 
+ 	Bytesleft = DEFBYTL; Filemode = 0; Modtime = 0L;
+ 
+@@ -784,8 +818,8 @@
+ 			if ( *p == '/')
+ 				*p = '_';
+ 
+-		if ( *--p == '.')		/* zap trailing period */
+-			*p = 0;
++		if (p > name && *--p == '.')	/* zap trailing period */
++			*p = 0;		/* rosco: not before an empty name */
+ 	}
+ 
+ #ifndef vax11c
+@@ -794,6 +828,15 @@
+ 		uncaps(name);
+ #endif
+ 	if (Topipe > 0) {
++		/* rosco: the name went to popen() (rzCOMMAND): "x;rm -rf ."
++		 * ran the shell commands of the sender */
++		if (!pipesafe(name)) {
++			Refused = 1;
++			if (Verbose)
++				fprintf(stderr, "\r\nrz: unsafe file name skipped: %.60s\r\n",
++				  name);
++			return ERROR;
++		}
+ 		sprintf(Pathname, "%s %s", Progname+2, name);
+ 		if (Verbose)
+ 			fprintf(stderr,  "Topipe: %s %s\n",
+@@ -821,6 +864,24 @@
+ 		}
+ #endif
+ #endif
++#ifndef BIX
++		/* rosco: was fopen(name, "r") before the CP/M name changes: a
++		 * file that could not be read, or a symbolic link (also one to
++		 * nowhere), counted as absent and was written (through the
++		 * link); now an existing file is only overwritten with -y or
++		 * the sender's clobber option, and only a regular file */
++		if (!Nflag) {
++			struct stat st;
++
++			if (lstat(name, &st) == 0 && (!S_ISREG(st.st_mode)
++			  || (!Rxclob && (zmanag&ZMMASK) != ZMCLOB))) {
++				if (Verbose)
++					fprintf(stderr, "\r\nrz: %.60s exists, skipped\r\n",
++					  name);
++				return ERROR;
++			}
++		}
++#endif
+ #ifdef MD
+ 		fout = fopen(name, openmode);
+ 		if ( !fout)
+@@ -994,9 +1055,9 @@
+ void uncaps(s)
+ register char *s;
+ {
+-	for ( ; *s; ++s)
+-		if (isupper(*s))
+-			*s = tolower(*s);
++	for ( ; *s; ++s)	/* rosco: (unsigned char): no negative index */
++		if (isupper((unsigned char) *s))
++			*s = tolower((unsigned char) *s);
+ }
+ /*
+  * IsAnyLower returns TRUE if string s has lower case letters.
+@@ -1005,7 +1066,7 @@
+ register char *s;
+ {
+ 	for ( ; *s; ++s)
+-		if (islower(*s))
++		if (islower((unsigned char) *s))	/* rosco */
+ 			return TRUE;
+ 	return FALSE;
+ }
+@@ -1126,6 +1187,44 @@
+ }
+ 
+ /*
++ * rosco: true iff a received name is absolute or has a ".." component.
++ */
++static int unsafe(name)
++char *name;
++{
++	register char *p;
++
++	if (name[0] == '/')
++		return TRUE;
++	for (p = name; *p; ) {
++		if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0'))
++			return TRUE;
++		while (*p && *p != '/')
++			++p;
++		while (*p == '/')
++			++p;
++	}
++	return FALSE;
++}
++
++/*
++ * rosco: true iff a received name can be given to the shell (rzCOMMAND):
++ * letters, digits, '.', '_', '-', '+', ',', '/', not starting with '-'.
++ */
++static int pipesafe(name)
++char *name;
++{
++	register char *p;
++
++	if (name[0] == '-')
++		return FALSE;
++	for (p = name; *p; ++p)
++		if (!isalnum((unsigned char) *p) && !strchr("._-+,/", *p))
++			return FALSE;
++	return TRUE;
++}
++
++/*
+  * Initialize for Zmodem receive attempt, try to activate Zmodem sender
+  *  Handles ZSINIT frame
+  *  Return ZFILE if Zmodem filename received, -1 on error,
+@@ -1171,6 +1270,9 @@
+ 			ztrans = Rxhdr[ZF2];
+ 			tryzhdrtype = ZRINIT;
+ 			c = zrdata(secbuf, 1024);
++			/* rosco: the name and size string need not end in NULs */
++			if (Rxcount >= 0 && Rxcount <= 1025)
++				secbuf[Rxcount] = secbuf[Rxcount+1] = '\0';
+ 			mode(3);
+ 			if (c == GOTCRCW)
+ 				return ZFILE;
+@@ -1178,7 +1280,12 @@
+ 			goto again;
+ 		case ZSINIT:
+ 			Zctlesc = TESCCTL & Rxhdr[ZF0];
+-			if (zrdata(Attn, ZATTNLEN) == GOTCRCW) {
++			c = zrdata(Attn, ZATTNLEN);
++			/* rosco: zmputs() ran past Attn[] when the sender's
++			 * string (up to 33 bytes) had no NUL */
++			Attn[Rxcount >= 0 && Rxcount < ZATTNLEN ? Rxcount : ZATTNLEN]
++				= '\0';
++			if (c == GOTCRCW) {
+ 				stohdr(1L);
+ 				zshhdr(ZACK, Txhdr);
+ 				goto again;
+@@ -1195,18 +1302,17 @@
+ #else
+ 			cmdzack1flg = Rxhdr[ZF0];
+ 			if (zrdata(secbuf, 1024) == GOTCRCW) {
+-				if (cmdzack1flg & ZCACK1)
+-					stohdr(0L);
+-				else
+-					stohdr((long)sys2(secbuf));
++				/* rosco: the sender ran any shell command here
++				 * (sz -c), as the user of rz, root too.  Refused:
++				 * the sender gets status 1, rz exits 1. */
++				Refused = 1;
++				stohdr(1L);
+ 				purgeline();	/* dump impatient questions */
+ 				do {
+ 					zshhdr(ZCOMPL, Txhdr);
+ 				}
+ 				while (++errors<20 && zgethdr(Rxhdr,1) != ZFIN);
+ 				ackbibi();
+-				if (cmdzack1flg & ZCACK1)
+-					exec2(secbuf);
+ 				return ZCOMPL;
+ 			}
+ 			zshhdr(ZNAK, Txhdr); goto again;
+@@ -1468,7 +1574,8 @@
+ 		return OK;
+ 	}
+ #endif
+-	if (fclose(fout)==ERROR) {
++	/* rosco: also the write errors of putc() (a full disk) */
++	if (ferror(fout) | (fclose(fout)==ERROR)) {
+ 		fprintf(stderr, "file close ERROR\n");
+ 		return ERROR;
+ 	}
+@@ -1480,7 +1587,9 @@
+ 	}
+ #endif
+ 	if ((Filemode&S_IFMT) == S_IFREG)
+-		chmod(Pathname, (07777 & Filemode));
++		/* rosco: no setuid/setgid bits from the sender, and the
++		 * umask applies (a mode 0666 from the sender was kept) */
++		chmod(Pathname, (0777 & Filemode & ~Umask));
+ 	return OK;
+ }
+ 

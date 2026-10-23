@@ -1,0 +1,13 @@
+--- orig/zmodem/zmodem.h
++++ new/zmodem/zmodem.h
+@@ -155,7 +155,9 @@
+ 
+ /* rz.c sz.c */
+ 
+-void vfile();
++/* rosco: a prototype: vfile() is variadic now (it was vfile(f, a, b, c),
++ * three char * parameters, which shifted the arguments after an int) */
++_PROTOTYPE(void vfile , (char *f , ...));
+ _PROTOTYPE(void bibi , (int n ));
+ 
+ /* End of ZMODEM.H */

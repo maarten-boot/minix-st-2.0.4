@@ -1,0 +1,34 @@
+--- orig/simple/termcap.c
++++ new/simple/termcap.c
+@@ -120,21 +120,25 @@
+   char *name;
+ 
+   {
+-  char  entry[ 50 ];
++  /* rosco: tgetstr() copies the whole capability; 50 bytes on the stack
++   * were overrun by a longer string (a TERMCAP entry, or a long cm).  And
++   * the characters were signed: 0200-0377 printed as "^" and garbage. */
++  static char  entry[ TC_BUFFER ];
+   char *p = entry;
++  unsigned char *q;
+ 
+   if ( tgetstr( name, &p ) == NULL )
+     return;
+     
+   printf( "%-32s (%s) = ", comment, name );
+ 
+-  for ( p = entry;  *p != '\0';  ++p )
+-    if ( *p < ' ' )
+-      printf( "^%c", *p + '@' );
+-    else if ( *p == '\177' )
++  for ( q = (unsigned char *) entry;  *q != '\0';  ++q )
++    if ( *q < ' ' )
++      printf( "^%c", *q + '@' );
++    else if ( *q == '\177' )
+       printf( "^?" );
+     else
+-      putchar( *p );
++      putchar( *q );
+ 
+   putchar( '\n' );
+   }

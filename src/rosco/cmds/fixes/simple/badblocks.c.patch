@@ -1,0 +1,155 @@
+--- orig/simple/badblocks.c
++++ new/simple/badblocks.c
+@@ -119,7 +119,8 @@
+ int position = 2;		/* next block # is argv[position] */
+ 
+ FILE *f;
+-int fd;
++int fd = -1;	/* rosco: -1, see done() */
++int is_mounted;	/* rosco: the device is mounted on dir_name */
+ int eofseen;			/* set if '\n' seen */
+ struct stat stat_buf;
+ struct super_block *sp;
+@@ -292,7 +293,7 @@
+    * have access to this device is asking for trouble */
+   if (umount(dev_name) == -1) {
+ 	printf("Could not umount device %s.\n", dev_name);
+-	done(HARMLESS);
++	done(DIR_CREATED);	/* rosco: was HARMLESS, left the directory */
+   }
+   mktemp(f_name);
+   /* Create "/tmpXXXXpid/.BadXXpid" */
+@@ -302,8 +303,9 @@
+ 
+   if (mount(dev_name, dir_name, 0) == -1) {	/* this call should work */
+ 	fprintf(stderr, "Could not mount device anymore\n");
+-	done(HARMLESS);
++	done(DIR_CREATED);	/* rosco: was HARMLESS, left the directory */
+   }
++  is_mounted = 1;	/* rosco */
+   if (stat(file_name, &stat_buf) != -1) {
+ 	printf("File %s already exists\n", file_name);
+ 	done(DEV_MOUNTED);
+@@ -327,6 +329,7 @@
+ 	printf("Can not umount device anymore??? \n");
+ 	done(DIR_CREATED);
+   }
++  is_mounted = 0;	/* rosco */
+   if ((fd = open(dev_name, O_RDWR)) == -1) {
+ 	printf("Can not open device %s\n", dev_name);
+ 	done(DEV_MOUNTED);
+@@ -453,6 +456,7 @@
+ {
+   int i;
+ 
++  eofseen = 0;	/* rosco: a second round (answer n) read no numbers */
+   for (i = 0; i <= V_NR_DZONES; i++)
+ 	block[i] = 0;		/* Note: Last block_number is set to zero */
+   blk_cnt = 0;
+@@ -486,7 +490,8 @@
+ {
+   block_t blk_offset;
+   int rd;
+-  int blk, offset, words, bit, tst_word;
++  int bit, tst_word;
++  long words;	/* rosco: long, z_num / 16 */
+   zone_t z_num;
+ 
+   if (blk_is_used(num)) {
+@@ -494,13 +499,26 @@
+ 	return NOT_OK;
+   }
+ 
++  /* rosco: only data zones; a block number in the boot block, the maps or
++   * the inode table (or 0 for a non-number) gave a huge z_num, the bit
++   * test read and set_bit() wrote a word somewhere else, and the inode
++   * table block became a zone of the file; past the end likewise
++   */
++  if (num < sp->s_firstdatazone ||
++      num >= (v1fs ? (block_t) sp->s_nzones : (block_t) sp->s_zones)) {
++	printf("Block %lu is not a data block of this file system (%u-%lu)\n",
++	       (unsigned long) num, sp->s_firstdatazone,
++	       (unsigned long) (v1fs ? (block_t) sp->s_nzones : sp->s_zones) - 1);
++	return NOT_OK;
++  }
++
+   /* Assumption zone_size == block_size */
+ 
+   z_num = num - (sp->s_firstdatazone - 1);	/* account offset */
+ 
+   /* Calculate the word in the bitmap. */
+-  blk = z_num >> BIT_MAP_SHIFT;	/* which block */
+-  offset = z_num - (blk << BIT_MAP_SHIFT);	/* offset */
++  /* rosco: the bit from z_num itself (blk << 13 overflowed the int;
++   * modulo 65536 the offset still came out right) */
+   words = z_num / INT_BITS;	/* which word */
+ 
+   blk_offset = (block_t) (2 + sp->s_imap_blocks);	/* zone map */
+@@ -518,7 +536,7 @@
+   }
+ 
+   /* We have the tst_word, check if bit was off */
+-  bit = offset % INT_BITS;
++  bit = (int) (z_num % INT_BITS);	/* rosco: see above */
+ 
+   if (((tst_word >> bit) & 01) == 0)	/* free */
+ 	return OK;
+@@ -534,13 +552,15 @@
+ {
+   int rwd;
+   long blk_offset;
+-  int blk, offset, words, tst_word, bit;
+-  unsigned z_num;
++  int tst_word, bit;
++  long words;	/* rosco: long, see z_num */
++  zone_t z_num;	/* rosco: zone_t; an unsigned (16 bits) set the bit of
++		 * zone z - 65536 for the zones above 65535 */
+ 
+   z_num = num - (sp->s_firstdatazone - 1);
+ 
+-  blk = z_num >> BIT_MAP_SHIFT;	/* which block */
+-  offset = z_num - (blk << BIT_MAP_SHIFT);	/* offset in block */
++  /* rosco: the bit from z_num itself (blk << 13 overflowed the int;
++   * modulo 65536 the offset still came out right) */
+   words = z_num / INT_BITS;	/* which word */
+ 
+   blk_offset = (long) (2 + sp->s_imap_blocks);
+@@ -556,7 +576,7 @@
+ 	printf("Read error in bitmap\n");
+ 	done(DEV_MOUNTED);
+   }
+-  bit = offset % INT_BITS;
++  bit = (int) (z_num % INT_BITS);	/* rosco: see above */
+   if (((tst_word >> bit) & 01) == 0) {	/* free */
+ 	lseek(fd, 0L, SEEK_SET);/* rewind */
+ 	lseek(fd, (off_t) blk_offset, SEEK_SET);
+@@ -614,6 +634,14 @@
+ 	while ((c = getchar()) != EOF &&
+ 	       c != 'y' && c != 'n' && c != 'q')
+ 		if (c != '\n') printf(" Bad character %c\n", (char) c);
++	/* rosco: the rest of the line, else the next round read its '\n' as
++	 * the end of the block numbers
++	 */
++	if (c != EOF && c != '\n') {
++		int d;
++
++		while ((d = getchar()) != EOF && d != '\n');
++	}
+ 	switch (c) {
+ 	    case EOF:
+ 		return QUIT;
+@@ -631,6 +659,14 @@
+ void done(nr)
+ int nr;
+ {
++  /* rosco: no blocks given or q: the device was unmounted already, so the
++   * unlink failed and an empty .Bad_ file was left on it; mount it again
++   */
++  if (nr == FILE_EXISTS && !is_mounted) {
++	if (fd >= 0) close(fd);
++	fd = -1;
++	if (mount(dev_name, dir_name, 0) == 0) is_mounted = 1;
++  }
+   switch (nr) {
+       case SUCCESS:
+       case FILE_EXISTS:

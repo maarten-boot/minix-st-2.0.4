@@ -1,0 +1,23 @@
+--- orig/simple/inodes.c
++++ new/simple/inodes.c
+@@ -34,7 +34,19 @@
+ 
+ int main()
+ {
+-  while (gets(line)) {
++  /* rosco: fgets; gets() wrote names of 256 and more past line[] */
++  while (fgets(line, sizeof(line), stdin) != NULL) {
++	char *nl = strchr(line, '\n');
++
++	if (nl != NULL) {
++		*nl = '\0';
++	} else if (!feof(stdin)) {
++		int c;
++
++		while ((c = getchar()) != EOF && c != '\n');
++		fprintf(stderr, "name too long: %s...\n", line);
++		continue;
++	}
+ 
+ #ifdef S_IFLNK
+ 	if (lstat(line, &statbuf) < 0) {

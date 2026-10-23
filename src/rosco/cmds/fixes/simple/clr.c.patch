@@ -1,0 +1,33 @@
+--- orig/simple/clr.c
++++ new/simple/clr.c
+@@ -24,7 +24,9 @@
+ char *SO, *SE, *CD;
+ char buffer[TC_BUFFER];
+ char *term;
+-char clear[30];
++/* rosco: tgetstr() copies the whole capability: 30 (cl) and 50 (so, se, cd)
++ * bytes were overrun by a longer termcap entry (or TERMCAP string) */
++char clear[TC_BUFFER];
+ char *p = &clear[0];
+ 
+ _PROTOTYPE(int main, (void));
+@@ -46,7 +48,7 @@
+ 
+ void get_termcap()
+ {
+-  static char termbuf[50];
++  static char termbuf[TC_BUFFER];
+   char *loc = termbuf;
+   char entry[1024];
+ 
+@@ -68,6 +70,10 @@
+   CD = tgetstr("cd", &loc);
+ 
+   if (CD == (char *) 0) CD = "             \r";
++  /* rosco: normal() and reverse() did strlen() of a NULL pointer for a
++   * terminal without so/se (it wrote whatever was at address 0) */
++  if (SO == (char *) 0) SO = "";
++  if (SE == (char *) 0) SE = "";
+ 
+ }
+ 
