@@ -655,7 +655,15 @@ register message *m_ptr;
 	rp->p_reg.sp = sc.sc_sp;
 	return (OK);
   }
+#if (CHIP == M68000)
+  /* The supervisor byte stays as it is, but the condition codes (X N Z V
+   * C) are the interrupted code's: a signal between a compare and its
+   * branch must not change where the branch goes.
+   */
+  sc.sc_psw  = (rp->p_reg.psw & ~0x1F) | (sc.sc_psw & 0x1F);
+#else
   sc.sc_psw  = rp->p_reg.psw;
+#endif
 
 #if (CHIP == INTEL)
   /* Don't panic kernel if user gave bad selectors. */
