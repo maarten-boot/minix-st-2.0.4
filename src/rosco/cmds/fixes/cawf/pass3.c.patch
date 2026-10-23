@@ -1,0 +1,13 @@
+--- cawf/pass3.c
++++ cawf/pass3.c
+@@ -200,7 +200,9 @@
+ 			i = (LL - Pgoff - Outll) / 2;
+ 			if (i < 0)
+ 				i = 0;
+-			for (j = (Pgoff + Ind + Tind + i); j; j--)
++			/* rosco: j > 0: with a negative indent (.in -20)
++			 * j-- ran through 65535 spaces */
++			for (j = (Pgoff + Ind + Tind + i); j > 0; j--)
+ 				Charput((int)' ');
+ 			Stringput(Outln);
+ 			Charput((int)'\n');

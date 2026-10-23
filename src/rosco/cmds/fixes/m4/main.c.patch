@@ -1,0 +1,154 @@
+--- m4/main.c
++++ m4/main.c
+@@ -177,6 +177,7 @@
+ 	register int n;
+ 	char *p;
+ 	static char divnam[] = DIVNAM;
++	int status = 0;		/* rosco: 1 after a file that cannot be read */
+ 
+ 	if (signal(SIGINT, SIG_IGN) != SIG_IGN)
+ 		signal(SIGINT, onintr);
+@@ -212,11 +213,33 @@
+ 	sp = -1;			/* stack pointer initialized */
+ 	fp = 0; 			/* frame pointer initialized */
+ 
+-	macro();			/* get some work done here   */
++	/* rosco: file arguments were ignored (m4 read the terminal); now
++	 * they are read in turn, "-" is the standard input.
++	 */
++	if (optind >= argc)
++		macro();		/* get some work done here   */
++	else for (; optind < argc; optind++) {
++		if (strcmp(argv[optind], "-") == 0)
++			infile[0] = stdin;
++		else if ((infile[0] = fopen(argv[optind], "r")) == NULL) {
++			fprintf(stderr, "m4: cannot open %s\n", argv[optind]);
++			status = 1;
++			continue;
++		}
++		ilevel = 0;
++		macro();
++		if (infile[0] != stdin)
++			(void) fclose(infile[0]);
++	}
+ 
+ 	if (*m4wraps) { 		/* anything for rundown ??   */
+ 		ilevel = 0;		/* in case m4wrap includes.. */
+-		putback(EOF);		/* eof is a must !!	     */
++		/* rosco: an EOF in the pushback buffer ended this run;
++		 * pushed back characters are unsigned now, so read the
++		 * wrap-up text in front of an empty input.
++		 */
++		if ((infile[0] = fopen("/dev/null", "r")) == NULL)
++			infile[0] = stdin;
+ 		pbstr(m4wraps); 	/* user-defined wrapup act   */
+ 		macro();		/* last will and testament   */
+ 	}
+@@ -236,9 +259,11 @@
+ #endif
+ 	}
+ 
+-	exit(0);
++	exit(status);
+ }
+ 
++#define UC(c)	((c) & 0xFF)	/* rosco */
++
+ /*
+  * macro - the work horse..
+  *
+@@ -278,7 +303,9 @@
+ 				pushs(p->name);	      /* macro name  */
+ 				pushs(ep);	      /* start next..*/
+ 
+-				putback(l = gpbc());
++				/* rosco: EOF is not pushed back (sticky) */
++				if ((l = gpbc()) != EOF)
++					putback(l);
+ 				if (l != LPAREN)  {   /* add bracks  */
+ 					putback(RPAREN);
+ 					putback(LPAREN);
+@@ -299,12 +326,15 @@
+ 	 * important.]
+ 	 *
+ 	 */
+-		else if (t == lquote) { 		/* strip quotes */
++		/* rosco: characters read are 0-255, the quote and comment
++		 * characters signed chars: compare them as unsigned (UC)
++		 */
++		else if (t == UC(lquote)) { 		/* strip quotes */
+ 			nlpar = 1;
+ 			do {
+-				if ((l = gpbc()) == rquote)
++				if ((l = gpbc()) == UC(rquote))
+ 					nlpar--;
+-				else if (l == lquote)
++				else if (l == UC(lquote))
+ 					nlpar++;
+ 				else if (l == EOF)
+ 					error("m4: missing right quote");
+@@ -319,10 +349,16 @@
+ 		}
+ 
+ 		else if (sp < 0) {		/* not in a macro at all */
+-			if (t == scommt) {	/* comment handling here */
++			if (t == UC(scommt)) {	/* comment handling here */
+ 				putc(t, active);
+-				while ((t = gpbc()) != ecommt)
++				/* rosco: stop at EOF too: a comment
++				 * without a newline at the end of the
++				 * input looped for ever, writing 0xFF
++				 */
++				while ((t = gpbc()) != UC(ecommt) && t != EOF)
+ 					putc(t, active);
++				if (t == EOF)
++					continue;
+ 			}
+ 			putc(t, active);	/* output directly..	 */
+ 		}
+@@ -334,7 +370,8 @@
+ 				chrsave(t);
+ 			while (isspace(l = gpbc()))
+ 				;		/* skip blank, tab, nl.. */
+-			putback(l);
++			if (l != EOF)		/* rosco: EOF is sticky */
++				putback(l);
+ 			PARLEV++;
+ 			break;
+ 
+@@ -363,7 +400,8 @@
+ 				chrsave(EOS);		/* new argument   */
+ 				while (isspace(l = gpbc()))
+ 					;
+-				putback(l);
++				if (l != EOF)	/* rosco: EOF is sticky */
++					putback(l);
+ 				pushs(ep);
+ 			}
+ 			break;
+@@ -384,17 +422,22 @@
+ inspect(tp) 
+ register char *tp;
+ {
+-	register int h = 0;
+-	register char c;
++	/* rosco: the hash in unsigned (as in hash()): a name of 269+
++	 * characters overflowed the 16-bit int and indexed hashtab[]
++	 * with a negative number; c an int, EOF is not pushed back
++	 */
++	register unsigned h = 0;
++	register int c;
+ 	register char *name = tp;
+ 	register char *etp = tp+MAXTOK;
+ 	register ndptr p;
+ 
+ 	while (tp < etp && (isalnum(c = gpbc()) || c == '_'))
+ 		h += (*tp++ = c);
+-	putback(c);
+ 	if (tp == etp)
+ 		error("m4: token too long");
++	if (c != EOF)
++		putback(c);
+ 	*tp = EOS;
+ 	for (p = hashtab[h%HASHSIZE]; p != nil; p = p->nxtptr)
+ 		if (strcmp(name, p->name) == 0)

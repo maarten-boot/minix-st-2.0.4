@@ -1,0 +1,71 @@
+--- cawf/expand.c
++++ cawf/expand.c
+@@ -172,9 +172,16 @@
+ 	    /*
+ 	     * Do argument substitution, as necessary.
+ 	     */
++		/*
++		 * rosco: the result is cut at MAXLINE - 1 characters; a line
++		 * with several \$n and long arguments overran buf (on the
++		 * stack), and Pass2() takes lines of up to MAXLINE - 1.
++		 */
+ 		if (cond && regexec(Pat[5].pat, lp)) {      /* "\$[0-9]" ??? */
+ 			for (s1 = buf;;) {
+ 				if ((n1 = Pat[5].pat->startp[0] - lp) > 0) {
++					if (n1 > MAXLINE - 1 - (s1 - buf))
++						goto subst_too_long;
+ 					(void) strncpy((char *)s1, (char *)lp,
+ 						n1);
+ 					s1 += n1;
+@@ -183,6 +190,9 @@
+ 				lp = Pat[5].pat->endp[0];
+ 				n1 = (int)(*(lp-1) - '0');
+ 				if (n1 >= 0 && n1 < nargs) {
++					if (strlen((char *)Args[n1])
++					>   MAXLINE - 1 - (s1 - buf))
++						goto subst_too_long;
+ 					(void) strcpy((char *)s1,
+ 						(char *)Args[n1]);
+ 					s1 += strlen((char *)Args[n1]);
+@@ -190,10 +200,18 @@
+ 				if (*lp == '\0')
+ 					break;
+ 				if (regexec(Pat[5].pat, lp) == 0) {
++					if (strlen((char *)lp)
++					>   MAXLINE - 1 - (s1 - buf))
++						goto subst_too_long;
+ 					(void) strcpy((char *)s1, (char *)lp);
+ 					break;
+ 				}
+ 			}
++			if (0) {
++subst_too_long:
++				*s1 = '\0';
++				Error(WARN, LINE, " macro line too long", NULL);
++			}
+ 			lp = buf;
+ 		}
+ 	    /*
+@@ -216,7 +234,9 @@
+ 			i = i;		/* do nothing if condition is false */
+ 		else if (cmdl == 0 || ((cmdx = Findmacro(cmd, 0)) < 0))
+ 			Pass2(lp);
+-		else if (Sp >= MAXSP) {
++		else if (Sp >= MAXSP - 1) {
++		/* rosco: MAXSP - 1: the push below made Sp MAXSP and wrote
++		 * past Nleftstack[] and the other stacks */
+ 			(void) sprintf((char *)buf, " macro nesting > %d",
+ 				MAXSP);
+ 			Error(WARN, LINE, (char *)buf, NULL);
+@@ -298,7 +318,10 @@
+ 	     * Get next line.
+ 	     */
+ 		if (nleft > 0) {
+-			lp = Macrotxt[ptr++];
++			/* rosco: a macro that removed itself (.rm) left
++			 * freed (NULL) text lines */
++			if ((lp = Macrotxt[ptr++]) == NULL)
++				lp = (unsigned char *)"";
+ 			nleft--;
+ 		} else
+ 			lp = (unsigned char *)"";

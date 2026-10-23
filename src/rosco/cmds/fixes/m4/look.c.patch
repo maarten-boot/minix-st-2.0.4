@@ -1,0 +1,18 @@
+--- m4/look.c
++++ m4/look.c
+@@ -14,9 +14,13 @@
+ int hash (name)
+ register char *name;
+ {
+-	register int h = 0;
++	/* rosco: unsigned: the sum of a name of 269+ characters overflowed
++	 * the 16-bit int, and the negative remainder indexed hashtab[]
++	 * before its start (same as in inspect())
++	 */
++	register unsigned h = 0;
+ 	while (*name)
+-		h += *name++;
++		h += *name++ & 0xFF;
+ 	return (h % HASHSIZE);
+ }
+ 

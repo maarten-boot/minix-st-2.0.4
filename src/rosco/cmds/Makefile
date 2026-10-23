@@ -298,13 +298,15 @@ obj/awk/%.o:	obj/awk/%.c $c/awk/awk.h $c/awk/regexp.h
 	$(CC) -I$c/awk $(CFLAGS) -c -o $@ $<
 
 # bc: commands/bc (32k in the ACK build).  It loads the math library for
-# -l from /usr/lib/libmath.b (BC_MATH_FILE in its config.h).
+# -l from /usr/lib/libmath.b (BC_MATH_FILE in its config.h).  128kw: the
+# numbers are on the heap; with 32k, 500! by a recursive function, 300
+# variables or 140 functions ran out of memory, 1/3 at scale 30000 as well
 BCOBJ	= $(addprefix obj/bc/,bc.o scan.o util.o main.o number.o storage.o \
 	  load.o execute.o global.o)
 bin/bc:	$(BCOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/bc.elf $L/crtso.o $(BCOBJ) $(LIBS)
-	$(MKMINIX) -S 32k obj/bc.elf $@
+	$(MKMINIX) -S 128kw obj/bc.elf $@
 
 # bc.c and scan.c are the distributed yacc and flex output
 $c/bc/bc.c $c/bc/scan.c: ;
@@ -332,14 +334,17 @@ obj/yap/%.o:	$c/yap/%.c
 	@mkdir -p obj/yap
 	$(CC) $(CFLAGS) -D__CC68__ -Dconst= -I$c/yap -c -o $@ $<
 
-# m4: commands/m4 (4kw in the ACK build)
+# m4: commands/m4 (4kw in the ACK build).  64kw: the definitions are on
+# the heap (with 8kw a 20K definition gave "no more memory"), and eval
+# recurses through 13 functions per level of parentheses (up to 100)
 M4OBJ	= $(addprefix obj/m4/,main.o eval.o serv.o look.o misc.o expr.o)
 bin/m4:	$(M4OBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	@mkdir -p bin
 	$(CC) $(LDFLAGS) -o obj/m4.elf $L/crtso.o $(M4OBJ) $(LIBS)
-	$(MKMINIX) -S 4kw obj/m4.elf $@
+	$(MKMINIX) -S 64kw obj/m4.elf $@
 
-obj/m4/%.o:	$c/m4/%.c $c/m4/mdef.h $c/m4/extr.h
+# every m4 source (and mdef.h, found next to them) is patched: obj/fix/m4
+obj/m4/%.o:	obj/fix/m4/%.c obj/fix/m4/mdef.h $c/m4/extr.h
 	@mkdir -p obj/m4
 	$(CC) $(CFLAGS) -I$c/m4 -DEXTENDED -c -o $@ $<
 
@@ -395,9 +400,12 @@ bin/cawf:	$(CAWFOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	$(CC) $(LDFLAGS) -o obj/cawf.elf $L/crtso.o $(CAWFOBJ) $(FPLIBS)
 	$(MKMINIX) -S 56k obj/cawf.elf $@
 
-obj/cawf/%.o:	$c/cawf/%.c
+# compiled from obj/fix (Source fixes), all of them: the fixed cawf.h
+# (long number registers) must be the one every file sees; -iquote, so that
+# "regexp.h" is cawf's own, not that of the include tree
+obj/cawf/%.o:	obj/fix/cawf/%.c obj/fix/cawf/cawf.h
 	@mkdir -p obj/cawf
-	$(CC) $(CFLAGS) -I$c/cawf -DUNIX -DUSG -DSTDLIB -c -o $@ $<
+	$(CC) $(CFLAGS) -iquote $c/cawf -DUNIX -DUSG -DSTDLIB -c -o $@ $<
 
 # gzip (also gunzip and zcat, by their names): GNU gzip 1.2.4 in
 # ../gzip-1.2.4, as distributed.  gzip.patch adds a ROSCO section to
@@ -540,7 +548,9 @@ $(DESRC:%=obj/de/%.o):	obj/de/stamp
 
 # indent, the C program formatter
 $(eval $(call pkgbin,indent,indent,args comment lexi indent parse io,32kw))
-obj/indent/%.o:	$c/indent/%.c
+# compiled from obj/fix (Source fixes), all of them: the fixed globs.h must
+# be the one every file sees
+obj/indent/%.o:	obj/fix/indent/%.c obj/fix/indent/globs.h
 	@mkdir -p obj/indent
 	$(CC) $(CFLAGS) -I$c/indent -c -o $@ $<
 
@@ -704,6 +714,14 @@ FIX0	+= simple/ed.c mined/mined1.c mined/mined2.c elvis/tmp.c elvis/cmd1.c \
 FIX0	+= elle/sbm.c elle/sbstr.c elle/eeerr.c elle/eefile.c elle/eebuff.c \
 	  elle/eecmds.c elle/ellec.c \
 	  yap/main.c yap/getline.c yap/keys.c yap/commands.c
+# bc and m4 (group 5); m4: every source and mdef.h
+FIX0	+= bc/bc.c bc/number.c bc/execute.c bc/load.c bc/storage.c bc/util.c \
+	  $(M4OBJ:obj/%.o=%.c) m4/mdef.h
+# formatting (group 5): cawf and indent, every source (their headers have
+# fixes too)
+FIX0	+= $(CAWFOBJ:obj/%.o=%.c) cawf/cawf.h \
+	  $(addprefix indent/,args.c comment.c lexi.c indent.c parse.c io.c \
+	  globs.h)
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)
@@ -730,6 +748,10 @@ obj/yap/main.o obj/yap/getline.o obj/yap/keys.o obj/yap/commands.o: \
 		obj/yap/%.o:	obj/fix/yap/%.c
 	@mkdir -p obj/yap
 	$(CC) $(CFLAGS) -D__CC68__ -Dconst= -I$c/yap -c -o $@ $<
+obj/bc/bc.o obj/bc/number.o obj/bc/execute.o obj/bc/load.o obj/bc/storage.o \
+obj/bc/util.o:	obj/bc/%.o:	obj/fix/bc/%.c
+	@mkdir -p obj/bc
+	$(CC) $(CFLAGS) -Dconst= -I$c/bc -c -o $@ $<
 obj/zmodem/rz.o:	obj/fix/zmodem/rz.c $c/zmodem/rbsb.c $c/zmodem/zm.c $c/zmodem/zmodem.h
 	@mkdir -p obj/zmodem
 	$(CC) $(CFLAGS) -I$c/zmodem -DPOSIX -c -o $@ $<

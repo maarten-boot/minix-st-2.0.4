@@ -1,0 +1,116 @@
+--- cawf/nreq.c
++++ cawf/nreq.c
+@@ -129,7 +129,9 @@
+ 		c[1] = line[2];
+ 
+ 	low = mid = 0;
+-	hi = sizeof(NrReqt) / sizeof(struct nr_req);
++	/* rosco: - 1: a request after "vs" (.wh, .zz) read past the end
++	 * of the table */
++	hi = sizeof(NrReqt) / sizeof(struct nr_req) - 1;
+ 	while (low <= hi) {
+ 		mid = (low + hi) / 2;
+ 		if ((cmp = strcmp((char *)c, NrReqt[mid].nm)) < 0)
+@@ -232,6 +234,7 @@
+ 	unsigned char nm[4], nm1[4];	/* name buffers */
+ 	unsigned char *s1, *s2, *s3,	/* temporary string pointers */
+ 		       *s4;
++	int n = 0;			/* rosco: interpolations */
+ 
+ 	if (Asmname(&line[3], nm) == 0) {
+ 		Error(WARN, LINE, " no name", NULL);
+@@ -239,7 +242,8 @@
+ 	}
+ 	s1 = Field(3, line, 0);
+ 	s2 = Findstr(nm, s1, 1);
+-	while (*s2 == '\\' && *(s2 + 1) == '*') {
++	/* rosco: at most 100 times: ".ds x \*x" looped forever */
++	while (*s2 == '\\' && *(s2 + 1) == '*' && ++n <= 100) {
+ 		s2++;
+ 		s3 = Asmcode(&s2, nm1);
+ 		s2 = Findstr(nm1, NULL, 0);
+@@ -340,7 +344,11 @@
+ 	}
+ 	if ((s2 = Field(3, line, 0)) == NULL)
+ 		Free(&Aftnxt);
+-	else {
++	else if ((Aftnxt ? strlen((char *)Aftnxt) : 0) + strlen((char *)s2)
++	       + 2 > MAXLINE) {
++		/* rosco: repeated .it requests overran buf (the stack) */
++		Error(WARN, LINE, " .it list too long", NULL);
++	} else {
+ 		(void) sprintf((char *)buf, "%s,%s",
+ 			(Aftnxt == NULL) ? "" : (char *)Aftnxt,
+ 			(char *)s2);
+@@ -552,6 +560,7 @@
+ 	unsigned char *s1, *s2;		/* temporary string pointers */
+ 	int trin, trout;		/* types: 0 = char; 1 = named char */
+ 	unsigned char xbuf[MAXLINE];	/* temporary buffer */
++	int n = 0;			/* rosco: interpolations */
+ 
+ 	if (line[3] != ' ') {
+ 		Error(WARN, LINE, " unknown translation", NULL);
+@@ -583,6 +592,12 @@
+ 		    if (*s1)
+ 			s1++;
+ 		    s2 = Findstr(nm, NULL, 0);
++		    /* rosco: a string that interpolates itself looped */
++		    if (*s2 != '\0' && ++n > 100) {
++			Error(WARN, LINE, " string interpolation loop: ",
++			    (char *)nm);
++			return;
++		    }
+ 		    if (*s2 != '\0') {
+ 			if ((strlen((char *)s2) + strlen((char *)s1) + 1)
+ 			>= MAXLINE)
+@@ -640,6 +655,12 @@
+ 			if (*s1)
+ 			    s1++;
+ 			s2 = Findstr(nm1, NULL, 0);
++			/* rosco: as above */
++			if (*s2 != '\0' && ++n > 100) {
++			    Error(WARN, LINE, " string interpolation loop: ",
++				(char *)nm1);
++			    return;
++			}
+ 			if (*s2 != '\0') {
+ 		    /*
+ 		     * Interpolate a string value.
+@@ -659,7 +680,9 @@
+ 		    }
+ 		} else {
+ 		    trout = 0;
+-		    if ((nm1[0] = *s1) != '0')
++		    /* rosco: '\0', not '0' (".tr a0" made a a space and
++		     * then translated the 0) */
++		    if ((nm1[0] = *s1) != '\0')
+ 			s1++;
+ 		    else
+ 			nm1[0] = ' ';
+@@ -760,8 +783,13 @@
+ 	unsigned char *s1, *s2, *s3,	/* temporary string pointers */
+ 		      *s4, *s5;
+ 
+-	s2 = Field(2, line, 0);
+-	i = atoi((char *)Field(3, line, 0));
++	/* rosco: missing fields are NULL; atoi() and *s2 read from 0 */
++	if ((s2 = Field(2, line, 0)) == NULL
++	||  (s3 = Field(3, line, 0)) == NULL) {
++		Error(WARN, LINE, " bad character definition", NULL);
++		return;
++	}
++	i = atoi((char *)s3);
+ 	s4 = Field(4, line, 0);
+ 	if (i < 0 || i > MAXLINE/2 || *s2 == '\0') {
+ 		Error(WARN, LINE, " bad character definition", NULL);
+@@ -828,7 +856,9 @@
+ 	int i, j;			/* temporary indexes */
+ 	double tval;			/* temporary value */
+ 
+-	if ((i = atoi((char *)Field(3, line, 0))) <= 0
++	/* rosco: missing fields are NULL (atoi() read from 0) */
++	if (Field(3, line, 0) == NULL || Field(4, line, 0) == NULL
++	||  (i = atoi((char *)Field(3, line, 0))) <= 0
+ 	||  (j = atoi((char *)Field(4, line, 0))) <= 0) {
+ 		Error(WARN, LINE, " bad cpi resolutions", NULL);
+ 		return;

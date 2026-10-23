@@ -1,0 +1,14 @@
+--- cawf/cawf.h
++++ cawf/cawf.h
+@@ -128,7 +128,10 @@
+ 
+ struct nbr {
+ 	unsigned char nm[2];		/* register name */
+-	int val;			/* value */
++	long val;			/* value */
++	/* rosco: long, not int: with -mshort an int is 16 bits, and
++	 * troff's number registers are at least 32 (.nr x 40000 gave
++	 * -25536) */
+ };
+ 
+ struct parms {

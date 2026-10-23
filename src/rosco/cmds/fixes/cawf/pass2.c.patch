@@ -1,0 +1,133 @@
+--- cawf/pass2.c
++++ cawf/pass2.c
+@@ -65,6 +65,8 @@
+ 	double val;			/* term value */
+ 	double valstack[MAXSP];		/* expression value stack */
+ 	unsigned char xbuf[MAXLINE];	/* expansion buffer */
++	int nstr = 0;			/* rosco: string interpolations */
++	long li, lj;			/* rosco: long / and % operands */
+ 
+ 	if (line == NULL) {
+     /*
+@@ -270,16 +272,20 @@
+ 					s1 = Asmcode(&s1, nm);
+ 					if ((i = Findnum(nm, 0, 0)) < 0)
+ 						goto unknown_num;
+-					if ((j = Numb[i].val) < 0) {
++					if (Numb[i].val < 0) {
+ 					    Error(WARN, LINE, " \\h < 0 ",
+ 					    NULL);
+ 					    break;
+ 					}
+-					if (j == 0)
++					if (Numb[i].val == 0)
+ 						break;
+-					if ((strlen((char *)s1+1) + j + 1)
++					/* rosco: the register is a long now; test
++					 * it before it goes into the int j */
++					if (Numb[i].val >= MAXLINE
++					||  (strlen((char *)s1+1) + Numb[i].val + 1)
+ 					>=  MAXLINE)
+ 						goto line_too_long;
++					j = (int)Numb[i].val;
+ 					for (s2 = &xbuf[1]; j; j--)
+ 						*s2++ = ' ';
+ 					(void) strcpy((char *)s2, (char *)s1+1);
+@@ -307,7 +313,8 @@
+ 						(char *)nm);
+ 					    break;
+ 					}
+-					(void) sprintf((char *)buf, "%d",
++					/* rosco: %ld, the register is a long */
++					(void) sprintf((char *)buf, "%ld",
+ 					    Numb[i].val);
+ 					if ((strlen((char *)buf)
+ 					   + strlen((char *)s1+1) + 1)
+@@ -317,7 +324,7 @@
+ 					        NULL);
+ 					    break;
+ 					}
+-					(void) sprintf((char *)buf, "%d%s",
++					(void) sprintf((char *)buf, "%ld%s",
+ 					    Numb[i].val, (char *)s1+1);
+ 					(void) strcpy((char *)&xbuf[1],
+ 						(char *)buf);
+@@ -346,6 +353,14 @@
+ 				case '*':
+ 					s1 = Asmcode(&s1, nm);
+ 					s2 = Findstr(nm, NULL, 0);
++					/* rosco: a string that interpolates
++					 * itself (.ds x \*x) looped forever */
++					if (*s2 != '\0' && ++nstr > 100) {
++					    Error(WARN, LINE,
++						" string interpolation loop: ",
++						(char *)nm);
++					    break;
++					}
+ 					if (*s2 != '\0') {
+ 					    if ((strlen((char *)s2)
+ 					       + strlen((char *)s1+1) + 1)
+@@ -525,6 +540,9 @@
+ 				    (void) sprintf((char *)buf,
+ 					" over NH limit (%d)", MAXNHNR);
+ 				    Error(WARN, LINE, (char *)buf, NULL);
++				    /* rosco: and stay in Nhnr[] (.NH 20
++				     * wrote past its end) */
++				    i = MAXNHNR - 1;
+ 				}
+ 			} else
+ 				i = 0;
+@@ -683,8 +701,10 @@
+ 			 * It's not an expression.  Ignore extra scale.
+ 			 */
+ 				if ((i = Findscale((int)*s1, 0.0, 0)) < 0) {
++				    /* rosco: %.400s: a long line overran
++				     * buf[MAXLINE] (the stack) */
+ 				    (void) sprintf((char *)buf,
+-					" \"%s\" isn't an expression",
++					" \"%.400s\" isn't an expression",
+ 					(char *)s1);
+ 				    Error(WARN, LINE, (char *)buf, NULL);
+ 				}
+@@ -710,18 +730,21 @@
+ 				break;
+ 			    case '/':
+ 			    case '%':
+-				i = (int) val;
+-				j = (int) tval;
+-				if (j == 0) {
++				/* rosco: long, not int (16 bits): 100000/3
++				 * gave garbage; and the operator is op, not
++				 * *s1 */
++				li = (long) val;
++				lj = (long) tval;
++				if (lj == 0) {
+ 				    Error(WARN, LINE,
+-					(*s1 == '/') ? "div" : "mod",
++					(op == '/') ? " div" : " mod",
+ 				        " by 0");
+ 				    return;
+ 				}
+ 				if (op == '/')
+-					val = (double) (i / j);
++					val = (double) (li / lj);
+ 				else
+-					val = (double) (i % j);
++					val = (double) (li % lj);
+ 				break;
+ 			    }
+ 			    c = *s1;
+@@ -799,10 +822,11 @@
+ 				    Numb[i].val = 0;
+ 				    return;
+ 				}
++				/* rosco: (long), the registers are long */
+ 				if (exsign[0] == '\0')
+-				    Numb[i].val = (int) expr[0];
++				    Numb[i].val = (long) expr[0];
+ 				else
+-				    Numb[i].val += (int) sexpr[0];
++				    Numb[i].val += (long) sexpr[0];
+ 				return;
+ 			}
+ 		}

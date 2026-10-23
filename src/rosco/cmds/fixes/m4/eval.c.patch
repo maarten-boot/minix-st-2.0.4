@@ -1,0 +1,87 @@
+--- m4/eval.c
++++ m4/eval.c
+@@ -7,6 +7,8 @@
+ #include "mdef.h"
+ #include "extr.h"
+ 
++extern int experrs;	/* rosco: errors in the last expr() (expr.c) */
++
+ /*
+  * eval - evaluate built-in macros.
+  *	  argc - number of elements in argv.
+@@ -70,8 +72,12 @@
+ 		 * doexpr - evaluate arithmetic expression
+ 		 *
+ 		 */
+-		if (argc > 2)
+-			pbnum(expr(argv[2]));
++		/* rosco: nothing pushed back for a bad expression (was 0) */
++		if (argc > 2) {
++			long v = expr(argv[2]);
++			if (!experrs)
++				pbnum(v);
++		}
+ 		break;
+ 
+ 	case IFELTYPE:
+@@ -106,8 +112,8 @@
+ 		 * doincr - increment the value of the argument
+ 		 *
+ 		 */
+-		if (argc > 2)
+-			pbnum(atoi(argv[2]) + 1);
++		if (argc > 2)		/* rosco: atol, 32 bits as eval */
++			pbnum(atol(argv[2]) + 1);
+ 		break;
+ 
+ 	case DECRTYPE:
+@@ -115,8 +121,8 @@
+ 		 * dodecr - decrement the value of the argument
+ 		 *
+ 		 */
+-		if (argc > 2)
+-			pbnum(atoi(argv[2]) - 1);
++		if (argc > 2)		/* rosco: atol, 32 bits as eval */
++			pbnum(atol(argv[2]) - 1);
+ 		break;
+ 
+ #if unix || vms
+@@ -126,8 +132,15 @@
+ 		 * dosys - execute system command
+ 		 *
+ 		 */
+-		if (argc > 2)
++		/* rosco: sysval is the exit status of the command, not the
++		 * wait status (256 for "exit 1")
++		 */
++		if (argc > 2) {
+ 			sysval = system(argv[2]);
++			if (sysval != -1)
++				sysval = (sysval & 0x7F) ? 128 + (sysval & 0x7F)
++							 : (sysval >> 8) & 0xFF;
++		}
+ 		break;
+ 
+ 	case SYSVTYPE:
+@@ -260,7 +273,11 @@
+ 		 *
+ 		 */
+ 		if (argc > 3) {
+-			char temp[MAXTOK];
++			/* rosco: was char temp[MAXTOK] (512) on the stack:
++			 * a longer string overran it; the result is never
++			 * longer than argv[2], which is in the string space
++			 */
++			static char temp[STRSPMAX+1];
+ 			if (argc > 4)
+ 				map(temp, argv[2], argv[3], argv[4]);
+ 			else
+@@ -315,6 +332,8 @@
+ 		 * doexit - immediate exit from m4.
+ 		 *
+ 		 */
++		/* rosco: remove the diversion files (left in /tmp) */
++		killdiv();
+ 		exit((argc > 2) ? atoi(argv[2]) : 0);
+ 		break;
+ 

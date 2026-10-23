@@ -1,0 +1,91 @@
+--- m4/mdef.h
++++ m4/mdef.h
+@@ -115,9 +115,14 @@
+ #define MAXINP          10              /* maximum include files   */
+ #define MAXOUT          10              /* maximum # of diversions */
+ #define MAXSTR          512             /* maximum size of string  */
+-#define BUFSIZE         4096            /* size of pushback buffer */
+-#define STACKMAX        1024            /* size of call stack      */
+-#define STRSPMAX        4096            /* size of string space    */
++/* rosco: the pushback buffer and the string space (all macro arguments
++ * being collected) were 4K, the call stack 1024 entries (about 170 nested
++ * calls); now 32000 bytes each and 4096 entries.  The string space stays
++ * below 32K: lengths and indexes into it are 16-bit ints (len, index).
++ */
++#define BUFSIZE         32000           /* size of pushback buffer */
++#define STACKMAX        4096            /* size of call stack      */
++#define STRSPMAX        32000           /* size of string space    */
+ #define MAXTOK          MAXSTR          /* maximum chars in a tokn */
+ #define HASHSIZE        199             /* maximum size of hashtab */
+  
+@@ -165,10 +170,18 @@
+  *      pushf() - push a call frame entry onto stack
+  *      pushs() - push a string pointer onto stack
+  */
+-#define gpbc() 	 (bp > buf) ? *--bp : getc(infile[ilevel])
++/* rosco: a pushed back character is read as unsigned: a byte 0xFF came
++ * back as -1, EOF, and ended the input.  The callers no longer push back
++ * EOF (end of file is sticky in stdio).  pushf()/pushs() silently dropped
++ * entries on a full call stack, which then corrupted the frames; now an
++ * error.
++ */
++#define gpbc() 	 ((bp > buf) ? (*--bp & 0xFF) : getc(infile[ilevel]))
+ #define min(x,y) ((x > y) ? y : x)
+-#define pushf(x) if (sp < STACKMAX) mstack[++sp].sfra = (x)
+-#define pushs(x) if (sp < STACKMAX) mstack[++sp].sstr = (x)
++#define pushf(x) do { if (sp < STACKMAX) mstack[++sp].sfra = (x); \
++		      else error("m4: internal stack overflow"); } while (0)
++#define pushs(x) do { if (sp < STACKMAX) mstack[++sp].sstr = (x); \
++		      else error("m4: internal stack overflow"); } while (0)
+ 
+ /*
+  *	    .				   .
+@@ -207,22 +220,23 @@
+ 
+ /* expr.c */
+ 
+-_PROTOTYPE(int expr, (char *expbuf ));
+-_PROTOTYPE(int query, (void));
+-_PROTOTYPE(int lor, (void));
+-_PROTOTYPE(int land, (void));
+-_PROTOTYPE(int bor, (void));
+-_PROTOTYPE(int bxor, (void));
+-_PROTOTYPE(int band, (void));
+-_PROTOTYPE(int eql, (void));
+-_PROTOTYPE(int relat, (void));
+-_PROTOTYPE(int shift, (void));
+-_PROTOTYPE(int primary, (void));
+-_PROTOTYPE(int term, (void));
+-_PROTOTYPE(int unary, (void));
+-_PROTOTYPE(int factor, (void));
+-_PROTOTYPE(int constant, (void));
+-_PROTOTYPE(int num, (void));
++/* rosco: eval works in long (32 bits, as in other m4s), not in int */
++_PROTOTYPE(long expr, (char *expbuf ));
++_PROTOTYPE(long query, (void));
++_PROTOTYPE(long lor, (void));
++_PROTOTYPE(long land, (void));
++_PROTOTYPE(long bor, (void));
++_PROTOTYPE(long bxor, (void));
++_PROTOTYPE(long band, (void));
++_PROTOTYPE(long eql, (void));
++_PROTOTYPE(long relat, (void));
++_PROTOTYPE(long shift, (void));
++_PROTOTYPE(long primary, (void));
++_PROTOTYPE(long term, (void));
++_PROTOTYPE(long unary, (void));
++_PROTOTYPE(long factor, (void));
++_PROTOTYPE(long constant, (void));
++_PROTOTYPE(long num, (void));
+ _PROTOTYPE(int geteql, (void));
+ _PROTOTYPE(int getrel, (void));
+ _PROTOTYPE(int skipws, (void));
+@@ -249,7 +263,7 @@
+ _PROTOTYPE(int indx, (char *s1, char *s2 ));
+ _PROTOTYPE(void putback, (int c ));
+ _PROTOTYPE(void pbstr, (char *s ));
+-_PROTOTYPE(void pbnum, (int n ));
++_PROTOTYPE(void pbnum, (long n ));	/* rosco: long */
+ _PROTOTYPE(void chrsave, (int c ));
+ _PROTOTYPE(void getdiv, (int ind ));
+ _PROTOTYPE(void error, (char *s ));

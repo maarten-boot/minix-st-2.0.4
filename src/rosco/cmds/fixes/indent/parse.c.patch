@@ -1,0 +1,26 @@
+--- indent/parse.c
++++ indent/parse.c
+@@ -22,6 +22,7 @@
+ #include "./globs.h"
+ #include "./codes.h"
+ #include "proto.h"
++#include <stdlib.h>			/* rosco: exit() */
+ 
+ 
+ 
+@@ -36,6 +37,15 @@
+    printf("%2d - %s\n", tk, token);
+ #endif
+ 
++   /* rosco: each case below pushes at most two entries; nesting of
++      about 75 levels ran past p_stack[] and il[] */
++   if (ps.tos >= STACKSIZE - 3)
++   {
++      diag(1, "Parser stack overflow");
++      fflush(output);
++      exit(1);
++   }
++
+    while (ps.p_stack[ps.tos] == ifhead && tk != elselit)
+    {
+       /* true if we have an if without an else */

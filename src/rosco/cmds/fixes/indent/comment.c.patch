@@ -1,0 +1,56 @@
+--- indent/comment.c
++++ indent/comment.c
+@@ -63,6 +63,7 @@
+ 					 */
+ 
+    char           *t_ptr;		/* used for moving string */
++   int             lbo;		/* rosco: offset of last_bl */
+ 
+    int             unix_comment;	/* tri-state variable used to
+ 					 * decide if it is a unix-style
+@@ -176,7 +177,12 @@
+       if (e_com >= l_com)
+       {
+ 	 register        nsize = l_com - s_com + 400;
++	 /* rosco: last_bl points into combuf: move it along (it was
++	    left in the freed buffer, and *last_bl = 0 wrote there) */
++	 lbo = last_bl ? last_bl - combuf : -1;
+ 	 combuf = (char *) realloc(combuf, nsize);
++	 if (lbo >= 0)
++	    last_bl = combuf + lbo;
+ 	 e_com = combuf + (e_com - s_com) + 1;
+ 	 l_com = combuf + nsize - 5;
+ 	 s_com = combuf + 1;
+@@ -241,7 +247,10 @@
+ 	       if (e_com >= l_com)
+ 	       {
+ 		  register        nsize = l_com - s_com + 400;
++		  lbo = last_bl ? last_bl - combuf : -1;
+ 		  combuf = (char *) realloc(combuf, nsize);
++		  if (lbo >= 0)
++		     last_bl = combuf + lbo;
+ 		  e_com = combuf + (e_com - s_com) + 1;
+ 		  l_com = combuf + nsize - 5;
+ 		  s_com = combuf + 1;
+@@ -291,7 +300,10 @@
+ 	       if (e_com >= l_com)
+ 	       {
+ 		  register        nsize = l_com - s_com + 400;
++		  lbo = last_bl ? last_bl - combuf : -1;
+ 		  combuf = (char *) realloc(combuf, nsize);
++		  if (lbo >= 0)
++		     last_bl = combuf + lbo;
+ 		  e_com = combuf + (e_com - s_com) + 1;
+ 		  l_com = combuf + nsize - 5;
+ 		  s_com = combuf + 1;
+@@ -364,7 +376,10 @@
+ 	    if (e_com >= l_com)
+ 	    {
+ 	       register        nsize = l_com - s_com + 400;
++	       lbo = last_bl ? last_bl - combuf : -1;
+ 	       combuf = (char *) realloc(combuf, nsize);
++	       if (lbo >= 0)
++	          last_bl = combuf + lbo;
+ 	       e_com = combuf + (e_com - s_com) + 1;
+ 	       l_com = combuf + nsize - 5;
+ 	       s_com = combuf + 1;

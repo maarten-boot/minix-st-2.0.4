@@ -1,0 +1,50 @@
+--- indent/globs.h
++++ indent/globs.h
+@@ -25,6 +25,11 @@
+ #define BACKSLASH '\\'
+ #define bufsize 200			/* size of internal buffers */
+ #define inp_bufs 600			/* size of input buffer */
++/* rosco: the input buffer grows (fill_buffer()): a line of 600 or more
++ * characters overran it; the token buffer is bigger, identifiers,
++ * numbers and operators of 200 or more overran it, and strings of 200
++ * or more came out as "Unterminated literal" */
++#define tokbufsize 1024			/* size of token[] */
+ #define sc_size 5000			/* size of save_com buffer */
+ #define label_offset 2			/* number of levels a label is
+ 					   placed to left of code */
+@@ -57,7 +62,8 @@
+ 					   comments */
+ PUBLIC char    *l_com;			/* limit of comment buffer */
+ 
+-PUBLIC char     in_buffer[inp_bufs];	/* input buffer */
++PUBLIC char    *in_buffer;		/* input buffer (rosco: malloc) */
++PUBLIC int      in_bufsize;		/* rosco: its size */
+ PUBLIC char    *buf_ptr;		/* ptr to next character to be
+ 					   taken from in_buffer */
+ PUBLIC char    *buf_end;		/* ptr to first after last char
+@@ -73,7 +79,7 @@
+ PUBLIC char    *be_save;		/* similarly saved value of
+ 					   buf_end */
+ 
+-PUBLIC char     token[bufsize];		/* the last token scanned */
++PUBLIC char     token[tokbufsize];	/* the last token scanned */
+ 
+ 
+ PUBLIC int      ptr_binop;		/* pointer as binop */
+@@ -177,6 +183,7 @@
+ 
+ 
+ #define STACKSIZE 150
++#define MAXPAREN 20			/* rosco: entries of paren_indents[] */
+ 
+ PUBLIC struct parser_state
+ {
+@@ -262,7 +269,7 @@
+ 					   indent following statement */
+    int             paren_level;		/* parenthesization level. used
+ 					   to indent within stmts */
+-   short           paren_indents[20];	/* column positions of each
++   short           paren_indents[MAXPAREN];	/* column positions of each
+ 					   paren */
+    int             pcase;		/* set to 1 if the current line
+ 					   label is a case.  It is

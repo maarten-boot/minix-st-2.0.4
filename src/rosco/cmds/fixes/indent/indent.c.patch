@@ -1,0 +1,111 @@
+--- indent/indent.c
++++ indent/indent.c
+@@ -405,6 +405,14 @@
+ 		  diag(0, "Line broken");
+ 	       flushed_nl = false;
+ 	    }
++	    /* rosco: check the room for the token too, not only for
++	       the comments (save_com overflow) */
++	    if (sc_end + strlen(token) + 4 >= &(save_com[sc_size]))
++	    {
++	       diag(1, "Internal buffer overflow - Move big comment from right after if, while, or whatever.");
++	       fflush(output);
++	       exit(1);
++	    }
+ 	    for (t_ptr = token; *t_ptr; ++t_ptr)
+ 	       *sc_end++ = *t_ptr;	/* copy token into temp buffer */
+ 	    ps.procname[0] = 0;
+@@ -447,8 +455,10 @@
+ 	 {
+ 	    printf("There were %d output lines and %d comments\n",
+ 		   ps.out_lines, ps.out_coms);
+-	    printf("(Lines with comments)/(Lines with code): %6d\n",
+-		   ps.com_lines / code_lines);
++	    /* rosco: not for a file without code (division by zero) */
++	    if (code_lines > 0)
++	       printf("(Lines with comments)/(Lines with code): %6d\n",
++		      ps.com_lines / code_lines);
+ 	 }
+ 	 fflush(output);
+ 	 exit(found_err);
+@@ -568,7 +578,10 @@
+ 	    }
+ 	 else
+ 	    *e_code++ = token[0];
+-	 ps.paren_indents[ps.p_l_follow - 1] = e_code - s_code;
++	 /* rosco: paren_indents[] has MAXPAREN entries (deeper nesting
++	    wrote past it, into the parser state) */
++	 if (ps.p_l_follow <= MAXPAREN)
++	    ps.paren_indents[ps.p_l_follow - 1] = e_code - s_code;
+ 	 if (sp_sw && ps.p_l_follow == 1 && ex_expr_indent
+ 	     && ps.paren_indents[0] < 2 * ps.ind_size)
+ 	    ps.paren_indents[0] = 2 * ps.ind_size;
+@@ -759,6 +772,16 @@
+ 	 }
+ 	 ps.in_stmt = false;		/* seeing a label does not
+ 					   imply we are in a stmt */
++	 /* rosco: make room in labbuf for the code (a case label with
++	    a long expression overran it) */
++	 if (e_lab + (e_code - s_code) + 3 >= l_lab)
++	 {
++	    register        nsize = (e_lab - s_lab) + (e_code - s_code) + 400;
++	    labbuf = (char *) realloc(labbuf, nsize);
++	    e_lab = labbuf + (e_lab - s_lab) + 1;
++	    l_lab = labbuf + nsize - 5;
++	    s_lab = labbuf + 1;
++	 }
+ 	 for (t_ptr = s_code; *t_ptr; ++t_ptr)
+ 	    *e_lab++ = *t_ptr;		/* turn everything so far into
+ 					   a label */
+@@ -885,7 +908,11 @@
+ 	 if (ps.in_decl && ps.in_or_st)
+ 	 {				/* this is either a structure
+ 					   declaration or an init */
+-	    di_stack[ps.dec_nest++] = dec_ind;
++	    /* rosco: di_stack[] has 20 entries (deeper nesting wrote
++	       past it, on the stack) */
++	    if (ps.dec_nest < sizeof di_stack / sizeof di_stack[0])
++	       di_stack[ps.dec_nest] = dec_ind;
++	    ps.dec_nest++;
+ 	    /* ?		dec_ind = 0; */
+ 	 } else
+ 	 {
+@@ -934,7 +961,9 @@
+ 	 if (ps.dec_nest > 0)
+ 	 {				/* we are in multi-level
+ 					   structure declaration */
+-	    dec_ind = di_stack[--ps.dec_nest];
++	    --ps.dec_nest;		/* rosco: within di_stack[] */
++	    dec_ind = di_stack[ps.dec_nest < sizeof di_stack / sizeof di_stack[0]
++			       ? ps.dec_nest : sizeof di_stack / sizeof di_stack[0] - 1];
+ 	    if (ps.dec_nest == 0 && !ps.in_par_decl)
+ 	       ps.just_saw_decl = 2;
+ 	    ps.in_decl = true;
+@@ -1220,10 +1249,15 @@
+ 		  *sc_end++ = ' ';
+ 		  --line_no;
+ 	       }
++	       /* rosco: check before the copy, not after (and no abort) */
++	       if (sc_end + (com_end - com_start) + 2 >= &save_com[sc_size])
++	       {
++		  diag(1, "Internal buffer overflow - Move big comment from right after if, while, or whatever.");
++		  fflush(output);
++		  exit(1);
++	       }
+ 	       memcpy(sc_end, s_lab + com_start, com_end - com_start);
+ 	       sc_end += com_end - com_start;
+-	       if (sc_end >= &save_com[sc_size])
+-		  abort();
+ 	       e_lab = s_lab + com_start;
+ 	       while (e_lab > s_lab && (e_lab[-1] == ' ' || e_lab[-1] == '\t'))
+ 		  e_lab--;
+@@ -1339,7 +1373,8 @@
+       fprintf(stderr, "indent: can't create backup file \"%s\"\n", bakfile);
+       exit(1);
+    }
+-   while (n = read(fileno(input), buff, sizeof buff))
++   while ((n = read(fileno(input), buff, sizeof buff)) > 0)	/* rosco: > 0,
++					   -1 looped forever */
+       if (write(bakchn, buff, n) != n)
+       {
+ 	 fprintf(stderr, "indent: error writing backup file \"%s\"\n",

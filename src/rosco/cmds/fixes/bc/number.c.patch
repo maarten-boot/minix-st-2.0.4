@@ -1,0 +1,53 @@
+--- bc/number.c
++++ bc/number.c
+@@ -28,6 +28,30 @@
+ 
+ #include "bcdefs.h"
+ #include "proto.h"
++#include <setjmp.h>
++
++/* rosco: the digit counts (n_len, n_scale and the loop counters) are
++   16-bit ints here.  A number of more than 32767 digits wrapped them
++   negative: wrong results, overruns, crashes (scale=30000; x=1/3;
++   x+12345678901).  new_num() and bc_divide() now refuse such a number:
++   a runtime error inside the bc machine (execute() catches it with
++   longjmp; the temporaries of that statement are lost), else fatal. */
++#define MAX_DIGITS 32767
++extern jmp_buf num_toolong_jmp;	/* execute.c */
++extern char num_toolong_ok;	/* execute.c: in execute() */
++
++static void
++num_too_long ()
++{
++  if (num_toolong_ok)
++    {
++      rt_error ("number too long (more than %d digits)", MAX_DIGITS);
++      longjmp (num_toolong_jmp, 1);
++    }
++  fprintf (stderr, "Fatal error: number too long (more than %d digits).\n",
++	   MAX_DIGITS);
++  exit (1);
++}
+ 
+ /* Storage used for special numbers. */
+ bc_num _zero_;
+@@ -57,6 +81,9 @@
+ {
+   bc_num temp;
+ 
++  /* rosco: negative or too long (see num_too_long) */
++  if (length < 0 || scale < 0 || (long) length + scale > MAX_DIGITS)
++    num_too_long ();
+   temp = (bc_num) malloc (sizeof(bc_struct)+length+scale);
+   if (temp == NULL) out_of_memory ();
+   temp->n_sign = PLUS;
+@@ -780,6 +807,9 @@
+     extra = scale - scale1;
+   else
+     extra = 0;
++  /* rosco: the work copy of n1 is counted in (16-bit) ints below */
++  if ((long) n1->n_len + n1->n_scale + extra + 2 > MAX_DIGITS)
++    num_too_long ();
+   num1 = (unsigned char *) malloc (n1->n_len+n1->n_scale+extra+2);
+   if (num1 == NULL) out_of_memory();
+   memset (num1, 0, n1->n_len+n1->n_scale+extra+2);

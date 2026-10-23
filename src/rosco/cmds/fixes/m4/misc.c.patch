@@ -1,0 +1,55 @@
+--- m4/misc.c
++++ m4/misc.c
+@@ -33,7 +33,7 @@
+  *
+  */
+ void putback (c)
+-char c;
++int c;		/* rosco: int as in the prototype (stored as a char) */
+ {
+         if (bp < endpbb)
+                 *bp++ = c;
+@@ -59,11 +59,15 @@
+         while (*es)
+                 es++;
+         es--;
++        /* rosco: es only moved while there was room, so a string that
++         * did not fit looped for ever; now the error
++         */
+         while (es >= s)
+                 if (zp < endpbb)
+                         *zp++ = *es--;
+-        if ((bp = zp) == endpbb)
+-                error("m4: too many characters pushed back");
++                else
++                        error("m4: too many characters pushed back");
++        bp = zp;
+ }
+  
+ /*
+@@ -71,11 +75,11 @@
+  *
+  */
+ void pbnum (n)
+-int n;
++long n;		/* rosco: long (eval, incr, decr in 32 bits) */
+ {
+-        register int num;
++        register unsigned long num;	/* rosco: unsigned, for -2^31 */
+  
+-        num = (n < 0) ? -n : n;
++        num = (n < 0) ? -(unsigned long) n : n;
+         do {
+                 putback(num % 10 + '0');
+         }
+@@ -183,7 +187,9 @@
+ 
+ 	n = strlen(s)+1;
+ 	p = (char *) malloc(n);
+-        if (p != NULL) (void) memcpy(p, s, n);
++        if (p == NULL)		/* rosco: was used as a NULL name/defn */
++                error("m4: no more memory.");
++        (void) memcpy(p, s, n);
+         return (p);
+ }
+  

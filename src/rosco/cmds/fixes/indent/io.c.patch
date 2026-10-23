@@ -1,0 +1,92 @@
+--- indent/io.c
++++ indent/io.c
+@@ -41,6 +41,13 @@
+    register int    cur_col, target_col;
+    static          not_first_line;
+ 
++   /* rosco: count_spaces() reads up to a '\0'; a dump_line() right
++      after a blank was added (a function definition) read on past the
++      end of codebuf */
++   *e_lab = '\0';
++   *e_code = '\0';
++   *e_com = '\0';
++
+    if (ps.procname[0])
+    {
+       if (troff)
+@@ -122,7 +129,9 @@
+ 	 {
+ 	    register        i;
+ 
+-	    for (i = 0; i < ps.p_l_follow; i++)
++	    /* rosco: paren_indents[] has MAXPAREN entries; deeper
++	       nesting wrote past them */
++	    for (i = 0; i < ps.p_l_follow && i < MAXPAREN; i++)
+ 	       if (ps.paren_indents[i] >= 0)
+ 		  ps.paren_indents[i] = -(ps.paren_indents[i] + target_col);
+ 	 }
+@@ -267,7 +276,13 @@
+    *(e_com = s_com) = '\0';
+    ps.ind_level = ps.i_l_follow;
+    ps.paren_level = ps.p_l_follow;
+-   paren_target = -ps.paren_indents[ps.paren_level - 1];
++   /* rosco: within paren_indents[] (index -1 at level 0, past the end
++      beyond MAXPAREN) */
++   if (ps.paren_level <= 0)
++      paren_target = 0;
++   else
++      paren_target = -ps.paren_indents[(ps.paren_level > MAXPAREN
++					? MAXPAREN : ps.paren_level) - 1];
+    not_first_line = 1;
+    return;
+ }
+@@ -342,8 +357,37 @@
+ 					   really something in this
+ 					   buffer */
+    }
++   /* rosco: in_buffer grows with the line, up to about 30000
++    * characters (it had a fixed 600, and a longer line ran over the
++    * globals behind it); room is kept for the ' ', '\n' and '\0' */
++   if (in_buffer == 0)
++   {
++      in_bufsize = inp_bufs;
++      if ((in_buffer = (char *) malloc(in_bufsize)) == 0)
++      {
++	 fprintf(stderr, "indent: out of memory\n");
++	 exit(1);
++      }
++   }
+    for (p = buf_ptr = in_buffer;;)
+    {
++      if (p >= in_buffer + in_bufsize - 3)
++      {
++	 char           *nb;
++	 int             n = p - in_buffer;
++
++	 if (in_bufsize > 30000
++	     || (nb = (char *) realloc(in_buffer, in_bufsize + 1024)) == 0)
++	 {
++	    fprintf(stderr, "indent: line %d too long\n", line_no);
++	    fflush(output);
++	    exit(1);
++	 }
++	 in_buffer = nb;
++	 in_bufsize += 1024;
++	 p = in_buffer + n;
++	 buf_ptr = in_buffer;
++      }
+       if ((i = getc(f)) == EOF)
+       {
+ 	 *p++ = ' ';
+@@ -356,7 +400,10 @@
+ 	 break;
+    }
+    buf_end = p;
+-   if (p[-2] == '/' && p[-3] == '*')
++   *p = '\0';				/* rosco: for count_spaces() in
++					   pr_comment() */
++   /* rosco: p - 3 is before in_buffer on a short line */
++   if (p - in_buffer >= 3 && p[-2] == '/' && p[-3] == '*')
+    {
+       if (in_buffer[3] == 'I' && strncmp(in_buffer, "/**INDENT**", 11) == 0)
+ 	 fill_buffer();			/* flush indent error message */

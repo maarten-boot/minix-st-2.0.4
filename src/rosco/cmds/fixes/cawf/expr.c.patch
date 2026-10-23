@@ -1,0 +1,17 @@
+--- cawf/expr.c
++++ cawf/expr.c
+@@ -52,6 +52,14 @@
+ 			c[1] = *s1;
+ 		}
+ 	}
++	/*
++	 * rosco: the callers take s1 as the last character of the name and
++	 * go on at s1 + 1; a name cut short by the end of the line ("\n(x"
++	 * or "\f" at the end) left s1 on the terminator, and they read on
++	 * past it (garbage in the output).
++	 */
++	if (*s1 == '\0' && s1 > *s)
++		s1--;
+ 	return(s1);
+ }
+ 

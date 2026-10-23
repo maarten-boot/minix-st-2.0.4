@@ -1,0 +1,112 @@
+--- bc/storage.c
++++ bc/storage.c
+@@ -30,6 +30,12 @@
+ #include "global.h"
+ #include "proto.h"
+ 
++/* rosco: the largest scale.  BC_SCALE_MAX is INT_MAX, 32767 here, and a
++   number holds at most 32767 digits (16-bit counts, see number.c): with
++   scale=32767 even 1/3 was too long.  30000 leaves room for 2767 integer
++   digits and the guard digits of sqrt() and the math library. */
++#define SCALE_MAX 30000
++
+ 
+ /* Initialize the storage at the beginning of the run. */
+ 
+@@ -132,6 +138,13 @@
+   for (indx = 3; indx < old_count; indx++)
+     variables[indx] = old_var[indx];
+ 
++  /* rosco: the names were not copied (lost after 32 variables) */
++  {
++    int n;
++    for (n = 0; n < old_count; n++)
++      v_names[n] = old_names[n];
++  }
++
+   /* Initialize the new elements. */
+   for (; indx < v_count; indx++)
+     variables[indx] = NULL;
+@@ -166,9 +179,18 @@
+   for (indx = 1; indx < old_count; indx++)
+     arrays[indx] = old_ary[indx];
+ 
++  /* rosco: the names were not copied (lost after 32 arrays) */
++  {
++    int n;
++    for (n = 0; n < old_count; n++)
++      a_names[n] = old_names[n];
++  }
+ 
+   /* Initialize the new elements. */
+-  for (; indx < v_count; indx++)
++  /* rosco: up to a_count, not v_count: the 33rd array found garbage
++     pointers (or, with more variables than arrays, NULLs were written
++     past the end of arrays[]) */
++  for (; indx < a_count; indx++)
+     arrays[indx] = NULL;
+ 
+   /* Free the old elements. */
+@@ -184,7 +206,7 @@
+ 
+ void
+ clear_func (func)
+-     char func;
++     int func;	/* rosco: was char: functions 128 and up were negative */
+ {
+   bc_function *f;
+   int indx;
+@@ -529,10 +551,10 @@
+ 	case 2:
+ 	  /*  WARNING:  The following if statement may generate a compiler
+ 	      warning if INT_MAX == LONG_MAX.  This is NOT a problem. */
+-	  if (temp > BC_SCALE_MAX || toobig )
++	  if (temp > SCALE_MAX || toobig )	/* rosco: SCALE_MAX */
+ 	    {
+-	      scale = BC_SCALE_MAX;
+-	      rt_warn ("scale too large, set to %d", BC_SCALE_MAX);
++	      scale = SCALE_MAX;
++	      rt_warn ("scale too large, set to %d", SCALE_MAX);
+ 	    }
+ 	  else
+ 	    scale = (int) temp;
+@@ -687,7 +709,7 @@
+ 
+ void
+ decr_array (var_name)
+-     char var_name;
++     int var_name;	/* rosco: was char (arrays 128 and up) */
+ {
+   bc_num *num_ptr;
+   long   index;
+@@ -737,7 +759,7 @@
+       break;
+ 
+     case 2:
+-      if (scale < BC_SCALE_MAX)
++      if (scale < SCALE_MAX)	/* rosco */
+ 	scale++;
+       else
+ 	rt_warn ("Scale too big in ++");
+@@ -948,7 +970,8 @@
+ 		else
+ 		  rt_error ("Parameter type mismatch, parameter %s.",
+ 			    v_names[params->av_name]);
+-		params++;
++		/* rosco: was params++ (pointer arithmetic on a list node:
++		   params->next below then read garbage) */
+ 	      }
+ 	  pop ();
+ 	}
+@@ -960,7 +983,10 @@
+ 	      warned = TRUE;
+ 	    }
+ 	}
+-      params = params->next;
++      /* rosco: params is NULL after a missing parameter (more
++	 arguments than parameters): NULL->next */
++      if (params != NULL)
++	params = params->next;
+     }
+   if (params != NULL) 
+     rt_error ("Parameter number mismatch");

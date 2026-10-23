@@ -1,0 +1,22 @@
+--- bc/load.c
++++ bc/load.c
+@@ -124,7 +124,7 @@
+ long
+ long_val (str)
+      char **str;
+-{ int  val = 0;
++{ long val = 0;	/* rosco: long, as returned (int wrapped at 32767) */
+   char neg = FALSE;
+ 
+   if (**str == '-')
+@@ -217,7 +217,9 @@
+ 		    exit(1);
+ 		  }
+ 		addbyte ( (char) label_no & 0xFF);
+-		addbyte ( (char) label_no >> 8);
++		/* rosco: was (char) label_no >> 8, the sign of the low byte:
++		   a jump to label 256 or more went to the wrong place */
++		addbyte ( (char) (label_no >> 8));
+ 		break;
+ 
+ 	      case 'F':  /* A function, get the name and initialize it. */

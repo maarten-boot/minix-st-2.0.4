@@ -1,0 +1,50 @@
+--- bc/bc.c
++++ bc/bc.c
+@@ -922,9 +922,18 @@
+ {
+ 			      /* Check auto list against parameter list? */
+ 			      check_params (yyvsp[-4].a_value,yyvsp[0].a_value);
+-			      sprintf (genstr, "F%d,%s.%s[", lookup(yyvsp[-6].s_value,FUNCT), 
+-				       arg_str (yyvsp[-4].a_value,TRUE), arg_str (yyvsp[0].a_value,TRUE));
+-			      generate (genstr);
++			      /* rosco: built in a buffer of its own size: with
++				 a dozen parameters and autos the line overran
++				 genstr[80] (and the globals after it) */
++			      {
++				int fn = lookup(yyvsp[-6].s_value,FUNCT);
++				char *pa = arg_str (yyvsp[-4].a_value,TRUE);
++				char *au = arg_str (yyvsp[0].a_value,TRUE);
++				char *g = bc_malloc (strlen (pa) + strlen (au) + 20);
++				sprintf (g, "F%d,%s.%s[", fn, pa, au);
++				generate (g);
++				free (g);
++			      }
+ 			      free_args (yyvsp[-4].a_value);
+ 			      free_args (yyvsp[0].a_value);
+ 			      yyvsp[-7].i_value = next_label;
+@@ -1206,16 +1215,21 @@
+ 			      yyval.i_value = 1;
+ 			      if (yyvsp[-1].a_value != NULL)
+ 				{ 
+-				  sprintf (genstr, "C%d,%s:",
+-					   lookup (yyvsp[-3].s_value,FUNCT),
+-					   arg_str (yyvsp[-1].a_value,FALSE));
++				  /* rosco: own buffer, as for "F" (a call with
++				     70+ arguments overran genstr[80]) */
++				  int fn = lookup (yyvsp[-3].s_value,FUNCT);
++				  char *ar = arg_str (yyvsp[-1].a_value,FALSE);
++				  char *g = bc_malloc (strlen (ar) + 20);
++				  sprintf (g, "C%d,%s:", fn, ar);
++				  generate (g);
++				  free (g);
+ 				  free_args (yyvsp[-1].a_value);
+ 				}
+ 			      else
+ 				{
+ 				  sprintf (genstr, "C%d:", lookup (yyvsp[-3].s_value,FUNCT));
++				  generate (genstr);	/* rosco: moved here */
+ 				}
+-			      generate (genstr);
+ 			    }
+ break;
+ case 86:

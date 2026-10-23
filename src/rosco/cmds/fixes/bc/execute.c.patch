@@ -1,0 +1,136 @@
+--- bc/execute.c
++++ bc/execute.c
+@@ -28,9 +28,14 @@
+ 
+ #include "bcdefs.h"
+ #include <signal.h>
++#include <setjmp.h>
+ #include "global.h"
+ #include "proto.h"
+ 
++/* rosco: number.c's num_too_long() returns here (see number.c) */
++jmp_buf num_toolong_jmp;
++char num_toolong_ok;
++
+ 
+ /* The SIGINT interrupt handling routine. */
+ 
+@@ -90,6 +95,10 @@
+       had_sigint = FALSE;
+     }
+    
++  /* rosco: a number too long ends the run as a runtime error */
++  if (setjmp (num_toolong_jmp) != 0)
++    runtime_error = TRUE;
++  num_toolong_ok = TRUE;
+   while (pc.pc_addr < functions[pc.pc_func].f_code_size && !runtime_error)
+     {
+       inst = byte(&pc);
+@@ -120,7 +129,7 @@
+       case 'A' : /* increment array variable (Add one). */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	incr_array (var_name);
+ 	break;
+ 
+@@ -144,8 +153,12 @@
+       case 'C' : /* Call a function. */
+ 	/* Get the function number. */
+ 	new_func = byte(&pc);
++	/* rosco: the numbers of variables, arrays and functions of 256
++	   and more (two bytes) were decoded as ((x << 8) & 0x7f) + low
++	   byte, the low byte alone: the 300th variable was the 44th
++	   (here and in the other "rosco" lines below) */
+ 	if ((new_func & 0x80) != 0) 
+-	  new_func = ((new_func << 8) & 0x7f) + byte(&pc);
++	  new_func = ((new_func & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 
+ 	/* Check to make sure it is defined. */
+ 	if (!functions[new_func].f_defined)
+@@ -192,14 +205,14 @@
+       case 'L' : /* load array variable */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	load_array (var_name);
+ 	break;
+ 
+       case 'M' : /* decrement array variable (Minus!) */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	decr_array (var_name);
+ 	break;
+ 
+@@ -243,7 +256,7 @@
+       case 'S' : /* store array variable */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	store_array (var_name);
+ 	break;
+ 
+@@ -294,7 +307,7 @@
+       case 'd' : /* Decrement number */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	decr_var (var_name);
+ 	break;
+       
+@@ -304,14 +317,14 @@
+       case 'i' : /* increment number */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	incr_var (var_name);
+ 	break;
+ 
+       case 'l' : /* load variable */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	load_var (var_name);
+ 	break;
+ 
+@@ -326,7 +339,7 @@
+       case 's' : /* store variable */
+ 	var_name = byte(&pc);
+ 	if ((var_name & 0x80) != 0)
+-	  var_name = ((var_name << 8) & 0x7f) + byte(&pc);
++	  var_name = ((var_name & 0x7f) << 8) + byte(&pc);	/* rosco */
+ 	store_var (var_name);
+ 	break;
+ 
+@@ -522,6 +535,8 @@
+       }
+     }
+ 
++  num_toolong_ok = FALSE;	/* rosco */
++
+   /* Clean up the function stack and pop all autos/parameters. */
+   while (pc.pc_func != 0)
+     {
+@@ -561,10 +576,13 @@
+ char
+ input_char ()
+ {
+-  char in_ch;
++  int in_ch;	/* rosco: int: EOF (as a char -1) became a blank, and
++		   read() at the end of the input skipped blanks for ever */
+   
+   /* Get a character from the standard input for the read function. */
+   in_ch = getchar();
++  if (in_ch == EOF)
++    return (':');	/* rosco: ends the number (0) */
+ 
+   /* Check for a \ quoted newline. */
+   if (in_ch == '\\')

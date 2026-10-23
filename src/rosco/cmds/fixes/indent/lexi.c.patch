@@ -1,0 +1,97 @@
+--- indent/lexi.c
++++ indent/lexi.c
+@@ -27,6 +27,7 @@
+ #define PUBLIC extern
+ #include <ctype.h>
+ #include <string.h>
++#include <stdlib.h>			/* rosco: exit() */
+ #include "globs.h"
+ #include "codes.h"
+ #include "proto.h"
+@@ -34,6 +35,22 @@
+ #define alphanum 1
+ #define opchar 3
+ 
++/* rosco: chartype[] has 128 entries; a char is signed, and a character
++   of 128-255 indexed before the table */
++#define CHARTYPE(c)	((unsigned char) (c) < 128 ? chartype[(c)] : 0)
++
++/* rosco: stop at the end of token[] (an identifier, number or operator
++   of 200 or more characters ran over the globals behind it) */
++#define CHECK_TOK	if (tok >= token + tokbufsize - 4) tok_too_long()
++
++static void
++tok_too_long()
++{
++   diag(1, "Token too long");
++   fflush(output);
++   exit(1);
++}
++
+ struct templ
+ {
+    char           *rwd;
+@@ -133,7 +150,7 @@
+    }
+ 
+    /* Scan an alphanumeric token */
+-   if (chartype[*buf_ptr] == alphanum || (buf_ptr[0] == '.' && isdigit(buf_ptr[1])))
++   if (CHARTYPE(*buf_ptr) == alphanum || (buf_ptr[0] == '.' && isdigit(buf_ptr[1])))
+    {
+       /* we have a character or number */
+       register char  *j;		/* used for searching thru list
+@@ -151,10 +168,14 @@
+ 	    *tok++ = *buf_ptr++;
+ 	    *tok++ = *buf_ptr++;
+ 	    while (isxdigit(*buf_ptr))
++	    {
++	       CHECK_TOK;
+ 	       *tok++ = *buf_ptr++;
++	    }
+ 	 } else
+ 	    while (1)
+ 	    {
++	       CHECK_TOK;
+ 	       if (*buf_ptr == '.')
+ 		  if (seendot)
+ 		     break;
+@@ -176,8 +197,9 @@
+ 	 if (*buf_ptr == 'L' || *buf_ptr == 'l')
+ 	    *tok++ = *buf_ptr++;
+       } else
+-	 while (chartype[*buf_ptr] == alphanum)
++	 while (CHARTYPE(*buf_ptr) == alphanum)
+ 	 {				/* copy it over */
++	    CHECK_TOK;
+ 	    *tok++ = *buf_ptr++;
+ 	    if (buf_ptr >= buf_end)
+ 	       fill_buffer();
+@@ -341,7 +363,9 @@
+ 	    *tok = *buf_ptr++;
+ 	    if (buf_ptr >= buf_end)
+ 	       fill_buffer();
+-	    if (had_eof || ((tok - token) > (bufsize - 2)))
++	    /* rosco: tokbufsize, with room for the escape and the
++	       troff font changes below (they ran past token[]) */
++	    if (had_eof || ((tok - token) > (tokbufsize - 24)))
+ 	    {
+ 	       printf("Unterminated literal\n");
+ 	       ++tok;
+@@ -526,6 +550,7 @@
+       while (*(tok - 1) == *buf_ptr || *buf_ptr == '=')
+       {
+ 	 /* handle ||, &&, etc, and also things as in int *****i */
++	 CHECK_TOK;
+ 	 *tok++ = *buf_ptr;
+ 	 if (++buf_ptr >= buf_end)
+ 	    fill_buffer();
+@@ -560,7 +585,8 @@
+ 	 return;
+       else
+ 	 p++;
+-   if (p >= specials + sizeof specials / sizeof specials[0])
++   /* rosco: - 1, for the terminating entry written below */
++   if (p >= specials + sizeof specials / sizeof specials[0] - 1)
+       return;				/* For now, table overflows are
+ 					   silently ignored */
+    p->rwd = key;

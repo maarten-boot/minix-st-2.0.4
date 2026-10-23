@@ -1,0 +1,32 @@
+--- indent/args.c
++++ indent/args.c
+@@ -141,8 +141,12 @@
+    char            fname[BUFSIZ];
+    static char     prof[] = ".indent.pro";
+ 
+-   sprintf(fname, "%s/%s", getenv("HOME"), prof);
+-   if ((f = fopen(fname, "r")) != NULL)
++   char           *home = getenv("HOME");
++
++   /* rosco: HOME may be unset or longer than fname */
++   if (home != NULL && strlen(home) + sizeof prof + 1 <= sizeof fname
++       && (sprintf(fname, "%s/%s", home, prof),
++	   (f = fopen(fname, "r")) != NULL))
+    {
+       scan_profile(f);
+       (void) fclose(f);
+@@ -163,7 +167,13 @@
+ 
+    while (1)
+    {
+-      for (p = buf; (i = getc(f)) != EOF && (*p = (char)i) > ' '; ++p);
++      /* rosco: a word of BUFSIZ or more overran buf (the stack) */
++      for (p = buf; (i = getc(f)) != EOF && (*p = (char)i) > ' '; ++p)
++	 if (p >= buf + sizeof buf - 2)
++	 {
++	    fprintf(stderr, "indent: .indent.pro: option too long\n");
++	    exit(1);
++	 }
+       if (p != buf)
+       {
+ 	 *p++ = 0;

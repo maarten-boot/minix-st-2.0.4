@@ -1,0 +1,113 @@
+--- bc/util.c
++++ bc/util.c
+@@ -56,7 +56,8 @@
+ arg_list *
+ nextarg (args, val)
+      arg_list *args;
+-     char val;
++     int val;	/* rosco: was char: parameters and autos that were
++		   variable 128 and up (or array) became other numbers */
+ { arg_list *temp;
+ 
+   temp = (arg_list *) bc_malloc (sizeof (arg_list));
+@@ -511,11 +512,13 @@
+ 	  return (-id->a_name);
+ 	}
+       id->a_name = next_array++;
+-      a_names[id->a_name] = name;
++      /* rosco: the name is stored after more_arrays(): a_names[a_count]
++	 was written past the end */
+       if (id->a_name < MAX_STORE)
+ 	{
+ 	  if (id->a_name >= a_count)
+ 	    more_arrays ();
++	  a_names[id->a_name] = name;
+ 	  return (-id->a_name);
+ 	}
+       yyerror ("Too many array variables");
+@@ -528,11 +531,12 @@
+ 	  return (id->f_name);
+ 	}
+       id->f_name = next_func++;
+-      f_names[id->f_name] = name;
++      /* rosco: after more_functions(), as for the arrays */
+       if (id->f_name < MAX_STORE)
+ 	{
+ 	  if (id->f_name >= f_count)
+ 	    more_functions ();
++	  f_names[id->f_name] = name;
+ 	  return (id->f_name);
+ 	}
+       yyerror ("Too many functions");
+@@ -545,11 +549,13 @@
+ 	  return (id->v_name);
+ 	}
+       id->v_name = next_var++;
+-      v_names[id->v_name - 1] = name;
+-      if (id->v_name <= MAX_STORE)
++      /* rosco: v_names[v_name], as storage.c reads it (was v_name - 1:
++	 the messages named the variable before) */
++      if (id->v_name < MAX_STORE)
+ 	{
+ 	  if (id->v_name >= v_count)
+ 	    more_variables ();
++	  v_names[id->v_name] = name;
+ 	  return (id->v_name);
+ 	}
+       yyerror ("Too many variables");
+@@ -598,7 +604,7 @@
+ {
+   printf ("BC_BASE_MAX     = %d\n",  BC_BASE_MAX);
+   printf ("BC_DIM_MAX      = %ld\n", (long) BC_DIM_MAX);
+-  printf ("BC_SCALE_MAX    = %d\n",  BC_SCALE_MAX);
++  printf ("BC_SCALE_MAX    = %d\n",  30000);	/* rosco: storage.c */
+   printf ("BC_STRING_MAX   = %d\n",  BC_STRING_MAX);
+   printf ("MAX Exponent    = %ld\n", (long) LONG_MAX);
+   printf ("MAX code        = %ld\n", (long) BC_MAX_SEGS * (long) BC_SEG_SIZE);
+@@ -745,18 +751,19 @@
+ #endif
+ {
+   va_list args;
+-  char error_mesg [255];
+ 
++  /* rosco: straight to stderr; a char[255] on the stack overflowed with
++     a long array name ("Array %s subscript out of bounds.") */
++  fprintf (stderr, "Runtime error (func=%s, adr=%d): ",
++	   f_names[pc.pc_func], pc.pc_addr);
+ #ifndef VARARGS   
+   va_start (args, mesg);
+ #else
+   va_start (args);
+ #endif
+-  vsprintf (error_mesg, mesg, args);
++  vfprintf (stderr, mesg, args);
+   va_end (args);
+-  
+-  fprintf (stderr, "Runtime error (func=%s, adr=%d): %s\n",
+-	   f_names[pc.pc_func], pc.pc_addr, error_mesg);
++  fprintf (stderr, "\n");
+   runtime_error = TRUE;
+ }
+ 
+@@ -781,16 +788,16 @@
+ #endif
+ {
+   va_list args;
+-  char error_mesg [255];
+ 
++  /* rosco: as rt_error() */
++  fprintf (stderr, "Runtime warning (func=%s, adr=%d): ",
++	   f_names[pc.pc_func], pc.pc_addr);
+ #ifndef VARARGS   
+   va_start (args, mesg);
+ #else
+   va_start (args);
+ #endif
+-  vsprintf (error_mesg, mesg, args);
++  vfprintf (stderr, mesg, args);
+   va_end (args);
+-
+-  fprintf (stderr, "Runtime warning (func=%s, adr=%d): %s\n",
+-	   f_names[pc.pc_func], pc.pc_addr, error_mesg);
++  fprintf (stderr, "\n");
+ }
