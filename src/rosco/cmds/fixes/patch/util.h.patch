@@ -1,0 +1,37 @@
+--- orig/patch/util.h	2026-10-23 21:45:00.419915896 +0200
++++ new/patch/util.h	2026-10-23 21:46:33.594315923 +0200
+@@ -8,6 +8,14 @@
+ 
+ /* and for those machine that can't handle a variable argument list */
+ 
++/* rosco: say(), fatal() and ask() had K&R definitions with three long
++ * arguments and were called with ints (16 bits with -mshort), pointers
++ * and longs; that only worked because the bytes were passed on to
++ * fprintf unchanged.  They now take a variable argument list (stdarg),
++ * with a prototype gcc can check the formats against.
++ */
++#define CANVARARG
++
+ #ifdef CANVARARG
+ 
+ #define say1 say
+@@ -65,9 +73,16 @@
+ _PROTOTYPE(int move_file , (char *from , char *to ));
+ _PROTOTYPE(void copy_file , (char *from , char *to ));
+ _PROTOTYPE(char *savestr , (Reg1 char *s ));
+-void say();
+-void fatal();
+-void ask();
++void say(const char *pat, ...) __attribute__((format(printf, 1, 2)));
++void fatal(const char *pat, ...) __attribute__((format(printf, 1, 2)));
++void ask(const char *pat, ...) __attribute__((format(printf, 1, 2)));
++/* rosco: ask() got no answer (no terminal, or end of file): the questions
++ * in a loop (there_is_another_patch) must not repeat forever
++ */
++EXT bool ask_noanswer INIT(FALSE);
++_PROTOTYPE(int tmpcreat , (char *name ));
++_PROTOTYPE(FILE *tmpfopen , (char *name ));
++_PROTOTYPE(bool safe_name , (char *name ));
+ _PROTOTYPE(void set_signals , (int reset ));
+ _PROTOTYPE(void ignore_signals , (void));
+ _PROTOTYPE(void makedirs , (Reg1 char *filename , bool striplast ));

@@ -1,0 +1,240 @@
+--- orig/patch/util.c	2026-10-23 21:45:00.419764144 +0200
++++ new/patch/util.c	2026-10-23 21:47:12.196423277 +0200
+@@ -2,6 +2,7 @@
+ #include "common.h"
+ #include "INTERN.h"
+ #include "util.h"
++#include <stdarg.h>
+ 
+ /* Rename a file, copying it if necessary. */
+ 
+@@ -31,6 +32,15 @@
+ 	return 0;
+     }
+ 
++	/* rosco: -B and the file name (from the diff) were copied into
++	 * bakname[512] unchecked: a long name overran the stack
++	 */
++	if (strlen(origprae ? origprae : "") + strlen(to) +
++	    strlen(origext ? origext : ORIGEXT) >= sizeof bakname) {
++	    say("patch: name too long to backup %s, output is in %s\n",
++		to, from);
++	    return -1;
++	}
+ 	if (origprae) {
+ 		Strcpy (bakname, origprae);
+     	Strcat(bakname, to);
+@@ -104,9 +114,8 @@
+     Reg2 int fromfd;
+     Reg1 int i;
+     
+-    tofd = creat(to, 0666);
+-    if (tofd < 0)
+-	fatal2("patch: can't create %s.\n", to);
++    /* rosco: only used to copy to TMPOUTNAME: created safely in /tmp */
++    tofd = tmpcreat(to);
+     fromfd = open(from, 0);
+     if (fromfd < 0)
+ 	fatal2("patch: internal error, can't reopen %s\n", from);
+@@ -157,69 +166,85 @@
+ 
+ /* Vanilla terminal output (buffered). */
+ 
++/* rosco: stdarg, see util.h */
+ void
+-say(pat,arg1,arg2,arg3)
+-char *pat;
+-long arg1,arg2,arg3;
++say(const char *pat, ...)
+ {
+-    fprintf(stderr, pat, arg1, arg2, arg3);
++    va_list ap;
++
++    va_start(ap, pat);
++    vfprintf(stderr, pat, ap);
++    va_end(ap);
+     Fflush(stderr);
+ }
+ 
+ /* Terminal output, pun intended. */
+ 
+ void				/* very void */
+-fatal(pat,arg1,arg2,arg3)
+-char *pat;
+-long arg1,arg2,arg3;
++fatal(const char *pat, ...)
+ {
+-    say(pat, arg1, arg2, arg3);
++    va_list ap;
++
++    va_start(ap, pat);
++    vfprintf(stderr, pat, ap);
++    va_end(ap);
++    Fflush(stderr);
+     my_exit(1);
+ }
+ 
+ /* Get a response from the user, somehow or other. */
+ 
+ void
+-ask(pat,arg1,arg2,arg3)
+-char *pat;
+-long arg1,arg2,arg3;
++ask(const char *pat, ...)
+ {
+     int ttyfd;
+     int r;
+     bool tty2 = isatty(2);
++    bool noterm = FALSE;
++    va_list ap;
+ 
+-    Sprintf(buf, pat, arg1, arg2, arg3);
++    /* rosco: vsnprintf: the question holds names and a revision from the
++     * diff (Prereq:), which could overrun buf
++     */
++    va_start(ap, pat);
++    vsnprintf(buf, sizeof buf, pat, ap);
++    va_end(ap);
+     Fflush(stderr);
+     write(2, buf, strlen(buf));
+     if (tty2) {				/* might be redirected to a file */
+-	r = read(2, buf, sizeof buf);
++	r = read(2, buf, sizeof buf - 1);
+     }
+     else if (isatty(1)) {		/* this may be new file output */
+ 	Fflush(stdout);
+ 	write(1, buf, strlen(buf));
+-	r = read(1, buf, sizeof buf);
++	r = read(1, buf, sizeof buf - 1);
+     }
+     else if ((ttyfd = open("/dev/tty", 2)) >= 0 && isatty(ttyfd)) {
+ 					/* might be deleted or unwriteable */
+ 	write(ttyfd, buf, strlen(buf));
+-	r = read(ttyfd, buf, sizeof buf);
++	r = read(ttyfd, buf, sizeof buf - 1);
+ 	Close(ttyfd);
+     }
+     else if (isatty(0)) {		/* this is probably patch input */
+ 	Fflush(stdin);
+ 	write(0, buf, strlen(buf));
+-	r = read(0, buf, sizeof buf);
++	r = read(0, buf, sizeof buf - 1);
+     }
+     else {				/* no terminal at all--default it */
+ 	buf[0] = '\n';
+ 	r = 1;
++	noterm = TRUE;
+     }
++    /* rosco: read sizeof buf - 1: buf[r] was one past the end; and
++     * remember when there was no answer (no terminal, end of file)
++     */
++    ask_noanswer = (r <= 0 || noterm);
+     if (r <= 0)
+ 	buf[0] = 0;
+     else
+ 	buf[r] = '\0';
+     if (!tty2)
+-	say1(buf);
++	say("%s", buf);		/* rosco: the answer is no format */
+ }
+ #endif /* lint */
+ 
+@@ -339,14 +364,27 @@
+     *t = '\0';
+     if (name != s && *s != '/') {
+ 	name[-1] = '\0';
+-	if (stat(s, &filestat) && filestat.st_mode & S_IFDIR) {
++	/* rosco: the test was reversed (stat() returns 0 when it works):
++	 * the directory test used whatever an earlier stat() left
++	 */
++	if (stat(s, &filestat) == 0 && S_ISDIR(filestat.st_mode)) {
+ 	    name[-1] = '/';
+ 	    name=s;
+ 	}
+     }
+     name = savestr(name);
+-    Sprintf(tmpbuf, "RCS/%s", name);
+     free(s);
++    /* rosco: the name from the diff went into tmpbuf[200] unchecked: a
++     * long name overran the stack; too long for RCS/SCCS now
++     */
++    if (strlen(name) + 12 > sizeof tmpbuf) {
++	if (stat(name, &filestat) < 0 && !assume_exists) {
++	    free(name);
++	    name = Nullch;
++	}
++	return name;
++    }
++    Sprintf(tmpbuf, "RCS/%s", name);
+     if (stat(name, &filestat) < 0 && !assume_exists) {
+ 	Strcat(tmpbuf, RCSSUFFIX);
+ 	if (stat(tmpbuf, &filestat) < 0 && stat(tmpbuf+4, &filestat) < 0) {
+@@ -359,3 +397,68 @@
+     }
+     return name;
+ }
++
++/* rosco: create a temporary file in /tmp safely.  The names are mktemp()'s
++ * (the pid), easy to guess, and were opened with fopen(.., "w") or creat():
++ * a symbolic link planted under such a name made patch (often run as
++ * root) create or overwrite the file it pointed to.  Remove what is there,
++ * create the file exclusively (mode 0600) and check that the name is that
++ * file.  (This FS follows a symbolic link even with O_EXCL; the unlink()
++ * before it leaves only a race.)
++ */
++int
++tmpcreat(name)
++char *name;
++{
++    int fd;
++    struct stat st, lst;
++
++    Unlink(name);
++    fd = open(name, O_WRONLY | O_CREAT | O_EXCL, 0600);
++    if (fd < 0)
++	fatal("patch: can't create %s.\n", name);
++    if (fstat(fd, &st) < 0 || lstat(name, &lst) < 0 || !S_ISREG(lst.st_mode)
++	|| st.st_dev != lst.st_dev || st.st_ino != lst.st_ino
++	|| lst.st_nlink != 1) {
++	Close(fd);
++	fatal("patch: %s is not a new file, giving up.\n", name);
++    }
++    return fd;
++}
++
++FILE *
++tmpfopen(name)
++char *name;
++{
++    FILE *fp = fdopen(tmpcreat(name), "w");
++
++    if (fp == Nullfp)
++	fatal("patch: can't create %s.\n", name);
++    return fp;
++}
++
++/* rosco: a file name from the diff (Index:, ***, ---) that is absolute or
++ * has a ".." component reaches files outside the current directory: with
++ * -p0 (or a directory that exists, fetchname) "../../etc/passwd" or
++ * "/etc/passwd" was patched.  Such names are not used, as GNU patch does.
++ */
++bool
++safe_name(name)
++char *name;
++{
++    char *s;
++
++    if (name == Nullch)
++	return TRUE;
++    if (*name == '/')
++	return FALSE;
++    for (s = name; *s; ) {
++	if (s[0] == '.' && s[1] == '.' && (s[2] == '/' || s[2] == '\0'))
++	    return FALSE;
++	while (*s && *s != '/')
++	    s++;
++	while (*s == '/')
++	    s++;
++    }
++    return TRUE;
++}

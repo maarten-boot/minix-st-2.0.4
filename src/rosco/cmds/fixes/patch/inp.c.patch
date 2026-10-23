@@ -1,0 +1,134 @@
+--- orig/patch/inp.c	2026-10-23 21:45:00.418658886 +0200
++++ new/patch/inp.c	2026-10-23 21:49:26.229082934 +0200
+@@ -27,6 +27,7 @@
+ static LINENUM tiline[2] = {-1, -1};	/* 1st line in each buffer */
+ static LINENUM lines_per_buf;		/* how many lines per buffer */
+ static int tireclen;			/* length of records in tmp file */
++static int tibufsize;			/* rosco: block size, was BUFFERSIZE */
+ 
+ /* New patch--prepare to edit another file. */
+ 
+@@ -207,21 +208,58 @@
+ char *filename;
+ {
+     Reg3 FILE *ifp;
+-    Reg1 int i = 0;
++    /* rosco: the line number i was an int: from line 32768 on it was
++     * negative, i % lines_per_buf too, and the lines were stored before
++     * tibuf[0] (heap corruption) and input_lines was wrong
++     */
++    Reg1 LINENUM i = 0;
+     Reg2 int maxlen = 1;
+     Reg4 bool found_revision = (revision == Nullch);
++    int len, fd;
++    char *rec;
+ 
+     using_plan_a = FALSE;
++    /* rosco: with SMALL there is no plan_a, which created a new file (a
++     * context diff against an empty file), checked that the file is a
++     * plain file and set filemode: every patched file became mode 0644
++     * (a 0600 file readable for all, a script no longer executable),
++     * and new files could not be made.  (Its RCS/SCCS checkout passed
++     * the name from the diff to system() and is left out.)
++     */
++    if (ok_to_create_file && stat(filename, &filestat) < 0) {
++	if (verbose)
++	    say("(Creating file %s...)\n", filename);
++	if ((fd = open(filename, O_WRONLY | O_CREAT | O_EXCL, 0666)) < 0)
++	    fatal("Can't create %s.\n", filename);
++	Close(fd);
++    }
++    if (stat(filename, &filestat) < 0)
++	fatal("Can't find %s.\n", filename);
++    filemode = filestat.st_mode;
++    if (!S_ISREG(filemode))
++	fatal("%s is not a normal file--can't patch.\n", filename);
+     if ((ifp = fopen(filename, "r")) == Nullfp)
+ 	fatal2("Can't open file %s\n", filename);
+-    if ((tifd = creat(TMPINNAME, 0666)) < 0)
+-	fatal2("Can't open file %s\n", TMPINNAME);
++    tifd = tmpcreat(TMPINNAME);		/* rosco: safely, see util.c */
+     while (fgets(buf, sizeof buf, ifp) != Nullch) {
++	i++;
+ 	if (revision != Nullch && !found_revision && rev_in_string(buf))
+ 	    found_revision = TRUE;
+-	if ((i = strlen(buf)) > maxlen)
+-	    maxlen = i;			/* find longest line */
++	/* rosco: a line too long for buf (or with a NUL) was split; the
++	 * last line may lack its newline: one is added (as plan_a did)
++	 */
++	len = strlen(buf);
++	if (len == 0 || buf[len-1] != '\n') {
++	    if (!feof(ifp) || len == 0)
++		fatal("patch: line %ld of %s is too long or has a NUL.\n",
++		    i, filename);
++	    len++;
++	}
++	if (len > maxlen)
++	    maxlen = len;		/* find longest line */
+     }
++    if (ferror(ifp))
++	fatal("patch: read error on %s.\n", filename);
+     if (revision != Nullch) {
+ 	if (!found_revision) {
+ 	    if (force) {
+@@ -243,24 +281,29 @@
+ 		revision);
+     }
+     Fseek(ifp, 0L, 0);		/* rewind file */
+-    lines_per_buf = BUFFERSIZE / maxlen;
++    /* rosco: a block holds at least one line (lines up to MAXLINELEN) */
++    tibufsize = (maxlen > BUFFERSIZE ? maxlen : BUFFERSIZE);
++    lines_per_buf = tibufsize / maxlen;
+     tireclen = maxlen;
+-    tibuf[0] = (char *)malloc((MEM)(BUFFERSIZE + 1));
+-    tibuf[1] = (char *)malloc((MEM)(BUFFERSIZE + 1));
+-    if (tibuf[1] == Nullch)
++    tibuf[0] = (char *)malloc((MEM)(tibufsize + 1));
++    tibuf[1] = (char *)malloc((MEM)(tibufsize + 1));
++    if (tibuf[0] == Nullch || tibuf[1] == Nullch)
+ 	fatal1("Can't seem to get enough memory.\n");
+     for (i=1; ; i++) {
+ 	if (! (i % lines_per_buf))	/* new block */
+-	    if (write(tifd, tibuf[0], BUFFERSIZE) < BUFFERSIZE)
++	    if (write(tifd, tibuf[0], tibufsize) != tibufsize)
+ 		fatal1("patch: can't write temp file.\n");
+-	if (fgets(tibuf[0] + maxlen * (i%lines_per_buf), maxlen + 1, ifp)
+-	  == Nullch) {
++	rec = tibuf[0] + maxlen * (int)(i%lines_per_buf);
++	if (fgets(rec, maxlen + 1, ifp) == Nullch) {
+ 	    input_lines = i - 1;
+ 	    if (i % lines_per_buf)
+-		if (write(tifd, tibuf[0], BUFFERSIZE) < BUFFERSIZE)
++		if (write(tifd, tibuf[0], tibufsize) != tibufsize)
+ 		    fatal1("patch: can't write temp file.\n");
+ 	    break;
+ 	}
++	len = strlen(rec);		/* rosco: the last line's newline */
++	if (len == 0 || rec[len-1] != '\n')
++	    rec[len] = '\n';
+     }
+     Fclose(ifp);
+     Close(tifd);
+@@ -291,9 +334,9 @@
+ 	else {
+ 	    tiline[whichbuf] = baseline;
+ #ifndef lint		/* complains of long accuracy */
+-	    Lseek(tifd, (long)baseline / lines_per_buf * BUFFERSIZE, 0);
++	    Lseek(tifd, (long)baseline / lines_per_buf * tibufsize, 0);
+ #endif
+-	    if (read(tifd, tibuf[whichbuf], BUFFERSIZE) < 0)
++	    if (read(tifd, tibuf[whichbuf], tibufsize) != tibufsize)
+ 		fatal2("Error reading tmp file %s.\n", TMPINNAME);
+ 	}
+ 	return tibuf[whichbuf] + (tireclen*offline);
+@@ -312,7 +355,8 @@
+     if (revision == Nullch)
+ 	return TRUE;
+     patlen = strlen(revision);
+-    if (strnEQ(string,revision,patlen) && isspace(s[patlen]))
++    /* rosco: s[patlen] used s before it was set */
++    if (strnEQ(string,revision,patlen) && isspace(string[patlen]))
+ 	return TRUE;
+     for (s = string; *s; s++) {
+ 	if (isspace(*s) && strnEQ(s+1, revision, patlen) && 

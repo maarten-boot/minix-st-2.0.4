@@ -1,0 +1,227 @@
+--- orig/patch/patch.c	2026-10-23 21:45:00.419190674 +0200
++++ new/patch/patch.c	2026-10-23 21:48:05.681318850 +0200
+@@ -126,9 +126,10 @@
+     LINENUM newwhere;
+     LINENUM fuzz;
+     LINENUM mymaxfuzz;
+-    int hunk = 0;
+-    int failed = 0;
+-    int failtotal = 0;
++    /* rosco: long: 16-bit counters wrapped in a large diff */
++    long hunk = 0;
++    long failed = 0;
++    long failtotal = 0;
+     int i;
+ 
+     setbuf(stderr, serrbuf);
+@@ -245,18 +246,18 @@
+ 		abort_hunk();
+ 		failed++;
+ 		if (verbose)
+-		    say3("Hunk #%d ignored at %ld.\n", hunk, newwhere);
++		    say3("Hunk #%ld ignored at %ld.\n", hunk, newwhere);
+ 	    }
+ 	    else if (where == Nulline) {
+ 		abort_hunk();
+ 		failed++;
+ 		if (verbose)
+-		    say3("Hunk #%d failed at %ld.\n", hunk, newwhere);
++		    say3("Hunk #%ld failed at %ld.\n", hunk, newwhere);
+ 	    }
+ 	    else {
+ 		apply_hunk(where);
+ 		if (verbose) {
+-		    say3("Hunk #%d succeeded at %ld", hunk, newwhere);
++		    say3("Hunk #%ld succeeded at %ld", hunk, newwhere);
+ 		    if (fuzz)
+ 			say2(" with fuzz %ld", fuzz);
+ 		    if (last_offset)
+@@ -278,7 +279,7 @@
+     
+ 	/* finish spewing out the new file */
+ 	if (!skip_rest_of_patch)
+-	    spew_output();
++	    spew_output();		/* rosco: fatal on a write error */
+ 	
+ 	/* and put the output where desired */
+ 	ignore_signals();
+@@ -290,11 +291,17 @@
+ 	    else
+ 		chmod(outname, filemode);
+ 	}
+-	Fclose(rejfp);
++	/* rosco: a write error on the rejects went unnoticed */
++	if (ferror(rejfp) | fclose(rejfp))
++	    fatal("patch: write error on %s.\n", TMPREJNAME);
+ 	rejfp = Nullfp;
+ 	if (failed) {
+ 	    failtotal += failed;
+ 	    if (!*rejname) {
++		/* rosco: rejname[128]: a long name overran it */
++		if (strlen(outname) + sizeof REJEXT > sizeof rejname)
++		    fatal("patch: name too long for the rejects of %s, they are in %s\n",
++			outname, TMPREJNAME);
+ 		Strcpy(rejname, outname);
+ #ifndef FLEXFILENAMES
+ 		{
+@@ -311,11 +318,11 @@
+ 		Strcat(rejname, REJEXT);
+ 	    }
+ 	    if (skip_rest_of_patch) {
+-		say4("%d out of %d hunks ignored--saving rejects to %s\n",
++		say4("%ld out of %ld hunks ignored--saving rejects to %s\n",
+ 		    failed, hunk, rejname);
+ 	    }
+ 	    else {
+-		say4("%d out of %d hunks failed--saving rejects to %s\n",
++		say4("%ld out of %ld hunks failed--saving rejects to %s\n",
+ 		    failed, hunk, rejname);
+ 	    }
+ 	    if (move_file(TMPREJNAME, rejname) < 0)
+@@ -327,7 +334,10 @@
+     if (sfp != Nullfp)
+ 	Fclose(sfp);
+ #endif
+-    my_exit(failtotal);
++    /* rosco: the exit status was the number of failed hunks, modulo 256:
++     * 256 failed hunks exited 0.  At most 255 now.
++     */
++    my_exit(failtotal > 255 ? 255 : (int)failtotal);
+ }
+ 
+ /* Prepare to find the next patch to do in the patch file. */
+@@ -377,6 +387,13 @@
+ {
+     Reg1 char *s;
+ 
++/* rosco: an option at the end without its argument made the loop below
++ * run past the NULL at the end of argv (Argc became -1): into the
++ * environment strings, then through a NULL pointer
++ */
++#define NEEDARG() if (Argc < 2) fatal("patch: option %s needs an argument\n", \
++				    Argv[0]); else
++
+     rejname[0] = '\0';
+     Argc_last = Argc;
+     Argv_last = Argv;
+@@ -395,10 +412,12 @@
+ 	else {
+ 	    switch (*++s) {
+ 	    case 'b':
++		NEEDARG();
+ 		origext = savestr(Argv[1]);
+ 		Argc--,Argv++;
+ 		break;
+ 	    case 'B':
++		NEEDARG();
+ 		origprae = savestr(Argv[1]);
+ 		Argc--,Argv++;
+ 		break;
+@@ -407,6 +426,7 @@
+ 		break;
+ 	    case 'd':
+ 		if (!*++s) {
++		    NEEDARG();
+ 		    Argc--,Argv++;
+ 		    s = Argv[0];
+ 		}
+@@ -416,11 +436,15 @@
+ 	    case 'D':
+ 	    	do_defines = TRUE;
+ 		if (!*++s) {
++		    NEEDARG();
+ 		    Argc--,Argv++;
+ 		    s = Argv[0];
+ 		}
+-		if (!isalpha(*s))
++		if (!isalpha((unsigned char) *s))
+ 		    fatal1("Argument to -D not an identifier.\n");
++		/* rosco: into if_defined[128] etc. unchecked */
++		if (strlen(s) > sizeof if_defined - 20)
++		    fatal1("Argument to -D too long.\n");
+ 		Sprintf(if_defined, "#ifdef %s\n", s);
+ 		Sprintf(not_defined, "#ifndef %s\n", s);
+ 		Sprintf(end_defined, "#endif /* %s */\n", s);
+@@ -446,6 +470,7 @@
+ 		noreverse = TRUE;
+ 		break;
+ 	    case 'o':
++		NEEDARG();
+ 		outname = savestr(Argv[1]);
+ 		Argc--,Argv++;
+ 		break;
+@@ -455,6 +480,10 @@
+ 		strippath = atoi(s);
+ 		break;
+ 	    case 'r':
++		NEEDARG();
++		/* rosco: into rejname[128] unchecked */
++		if (strlen(Argv[1]) >= sizeof rejname)
++		    fatal("patch: reject file name too long: %s\n", Argv[1]);
+ 		Strcpy(rejname, Argv[1]);
+ 		Argc--,Argv++;
+ 		break;
+@@ -496,8 +525,14 @@
+     Reg4 LINENUM max_neg_offset = first_guess - last_frozen_line - 1
+ 				+ pch_context();
+ 
+-    if (!pat_lines)			/* null range matches always */
++    if (!pat_lines) {			/* null range matches always */
++	/* rosco: ... but not past the end of the file: the lines up to it
++	 * were "copied" from beyond the input (dump_line), memory garbage
++	 */
++	if (first_guess > input_lines + 1)
++	    return Nulline;
+ 	return first_guess;
++    }
+     if (max_neg_offset >= first_guess)	/* do not try lines < 0 */
+ 	max_neg_offset = first_guess - 1;
+     if (first_guess <= input_lines && patch_match(first_guess, Nulline, fuzz))
+@@ -701,9 +736,7 @@
+ init_output(name)
+ char *name;
+ {
+-    ofp = fopen(name, "w");
+-    if (ofp == Nullfp)
+-	fatal2("patch: can't create %s.\n", name);
++    ofp = tmpfopen(name);		/* rosco: safely, see util.c */
+ }
+ 
+ /* Open a file to put hunks we can't locate. */
+@@ -712,9 +745,7 @@
+ init_reject(name)
+ char *name;
+ {
+-    rejfp = fopen(name, "w");
+-    if (rejfp == Nullfp)
+-	fatal2("patch: can't create %s.\n", name);
++    rejfp = tmpfopen(name);		/* rosco: safely, see util.c */
+ }
+ 
+ /* Copy input file to output, up to wherever hunk is to be applied. */
+@@ -744,7 +775,12 @@
+ #endif
+     if (input_lines)
+ 	copy_till(input_lines);		/* dump remainder of file */
+-    Fclose(ofp);
++    /* rosco: a write error (file system full) went unnoticed, and the
++     * truncated output replaced the file
++     */
++    if (ferror(ofp) | fclose(ofp))
++	fatal("patch: write error on %s, %s not changed.\n", TMPOUTNAME,
++	    outname);
+     ofp = Nullfp;
+ }
+ 
+@@ -757,6 +793,11 @@
+     Reg1 char *s;
+     Reg2 char R_newline = '\n';
+ 
++    /* rosco: a line that is not in the file is "" (ifetch): the loop went
++     * on through memory up to some newline
++     */
++    if (line < 1 || line > input_lines)
++	return;
+     /* Note: string is not null terminated. */
+     for (s=ifetch(line, 0); putc(*s, ofp) != R_newline; s++) ;
+ }

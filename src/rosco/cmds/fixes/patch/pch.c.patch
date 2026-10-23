@@ -1,0 +1,324 @@
+--- orig/patch/pch.c	2026-10-23 21:45:00.419475364 +0200
++++ new/patch/pch.c	2026-10-23 21:48:51.009712513 +0200
+@@ -84,12 +84,12 @@
+ char *filename;
+ {
+     if (filename == Nullch || !*filename || strEQ(filename, "-")) {
+-	pfp = fopen(TMPPATNAME, "w");
+-	if (pfp == Nullfp)
+-	    fatal2("patch: can't create %s.\n", TMPPATNAME);
++	pfp = tmpfopen(TMPPATNAME);	/* rosco: safely, see util.c */
+ 	while (fgets(buf, sizeof buf, stdin) != Nullch)
+ 	    fputs(buf, pfp);
+-	Fclose(pfp);
++	/* rosco: a write error (file system full) cut the patch short */
++	if (ferror(pfp) | fclose(pfp))
++	    fatal("patch: write error on %s.\n", TMPPATNAME);
+ 	filename = TMPPATNAME;
+     }
+     pfp = fopen(filename, "r");
+@@ -129,6 +129,12 @@
+ void
+ grow_hunkmax()
+ {
++    /* rosco: hunkmax (int) times sizeof(long) is a malloc size (16 bits):
++     * from 32000 lines on the size wrapped and the arrays were too small
++     * (and hunkmax itself wrapped at 64000)
++     */
++    if (hunkmax > (MEM)~0 / 2 / sizeof(long))
++	fatal("patch: hunk too large (more than %d lines).\n", hunkmax);
+     hunkmax *= 2;
+     /* 
+      * Note that on most systems, only the p_line array ever gets fresh memory
+@@ -197,6 +203,8 @@
+ 	if (force) {
+ 	    say1("No file to patch.  Skipping...\n");
+ 	    filearg[0] = savestr(bestguess);
++	    /* rosco: it said so, but went on to patch bestguess (or "Oops") */
++	    skip_rest_of_patch = TRUE;
+ 	    return TRUE;
+ 	}
+ 	ask1("File to patch: ");
+@@ -208,7 +216,10 @@
+ 	}
+ 	if (filearg[0] == Nullch) {
+ 	    ask1("No file found--skip this patch? [n] ");
+-	    if (*buf != 'y') {
++	    /* rosco: without a terminal (or at end of file) the two questions
++	     * were asked again and again, forever; skip then
++	     */
++	    if (*buf != 'y' && !ask_noanswer) {
+ 		continue;
+ 	    }
+ 	    if (verbose)
+@@ -221,6 +232,25 @@
+     return TRUE;
+ }
+ 
++/* rosco: fetchname() for a name from the diff, refusing names outside the
++ * current directory (safe_name, util.c)
++ */
++static char *
++hdrname(at, strip_leading, assume_exists)
++char *at;
++int strip_leading;
++int assume_exists;
++{
++    char *name = fetchname(at, strip_leading, assume_exists);
++
++    if (!safe_name(name)) {
++	say("Ignoring potentially dangerous file name %s\n", name);
++	free(name);
++	name = Nullch;
++    }
++    return name;
++}
++
+ /* Determine what kind of diff is in the remaining part of the patch file. */
+ 
+ int
+@@ -338,11 +368,11 @@
+   scan_exit:
+     if (no_filearg) {
+ 	if (indtmp != Nullch)
+-	    indname = fetchname(indtmp, strippath, ok_to_create_file);
++	    indname = hdrname(indtmp, strippath, ok_to_create_file);
+ 	if (oldtmp != Nullch)
+-	    oldname = fetchname(oldtmp, strippath, ok_to_create_file);
++	    oldname = hdrname(oldtmp, strippath, ok_to_create_file);
+ 	if (newtmp != Nullch)
+-	    newname = fetchname(newtmp, strippath, ok_to_create_file);
++	    newname = hdrname(newtmp, strippath, ok_to_create_file);
+ 	if (oldname && newname) {
+ 	    if (strlen(oldname) < strlen(newname))
+ 		filearg[0] = savestr(oldname);
+@@ -363,12 +393,12 @@
+     if (filearg[0] != Nullch)
+ 	bestguess = savestr(filearg[0]);
+     else if (indtmp != Nullch)
+-	bestguess = fetchname(indtmp, strippath, TRUE);
++	bestguess = hdrname(indtmp, strippath, TRUE);
+     else {
+ 	if (oldtmp != Nullch)
+-	    oldname = fetchname(oldtmp, strippath, TRUE);
++	    oldname = hdrname(oldtmp, strippath, TRUE);
+ 	if (newtmp != Nullch)
+-	    newname = fetchname(newtmp, strippath, TRUE);
++	    newname = hdrname(newtmp, strippath, TRUE);
+ 	if (oldname && newname) {
+ 	    if (strlen(oldname) < strlen(newname))
+ 		bestguess = savestr(oldname);
+@@ -454,9 +484,7 @@
+ #ifdef SMALL
+     if (sfp != Nullfp)
+ 	Fclose(sfp);
+-    sfp = fopen(TMPSTRNAME, "w");
+-    if (sfp == Nullfp)
+-	fatal2("patch: can't create %s.\n", TMPSTRNAME);
++    sfp = tmpfopen(TMPSTRNAME);		/* rosco: safely, see util.c */
+ #endif
+ 
+     p_max = hunkmax;			/* gets reduced when --- found */
+@@ -560,6 +588,9 @@
+ 		    p_ptrn_lines = 0;
+ 		    p_first = 1;
+ 		}
++		/* rosco: "*** 10,5" gave a negative count */
++		if (p_ptrn_lines < 0)
++		    goto malformed;
+ 		p_max = p_ptrn_lines + 6;	/* we need this much at least */
+ 		while (p_max >= hunkmax)
+ 		    grow_hunkmax();
+@@ -628,6 +659,9 @@
+ 			p_repl_lines = 0;
+ 			p_newfirst = 1;
+ 		    }
++		    /* rosco: "--- 10,5" gave a negative count */
++		    if (p_repl_lines < 0)
++			goto malformed;
+ 		    p_max = p_repl_lines + p_end;
+ 		    if (p_max > MAXHUNKSIZE)
+ 			fatal4("Hunk too large (%ld lines) at line %ld: %s",
+@@ -814,6 +848,12 @@
+ 	    max = min;
+ 	if (hunk_type == 'd')
+ 	    min++;
++	/* rosco: "10,5c3" or "3x4" were taken: negative counts made p_end
++	 * negative, and p_char[p_end+1] = '^' wrote before the array
++	 */
++	if ((hunk_type != 'a' && hunk_type != 'c' && hunk_type != 'd') ||
++	    p_ptrn_lines < 0 || max - min + 1 < 0)
++	    goto malformed;
+ 	p_end = p_ptrn_lines + 1 + max - min + 1;
+ 	if (p_end > MAXHUNKSIZE)
+ 	    fatal4("Hunk too large (%ld lines) at line %ld: %s",
+@@ -902,8 +942,14 @@
+ 	if (!pch_swap())
+ 	    say1("Not enough memory to swap next hunk!\n");
+ #ifdef SMALL
+-    Fclose(sfp);
++    /* rosco: a write error (file system full) gave wrong hunk lines, and
++     * the reopen was not checked
++     */
++    if (ferror(sfp) | fclose(sfp))
++	fatal("patch: write error on %s.\n", TMPSTRNAME);
+     sfp = fopen(TMPSTRNAME, "r");
++    if (sfp == Nullfp)
++	fatal("patch: can't reopen %s.\n", TMPSTRNAME);
+ #endif
+ #ifdef DEBUGGING
+     if (debug & 2) {
+@@ -950,6 +996,23 @@
+     Reg1 char *s;
+     Reg2 int indent = 0;
+ 
++    /* rosco: a line longer than the buffer was split, the rest taken as
++     * a line of its own; a NUL in a line cut it (and, in an ed script,
++     * let ed and patch disagree about which lines are commands).  The
++     * last line may lack its newline.
++     */
++    if (ret != Nullch) {
++	int len = strlen(bf);
++
++	if (len == 0 || bf[len-1] != '\n') {
++	    if (!feof(fp) || len == 0 || len + 1 >= sz)
++		fatal("patch: line %ld of the patch is too long or has a NUL.\n",
++		    p_input_line + 1);
++	    bf[len] = '\n';
++	    bf[len+1] = '\0';
++	}
++    }
++
+     if (p_indent && ret != Nullch) {
+ 	for (s=buf;
+ 	  indent < p_indent && (*s == ' ' || *s == '\t' || *s == 'X'); s++) {
+@@ -1004,18 +1067,24 @@
+     if (p_line == Null(char**) || p_len == Null(short*) || p_char == Nullch) {
+ #endif
+ #ifndef lint
++	/* rosco: the tests were reversed (== instead of !=), here and at the
++	 * end: what was allocated was never freed.  With -R every hunk is
++	 * swapped, and after some 60 hunks there was no memory left: "Not
++	 * enough memory to swap next hunk!", and the hunk was applied the
++	 * wrong way round.
++	 */
+ #ifdef SMALL
+-	if (p_line == Null(long*))
++	if (p_line != Null(long*))
+ #else
+-	if (p_line == Null(char**))
++	if (p_line != Null(char**))
+ #endif
+ 	    free((char*)p_line);
+ 	p_line = tp_line;
+-	if (p_len == Null(short*))
++	if (p_len != Null(short*))
+ 	    free((char*)p_len);
+ 	p_len = tp_len;
+ #endif
+-	if (p_char == Nullch)
++	if (p_char != Nullch)
+ 	    free((char*)p_char);
+ 	p_char = tp_char;
+ 	return FALSE;		/* not enough memory to swap hunk! */
+@@ -1053,7 +1122,10 @@
+     assert(p_char[0] == '=');
+     p_char[0] = '*';
+ #ifdef SMALL
+-    strEdit(p_line[0], '*', '-');
++    /* rosco: strEdit() read and wrote sfp at whatever position it had
++     * (no fseek to pos), in a stream opened for writing only or for
++     * reading only; the text of these two lines is never used anyway
++     */
+ #else
+     for (s=p_line[0]; *s; s++)
+ 	if (*s == '-')
+@@ -1065,7 +1137,7 @@
+     assert(tp_char[0] == '*');
+     tp_char[0] = '=';
+ #ifdef SMALL
+-    strEdit(tp_line[0], '-', '*');
++    /* rosco: see above */
+ #else
+     for (s=tp_line[0]; *s; s++)
+ 	if (*s == '*')
+@@ -1084,15 +1156,15 @@
+     p_repl_lines = i;
+ #ifndef lint
+ #ifdef SMALL
+-    if (tp_line == Null(long*))
++    if (tp_line != Null(long*))		/* rosco: != (see above) */
+ #else
+-    if (tp_line == Null(char**))
++    if (tp_line != Null(char**))
+ #endif
+ 	free((char*)tp_line);
+-    if (tp_len == Null(short*))
++    if (tp_len != Null(short*))
+ 	free((char*)tp_len);
+ #endif
+-    if (tp_char == Nullch)
++    if (tp_char != Nullch)
+ 	free((char*)tp_char);
+     return TRUE;
+ }
+@@ -1185,7 +1257,7 @@
+ pfetch(line)
+ LINENUM line;
+ {
+-    static char *s, strbuf[BUFSIZ];
++    static char *s, strbuf[MAXLINELEN];	/* rosco: was BUFSIZ */
+     int i, c;
+ 
+     if (p_line[line] == -1L)
+@@ -1193,9 +1265,9 @@
+     else {
+ 	Fseek(sfp, p_line[line], 0);
+ 	for (i = 0, s = strbuf;
+-		i < BUFSIZ && (c = fgetc(sfp)) != EOF && c; i++)
++		i < MAXLINELEN && (c = fgetc(sfp)) != EOF && c; i++)
+ 	    *s++ = c;
+-	if (i == BUFSIZ)
++	if (i == MAXLINELEN)
+ 		fatal2("too long line (%.40s ..\n", strbuf);
+     }
+     *s = '\0';
+@@ -1248,6 +1320,14 @@
+     Reg4 FILE *pipefp;
+ 
+     if (!skip_rest_of_patch) {
++	/* rosco: the mode of the file was not kept (filemode is set by
++	 * plan_b, which an ed script does not use)
++	 */
++	if (stat(filearg[0], &filestat) < 0)
++	    fatal("Can't find %s.\n", filearg[0]);
++	if (!S_ISREG(filestat.st_mode))
++	    fatal("%s is not a normal file--can't patch.\n", filearg[0]);
++	filemode = filestat.st_mode;
+ 	Unlink(TMPOUTNAME);
+ 	copy_file(filearg[0], TMPOUTNAME);
+ 	if (verbose)
+@@ -1255,6 +1335,8 @@
+ 	else
+ 	    Sprintf(buf, "/bin/ed - %s", TMPOUTNAME);
+ 	pipefp = popen(buf, "w");
++	if (pipefp == Nullfp)		/* rosco: was not checked */
++	    fatal("patch: can't run %s\n", buf);
+     }
+     for (;;) {
+ 	beginning_of_this_line = ftell(pfp);
+@@ -1264,8 +1346,13 @@
+ 	}
+ 	p_input_line++;
+ 	for (t=buf; isdigit(*t) || *t == ','; t++) ;
++	/* rosco: anything after the command letter went to ed too; only
++	 * "N[,M]{a,c,d}" now (pgets refuses lines with a NUL, which made
++	 * patch and ed disagree about where the text of an 'a' or 'c' ends:
++	 * ed would then run the following text lines as commands, '!' too)
++	 */
+ 	this_line_is_command = (isdigit(*buf) &&
+-	  (*t == 'd' || *t == 'c' || *t == 'a') );
++	  (*t == 'd' || *t == 'c' || *t == 'a') && t[1] == '\n');
+ 	if (this_line_is_command) {
+ 	    if (!skip_rest_of_patch)
+ 		fputs(buf, pipefp);

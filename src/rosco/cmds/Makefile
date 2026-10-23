@@ -201,7 +201,8 @@ bin/patch:	$(PATCHOBJ) $L/crtso.o $(LIBS) $(TOOLS)/mkminix.py
 	$(CC) $(LDFLAGS) -o obj/patch.elf $L/crtso.o $(PATCHOBJ) $(LIBS)
 	$(MKMINIX) -S 32kw obj/patch.elf $@
 
-obj/patch/%.o:	$c/patch/%.c
+# compiled from fixed copies (Source fixes, fixes/patch/*.patch; FIX0 below)
+obj/patch/%.o:	obj/fix/patch/%.c obj/fix/patch/common.h obj/fix/patch/util.h
 	@mkdir -p obj/patch
 	$(CC) $(CFLAGS) -I$c/patch -DVOIDSIG -DSMALL \
 		-c -o $@ $<
@@ -758,6 +759,10 @@ FIX0	+= simple/nm.c simple/strip.c simple/chmem.c simple/mkproto.c \
 	  simple/proto.c simple/ci.c simple/co.c simple/fix.c
 # development (group 7): make (make/make.c is above, for execl0.sed)
 FIX0	+= make/main.c make/input.c make/reader.c make/macro.c make/rules.c
+# development (group 7): patch, every source and common.h, util.h (the
+# objects are compiled from obj/fix/patch, see bin/patch)
+FIX0	+= patch/patch.c patch/pch.c patch/inp.c patch/util.c patch/version.c \
+	  patch/common.h patch/util.h
 .SECONDEXPANSION:
 $(FIX0:%=obj/fix/%):	obj/fix/%:	$c/% execl0.sed $$(wildcard fixes/$$*.patch)
 	@mkdir -p $(@D)

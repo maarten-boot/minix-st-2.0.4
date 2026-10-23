@@ -1,0 +1,18 @@
+--- orig/patch/common.h	2026-10-23 21:45:00.417963531 +0200
++++ new/patch/common.h	2026-10-23 21:46:26.301826708 +0200
+@@ -52,7 +52,14 @@
+ 
+ #define MAXHUNKSIZE 100000		/* is this enough lines? */
+ #define INITHUNKMAX 125			/* initial dynamic allocation size */
+-#define MAXLINELEN 1024
++/* rosco: lines of more than 1023 characters (in the patch and in the file
++ * to patch) were split in two and the second part taken as a line of its
++ * own: a "Malformed patch", or with SMALL (plan b) a patched file with
++ * memory garbage in it.  Lines up to 8191 characters now work, longer
++ * ones are refused.  BUFFERSIZE stays the plan b block size for files
++ * with short lines (inp.c makes a block as large as the longest line).
++ */
++#define MAXLINELEN 8192
+ #define BUFFERSIZE 1024
+ #define SCCSPREFIX "s."
+ #define GET "get -e %s"
