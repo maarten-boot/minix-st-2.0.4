@@ -171,13 +171,13 @@ unsigned nr_req;		/* length of request vector */
   struct device *dv;
   phys_bytes mem_phys, user_phys;
   unsigned long count, dv_size;
-  phys_bytes user_base = proc_vir2phys(proc_addr(proc_nr), 0);
 
   dv = rd_device == RD_MINOR ? &rd_dev : &sd_dev[rd_device];
   dv_size = cv64ul(dv->dv_size);
 
   while (nr_req > 0) {
-	user_phys = user_base + iov->iov_addr;
+	/* rosco: map each address (proc_vir2phys, shadowing) */
+	user_phys = proc_vir2phys(proc_addr(proc_nr), iov->iov_addr);
 	count = iov->iov_size;
 
 	if (position >= dv_size) return(OK);		/* EOF */

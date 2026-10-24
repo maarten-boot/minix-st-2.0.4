@@ -91,7 +91,6 @@ unsigned nr_req;		/* length of request vector */
   unsigned count;
   struct device *dv;
   unsigned long dv_size;
-  phys_bytes user_base = proc_vir2phys(proc_addr(proc_nr), 0);
   register unsigned i;
   register char *p;
 
@@ -101,7 +100,8 @@ unsigned nr_req;		/* length of request vector */
   dv_size = cv64ul(dv->dv_size);
 
   while (nr_req > 0) {
-	user_phys = user_base + iov->iov_addr;
+	/* rosco: map each address (proc_vir2phys, shadowing) */
+	user_phys = proc_vir2phys(proc_addr(proc_nr), iov->iov_addr);
 	count = iov->iov_size;
 
 	switch (device) {

@@ -714,7 +714,7 @@ register tty_t *tp;		/* pointer to terminal to read from */
 
   int ch;
   int count;
-  phys_bytes buf_phys, user_base;
+  phys_bytes buf_phys;
   char buf[64], *bp;
 
   /* Force read to succeed if the line is hung up, looks like EOF to reader. */
@@ -724,7 +724,6 @@ register tty_t *tp;		/* pointer to terminal to read from */
   if (tp->tty_inleft == 0 || tp->tty_eotct < tp->tty_min) return;
 
   buf_phys = vir2phys(buf);
-  user_base = proc_vir2phys(proc_addr(tp->tty_inproc), 0);
   bp = buf;
   while (tp->tty_inleft > 0 && tp->tty_eotct > 0) {
 	ch = *tp->tty_intail;
@@ -734,8 +733,11 @@ register tty_t *tp;		/* pointer to terminal to read from */
 		*bp = ch & IN_CHAR;
 		tp->tty_inleft--;
 		if (++bp == bufend(buf)) {
-			/* Temp buffer full, copy to user space. */
-			phys_copy(buf_phys, user_base + tp->tty_in_vir,
+			/* Temp buffer full, copy to user space.  rosco:
+			 * each address mapped (proc_vir2phys, shadowing).
+			 */
+			phys_copy(buf_phys, proc_vir2phys(proc_addr(
+				tp->tty_inproc), tp->tty_in_vir),
 						(phys_bytes) buflen(buf));
 			tp->tty_in_vir += buflen(buf);
 			tp->tty_incum += buflen(buf);
@@ -757,7 +759,8 @@ register tty_t *tp;		/* pointer to terminal to read from */
   if (bp > buf) {
 	/* Leftover characters in the buffer. */
 	count = bp - buf;
-	phys_copy(buf_phys, user_base + tp->tty_in_vir, (phys_bytes) count);
+	phys_copy(buf_phys, proc_vir2phys(proc_addr(tp->tty_inproc),
+				tp->tty_in_vir), (phys_bytes) count);
 	tp->tty_in_vir += count;
 	tp->tty_incum += count;
   }

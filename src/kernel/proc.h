@@ -120,9 +120,14 @@ struct proc {
 #else
 #define	isshadowp(p)	((p)->p_shadow != 0)
 
+/* rosco: only data and stack are shadowed; text below the data (string
+ * constants, rodata) stays in place, as in umap().  The offset depends on
+ * the address, so callers map each address, not a base plus an address.
+ */
 #define proc_vir2phys(p, vir)   \
 		  ((phys_bytes)(vir) + \
-		   (((p)->p_shadow) ? \
+		   (((p)->p_shadow && (phys_bytes)(vir) >= \
+		     ((phys_bytes)(p)->p_map[D].mem_phys << CLICK_SHIFT)) ? \
 		    (((phys_bytes)(p)->p_shadow << CLICK_SHIFT) - \
 		     ((phys_bytes)(p)->p_map[D].mem_phys << CLICK_SHIFT)) : 0))
 #endif /* SHADOWING == 0 */

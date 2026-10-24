@@ -2,7 +2,7 @@
 #
 # Builds test1..test40, t10a, t11a, t11b (and from this directory
 # troscorun, the gcc run-time support, texecl, execl() arguments, and
-# tshadow, kernel copies from a shadowed process, tsigcc, condition
+# tshadow and tshadow2, kernel copies from a shadowed process, tsigcc, condition
 # codes after a signal handler, and tsymexcl, O_EXCL and symbolic links)
 # with src/rosco/lib as Minix
 # executables, with the stack sizes of the ACK build (10kw, 32kw for
@@ -43,7 +43,7 @@ LIBS	= $L/libc.a
 
 TESTS	= $(addprefix test,$(shell seq 1 40)) t10a t11a t11b
 # rosco specific: the gcc run-time support (this directory)
-ROSCO	= troscorun texecl tshadow tsigcc tsymexcl
+ROSCO	= troscorun texecl tshadow tshadow2 tsigcc tsymexcl
 BIG	= test20 test24
 
 all:	$(addprefix bin/,$(TESTS) $(ROSCO))
